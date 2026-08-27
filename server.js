@@ -75,7 +75,7 @@ const BEYOND_PETS = [
 const OWNED_KEYS = [
   "briar_pup","myceling","verdant_sentinel","reef_snapper","leviacub",
   "crystal_burrower","ember_drake","ice_crawler","living_eye","storm_imp",
-  "bone_gnawer","frost_mephit","rime_sprite","star_familiar"
+  "bone_gnawer","frost_mephit","rime_sprite","star_familiar","veilkin"
 ];
 
 const OWNED_PETS = [...PET_DEX, ...BEYOND_PETS]
@@ -83,7 +83,7 @@ const OWNED_PETS = [...PET_DEX, ...BEYOND_PETS]
   .map((p, index) => ({
     ...p,
     id: index + 1,
-    nickname: index === 11 ? "Rimebit" : null,
+    nickname: p.key === "rime_sprite" ? "Rimebit" : null,
     level: [4,7,12,3,9,5,10,6,2,8,5,8,11,7][index] || 1,
     xp: [35,82,56,20,77,46,92,61,18,69,43,74,89,58][index] || 0,
     bond: [2,3,4,2,3,2,4,3,1,3,2,4,5,3][index] || 1
@@ -308,6 +308,24 @@ const PHASE_G_ALIGNMENT = {
   ]
 };
 
+
+const PHASE_G5_LEADERBOARDS = {
+  current: [
+    { rank:1, name:"Mythicredd", points:412 },
+    { rank:2, name:"Activity Test Hunter", points:245, self:true },
+    { rank:3, name:"Card and Book Dragon", points:221 },
+    { rank:4, name:"daba9494", points:198 },
+    { rank:5, name:"Fiddle", points:176 }
+  ],
+  weekly: [
+    { rank:1, name:"daba9494", points:86 },
+    { rank:2, name:"Activity Test Hunter", points:74, self:true },
+    { rank:3, name:"Fiddle", points:63 },
+    { rank:4, name:"Mythicredd", points:59 },
+    { rank:5, name:"Card and Book Dragon", points:48 }
+  ]
+};
+
 function safeFilePath(urlPath) {
   const cleanPath = decodeURIComponent((urlPath || "/").split("?")[0]);
   const requested = cleanPath === "/" ? "/index.html" : cleanPath;
@@ -329,7 +347,7 @@ const server = http.createServer((req, res) => {
       points: 245,
       tokens: 18,
       title: "Rift Hunter",
-      activePetKey: "rime_sprite",
+      activePetKey: "veilkin",
       activePet: { name: "Rimebit", level: 11, icon: "💎" },
       stats: {
         pets: OWNED_PETS.length,
@@ -363,6 +381,10 @@ const server = http.createServer((req, res) => {
     return json(res, PHASE_G_ALIGNMENT);
   }
 
+  if (req.url === "/api/phase-g5-leaderboards") {
+    return json(res, PHASE_G5_LEADERBOARDS);
+  }
+
   const filePath = safeFilePath(req.url);
   if (!filePath) {
     res.writeHead(403);
@@ -385,6 +407,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity Phase G DEV running on port ${PORT}`);
+  console.log(`Monster Hunt Activity Phase G.5 DEV running on port ${PORT}`);
   console.log("SAFE MODE: fake test data + local cosmetic/pet selection only.");
 });
