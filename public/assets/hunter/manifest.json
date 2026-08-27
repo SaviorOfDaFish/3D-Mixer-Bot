@@ -1,0 +1,15 @@
+{
+  "version": "D.5.2",
+  "canvas": {"width": 1024, "height": 1024},
+  "format": "webp",
+  "alignment": "Every Hunter layer must use the exact same transparent 1024x1024 canvas and character position.",
+  "slots": {
+    "body": ["male", "female"],
+    "face": ["default"],
+    "hair": ["short", "long", "mohawk", "braid", "bald"],
+    "outfit": ["ranger", "leather", "rift", "frost", "ember"],
+    "cloak": ["forest", "rift", "ember", "frost"],
+    "headgear": ["cap", "hood", "horns"],
+    "weapon": ["bow", "staff"]
+  }
+}
