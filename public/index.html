@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <title>Monster Hunt Activity — Phase B</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">DEV BUILD • PHASE B</p>
+        <h1>🏹 Monster Hunt</h1>
+      </div>
+      <div class="wallet">
+        <span>⭐ <b id="points">—</b></span>
+        <span>🪙 <b id="tokens">—</b></span>
+      </div>
+    </header>
+
+    <main class="page-scroll">
+      <section class="hero-card">
+        <div class="scene">
+          <div class="moon"></div>
+          <div class="mountains"></div>
+
+          <div class="avatar-wrap" id="avatarPreview" aria-label="Hunter avatar preview">
+            <div class="avatar-shadow"></div>
+
+            <div class="avatar">
+              <div class="cloak-layer" id="cloakLayer"></div>
+
+              <div class="head">
+                <div class="hair hair-back" id="hairBack"></div>
+                <div class="ears"></div>
+                <div class="face" id="faceLayer">
+                  <div class="eyes" id="eyesLayer"><i></i><i></i></div>
+                  <div class="brows"></div>
+                  <div class="nose"></div>
+                  <div class="mouth"></div>
+                  <div class="beard" id="beardLayer"></div>
+                </div>
+                <div class="hair hair-front" id="hairFront"></div>
+                <div class="headgear" id="headgearLayer"></div>
+              </div>
+
+              <div class="neck"></div>
+
+              <div class="torso" id="outfitLayer">
+                <div class="belt"></div>
+              </div>
+
+              <div class="arm arm-left"><span class="hand"></span></div>
+              <div class="arm arm-right"><span class="hand"></span></div>
+
+              <div class="legs">
+                <div class="leg"></div>
+                <div class="leg"></div>
+              </div>
+              <div class="boots">
+                <div class="boot"></div>
+                <div class="boot"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pet" id="petIcon" aria-label="Active pet">🐲</div>
+        </div>
+
+        <div class="identity">
+          <div>
+            <p class="eyebrow">YOUR HUNTER</p>
+            <h2 id="hunterName">Loading…</h2>
+            <p><span id="hunterTitle">—</span> • Level <span id="level">—</span></p>
+          </div>
+          <button class="secondary" id="customizeBtn" type="button">Customize</button>
+        </div>
+      </section>
+
+      <section class="quick-grid" aria-label="Hunter dashboard">
+        <button class="tile" data-demo="pets"><span>🐾</span><b>Pets</b><small id="petsCount">— owned</small></button>
+        <button class="tile" data-demo="inventory"><span>🎒</span><b>Inventory</b><small>View supplies</small></button>
+        <button class="tile" data-demo="petdex"><span>📖</span><b>PetDex</b><small id="petdexCount">—</small></button>
+        <button class="tile" data-demo="trophies"><span>🏆</span><b>Trophies</b><small id="trophyCount">— earned</small></button>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">ACTIVE COMPANION</p>
+            <h3 id="petName">—</h3>
+          </div>
+          <span class="level-pill">Lv. <span id="petLevel">—</span></span>
+        </div>
+        <p class="muted">Still sandboxed. Character customization is saved only in this browser/device using local storage.</p>
+        <button class="primary full" type="button" data-demo="change-pet">Change Active Pet</button>
+      </section>
+
+      <section class="panel">
+        <p class="eyebrow">PHASE B CHECK</p>
+        <h3>Character Creator</h3>
+        <p class="muted">Tap Customize, change the test Hunter, save, refresh the page, and confirm the appearance stays on this device.</p>
+        <div id="status" class="status">✅ Activity shell loaded.</div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Main navigation">
+      <button class="nav-active" data-demo="home"><span>🏕️</span><small>Home</small></button>
+      <button data-demo="pets"><span>🐾</span><small>Pets</small></button>
+      <button data-demo="hunt"><span>🏹</span><small>Hunt</small></button>
+      <button data-demo="events"><span>🌀</span><small>Events</small></button>
+    </nav>
+  </div>
+
+  <div class="modal-backdrop hidden" id="customizerModal" role="dialog" aria-modal="true" aria-labelledby="customizerTitle">
+    <section class="customizer-sheet">
+      <header class="customizer-header">
+        <div>
+          <p class="eyebrow">APPEARANCE EDITOR</p>
+          <h2 id="customizerTitle">Customize Hunter</h2>
+        </div>
+        <button class="icon-button" id="closeCustomizer" aria-label="Close customizer">✕</button>
+      </header>
+
+      <div class="customizer-body">
+        <div class="editor-preview-card">
+          <div class="mini-stage">
+            <div id="editorAvatarHost"></div>
+          </div>
+          <p class="preview-name">Activity Test Hunter</p>
+        </div>
+
+        <div class="editor-controls">
+          <div class="control-section">
+            <label>Skin Tone</label>
+            <div class="swatch-row" id="skinOptions"></div>
+          </div>
+
+          <div class="control-section">
+            <label>Hair Style</label>
+            <div class="choice-grid" id="hairOptions"></div>
+          </div>
+
+          <div class="control-section">
+            <label>Hair Color</label>
+            <div class="swatch-row" id="hairColorOptions"></div>
+          </div>
+
+          <div class="control-section">
+            <label>Eyes</label>
+            <div class="choice-grid compact" id="eyeOptions"></div>
+          </div>
+
+          <div class="control-section">
+            <label>Facial Hair</label>
+            <div class="choice-grid" id="beardOptions"></div>
+          </div>
+
+          <div class="control-section">
+            <label>Outfit</label>
+            <div class="choice-grid" id="outfitOptions"></div>
+          </div>
+
+          <div class="control-section">
+            <label>Cloak</label>
+            <div class="choice-grid" id="cloakOptions"></div>
+          </div>
+
+          <div class="control-section">
+            <label>Headgear</label>
+            <div class="choice-grid" id="headgearOptions"></div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="customizer-footer">
+        <button class="secondary" id="resetAppearance" type="button">Reset</button>
+        <button class="primary" id="saveAppearance" type="button">Save Appearance</button>
+      </footer>
+    </section>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
