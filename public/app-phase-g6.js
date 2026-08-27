@@ -1,0 +1,994 @@
+const DEFAULT_APPEARANCE = {
+  body: "male",
+  skin: "#d59a72",
+  hair: "short",
+  hairColor: "#3f2a22",
+  eyes: "round",
+  eyeColor: "#4a6d84",
+  beard: "none",
+  outfit: "ranger",
+  cloak: "forest",
+  headgear: "none",
+  weapon: "bow"
+};
+
+let hunter = null;
+let gameData = null;
+let playerProgress = { level:0, trophies:0, petdex:0 };
+let currentScreen = "home";
+let currentPetFilter = "All";
+let currentInventoryFilter = "All";
+let phaseEEvents = null;
+let devBountyAttempts = 0;
+let timerInterval = null;
+let phaseFHunting = null;
+let activeHuntZone = null;
+let currentEncounter = null;
+let selectedTool = null;
+let huntAttemptNumber = 1;
+let rimebitSecondChanceUsed = false;
+let localToolUses = {};
+let phaseGAlignment = null;
+let phaseG5Leaderboards = null;
+let activeLeaderboard = 'current';
+
+let renameTargetPetKey = null;
+
+function loadPetNicknames() {
+  try {
+    return JSON.parse(localStorage.getItem("monsterHuntDevPetNames") || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+let localPetNicknames = loadPetNicknames();
+
+function savePetNicknames() {
+  localStorage.setItem("monsterHuntDevPetNames", JSON.stringify(localPetNicknames));
+}
+
+function petArtPath(pet) {
+  if (!pet) return null;
+  const map = {
+    veilkin: "/assets/pets/veilkin.png"
+  };
+  return map[pet.key] || null;
+}
+
+function applyLocalPetNames() {
+  if (!gameData?.ownedPets) return;
+  for (const pet of gameData.ownedPets) {
+    if (localPetNicknames[pet.key]) pet.nickname = localPetNicknames[pet.key];
+    else if (pet.key !== "rime_sprite") pet.nickname = null;
+  }
+}
+
+
+
+let savedAppearance = loadAppearance();
+let workingAppearance = { ...savedAppearance };
+let activePetKey = localStorage.getItem("monsterHuntDevActivePet") || "veilkin";
+
+const OPTIONS = {
+  body: [
+    { value:"male", label:"Male" },
+    { value:"female", label:"Female" }
+  ],
+  skin: [
+    { value:"#f4c6a5", label:"Light" }, { value:"#dca37d", label:"Warm" },
+    { value:"#b97852", label:"Tan" }, { value:"#8f563b", label:"Deep" },
+    { value:"#5f392d", label:"Dark" }, { value:"#3e2823", label:"Rich" }
+  ],
+  hair: [
+    { value:"short", label:"Short" }, { value:"long", label:"Long" },
+    { value:"messy", label:"Messy" }, { value:"swept", label:"Side Swept" },
+    { value:"ponytail", label:"Ponytail" }, { value:"bald", label:"Bald" },
+    { value:"mohawk", label:"Mohawk", unlock:{type:"level",amount:5} },
+    { value:"braid", label:"Braid", unlock:{type:"level",amount:10} }
+  ],
+  hairColor: [
+    { value:"#241b18", label:"Black" }, { value:"#4a2f27", label:"Brown" },
+    { value:"#8d5a32", label:"Auburn" }, { value:"#c99a4d", label:"Blonde" },
+    { value:"#d9d9d9", label:"Silver", unlock:{type:"level",amount:15} },
+    { value:"#6b4aa3", label:"Rift Violet", unlock:{type:"petdex",amount:20} }
+  ],
+  eyes: [
+    { value:"round", label:"Round" }, { value:"narrow", label:"Narrow" },
+    { value:"wide", label:"Wide" }, { value:"soft", label:"Soft" },
+    { value:"sharp", label:"Sharp", unlock:{type:"level",amount:5} }
+  ],
+  beard: [
+    { value:"none", label:"None" }, { value:"stubble", label:"Stubble" },
+    { value:"mustache", label:"Mustache" }, { value:"goatee", label:"Goatee" },
+    { value:"full", label:"Full Beard", unlock:{type:"level",amount:10} }
+  ],
+  outfit: [
+    { value:"ranger", label:"Ranger" }, { value:"leather", label:"Leather" },
+    { value:"scout", label:"Scout" }, { value:"traveler", label:"Traveler" },
+    { value:"rift", label:"Rift Hunter", unlock:{type:"level",amount:10} },
+    { value:"frost", label:"Frost Hunter", unlock:{type:"level",amount:15} },
+    { value:"ember", label:"Ember Hunter", unlock:{type:"petdex",amount:20} }
+  ],
+  cloak: [
+    { value:"none", label:"None" }, { value:"forest", label:"Forest" },
+    { value:"brown", label:"Traveler" }, { value:"blue", label:"Blue" },
+    { value:"rift", label:"Rift", unlock:{type:"level",amount:10} },
+    { value:"ember", label:"Ember", unlock:{type:"petdex",amount:20} },
+    { value:"frost", label:"Frost", unlock:{type:"level",amount:15} }
+  ],
+  headgear: [
+    { value:"none", label:"None" }, { value:"cap", label:"Hunter Cap" },
+    { value:"band", label:"Headband" },
+    { value:"hood", label:"Rift Hood", unlock:{type:"level",amount:10} },
+    { value:"horns", label:"Trophy Horns", unlock:{type:"trophies",amount:5} }
+  ],
+  weapon: [
+    { value:"none", label:"None" }, { value:"bow", label:"Hunter Bow" },
+    { value:"spear", label:"Spear" }, { value:"sword", label:"Sword" },
+    { value:"staff", label:"Rift Staff", unlock:{type:"level",amount:10} }
+  ]
+};
+
+function loadAppearance() {
+  try {
+    return { ...DEFAULT_APPEARANCE, ...(JSON.parse(localStorage.getItem("monsterHuntDevAppearance") || "null") || {}) };
+  } catch { return { ...DEFAULT_APPEARANCE }; }
+}
+function saveAppearance() {
+  localStorage.setItem("monsterHuntDevAppearance", JSON.stringify(savedAppearance));
+}
+
+function unlockText(unlock) {
+  if (!unlock) return "";
+  if (unlock.type === "level") return `🔒 Level ${unlock.amount}`;
+  if (unlock.type === "trophies") return `🔒 ${unlock.amount} Trophies`;
+  if (unlock.type === "petdex") return `🔒 PetDex ${unlock.amount}`;
+  return "🔒 Locked";
+}
+function isUnlocked(option) {
+  if (!option.unlock) return true;
+  if (option.unlock.type === "level") return playerProgress.level >= option.unlock.amount;
+  if (option.unlock.type === "trophies") return playerProgress.trophies >= option.unlock.amount;
+  if (option.unlock.type === "petdex") return playerProgress.petdex >= option.unlock.amount;
+  return false;
+}
+
+function applyAppearanceToAvatar(avatar, appearance) {
+  if (!avatar) return;
+  avatar.style.setProperty("--skin", appearance.skin);
+  avatar.style.setProperty("--hair", appearance.hairColor);
+  avatar.style.setProperty("--eyes", appearance.eyeColor || "#4a6d84");
+  for (const key of ["body","hair","beard","outfit","cloak","headgear","weapon"]) {
+    avatar.dataset[key] = appearance[key];
+  }
+  const eyes = avatar.querySelector(".eyes");
+  if (eyes) {
+    eyes.classList.remove("eye-round","eye-narrow","eye-wide");
+    eyes.classList.add(`eye-${appearance.eyes}`);
+  }
+}
+function renderMainAvatar() {
+  applyAppearanceToAvatar(document.querySelector("#avatarPreview .avatar"), savedAppearance);
+}
+
+function navTo(screen) {
+  currentScreen = screen;
+  document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.dataset.screen === screen));
+  document.querySelectorAll(".bottom-nav [data-nav]").forEach(b => b.classList.toggle("nav-active", b.dataset.nav === screen));
+  document.getElementById("pageScroll").scrollTop = 0;
+}
+document.addEventListener("click", e => {
+  const nav = e.target.closest("[data-nav]");
+  if (nav) navTo(nav.dataset.nav);
+});
+
+function petDisplayName(p) {
+  return localPetNicknames[p.key] || p.nickname || p.name;
+}
+function ownedPet(key) { return gameData?.ownedPets.find(p => p.key === key) || null; }
+function allKnownPet(key) { return [...(gameData?.petDex || []), ...(gameData?.beyondPets || [])].find(p => p.key === key) || null; }
+
+function renderActivePet() {
+  const pet = ownedPet(activePetKey) || gameData?.ownedPets[0];
+  if (!pet) return;
+  activePetKey = pet.key;
+  localStorage.setItem("monsterHuntDevActivePet", activePetKey);
+  const petIcon = document.getElementById("petIcon");
+  const petImage = document.getElementById("petImage");
+  petIcon.textContent = pet.icon;
+  const artPath = petArtPath(pet);
+  if (artPath) {
+    petImage.src = artPath;
+    petImage.alt = `${petDisplayName(pet)} companion art`;
+    petImage.classList.remove("hidden");
+    petIcon.classList.add("hidden");
+  } else {
+    petImage.removeAttribute("src");
+    petImage.classList.add("hidden");
+    petIcon.classList.remove("hidden");
+  }
+  document.getElementById("petName").textContent = petDisplayName(pet);
+  document.getElementById("petLevel").textContent = pet.level;
+  document.getElementById("petBond").textContent = pet.bond;
+  document.getElementById("petAbility").textContent = pet.ability;
+  renderPets();
+}
+
+function rarityOrder(r) {
+  return ({Legendary:4,Epic:3,Rare:2,Common:1}[r] || 0);
+}
+
+function renderPetFilters() {
+  const filters = ["All","Forest","Ocean","Mountain","Volcano","Arctic","Void","Sky","Undead","Distortion"];
+  const row = document.getElementById("petFilters");
+  row.innerHTML = "";
+  filters.forEach(name => {
+    const b = document.createElement("button");
+    b.className = `filter-chip${currentPetFilter === name ? " active" : ""}`;
+    b.textContent = name;
+    b.onclick = () => { currentPetFilter = name; renderPetFilters(); renderPets(); };
+    row.appendChild(b);
+  });
+}
+
+function renderPets() {
+  if (!gameData) return;
+  const grid = document.getElementById("petGrid");
+  let pets = [...gameData.ownedPets].sort((a,b) => rarityOrder(b.rarity)-rarityOrder(a.rarity) || b.level-a.level);
+  if (currentPetFilter === "Distortion") pets = pets.filter(p => !["Forest","Ocean","Mountain","Volcano","Arctic","Void","Sky","Undead"].includes(p.habitat));
+  else if (currentPetFilter !== "All") pets = pets.filter(p => p.habitat === currentPetFilter);
+
+  grid.innerHTML = pets.map(p => `
+    <article class="pet-card ${p.key === activePetKey ? "active-pet" : ""}" data-rarity="${p.rarity}" data-pet-key="${p.key}">
+      <div class="pet-portrait">
+        <span class="rarity-pill">${p.rarity}</span>
+        ${petArtPath(p)
+          ? `<img class="pet-card-image" src="${petArtPath(p)}" alt="${petDisplayName(p)} art" />`
+          : `<span class="pet-symbol">${p.icon}</span>`}
+      </div>
+      <div class="pet-card-body">
+        <h3>${petDisplayName(p)}</h3>
+        <p class="card-meta">${p.name !== petDisplayName(p) ? `${p.name} • ` : ""}${p.habitat} • Lv. ${p.level}</p>
+        <p class="card-ability">${p.ability}</p>
+        <div class="pet-progress"><span style="width:${Math.max(8,p.xp)}%"></span></div>
+      </div>
+    </article>
+  `).join("");
+
+  grid.querySelectorAll("[data-pet-key]").forEach(card => {
+    card.onclick = () => showPetDetail(card.dataset.petKey);
+  });
+}
+
+function showPetDetail(key) {
+  const p = ownedPet(key) || allKnownPet(key);
+  if (!p) return;
+  document.getElementById("detailEyebrow").textContent = p.habitat.toUpperCase();
+  document.getElementById("detailTitle").textContent = petDisplayName(p);
+  const owned = !!ownedPet(key);
+
+  document.getElementById("detailBody").innerHTML = `
+    <div class="detail-hero">
+      ${petArtPath(p)
+        ? `<img class="detail-pet-image" src="${petArtPath(p)}" alt="${petDisplayName(p)} art" />`
+        : `<div class="detail-symbol">${p.icon}</div>`}
+    </div>
+    <div class="detail-stat-grid">
+      <div class="detail-stat"><small>Rarity</small><b>${p.rarity}</b></div>
+      <div class="detail-stat"><small>Habitat</small><b>${p.habitat}</b></div>
+      <div class="detail-stat"><small>Level</small><b>${owned ? p.level : "—"}</b></div>
+      <div class="detail-stat"><small>Bond</small><b>${owned ? `${p.bond}/5` : "—"}</b></div>
+    </div>
+    <p class="detail-copy"><b>${p.ability}</b><br>${p.description}</p>
+    ${owned ? `
+      <p class="detail-copy">Companion XP: <b>${p.xp}%</b> toward the next level.</p>
+      <div class="detail-actions">
+        <button class="secondary" id="renameDetailPet">✏️ Name Pet</button>
+        <button class="primary" id="equipDetailPet">${p.key === activePetKey ? "Currently Active" : "Make Active"}</button>
+      </div>` : `
+      <p class="detail-copy">This companion has not been collected in the test profile.</p>`}
+  `;
+  document.getElementById("detailModal").classList.remove("hidden");
+  const equip = document.getElementById("equipDetailPet");
+  if (equip) equip.onclick = () => {
+    activePetKey = p.key;
+    renderActivePet();
+    closeDetail();
+    document.getElementById("status").textContent = `✅ ${petDisplayName(p)} is now the active DEV companion.`;
+  };
+
+  const rename = document.getElementById("renameDetailPet");
+  if (rename) rename.onclick = () => openRenamePet(p.key);
+}
+
+function openRenamePet(key) {
+  const pet = ownedPet(key);
+  if (!pet) return;
+  renameTargetPetKey = key;
+  document.getElementById("petNameInput").value = localPetNicknames[key] || pet.nickname || "";
+  document.getElementById("renamePetModal").classList.remove("hidden");
+  setTimeout(() => document.getElementById("petNameInput").focus(), 50);
+}
+
+function closeRenamePet() {
+  document.getElementById("renamePetModal").classList.add("hidden");
+  renameTargetPetKey = null;
+}
+
+function commitPetName(clear=false) {
+  if (!renameTargetPetKey) return;
+  const pet = ownedPet(renameTargetPetKey);
+  if (!pet) return;
+
+  const input = document.getElementById("petNameInput");
+  const raw = clear ? "" : input.value.trim();
+  const safeName = raw.replace(/[<>]/g, "").slice(0, 24);
+
+  if (safeName) localPetNicknames[renameTargetPetKey] = safeName;
+  else delete localPetNicknames[renameTargetPetKey];
+
+  savePetNicknames();
+  applyLocalPetNames();
+
+  const finalName = petDisplayName(pet);
+  closeRenamePet();
+
+  renderActivePet();
+  renderPets();
+  renderDex();
+
+  document.getElementById("status").textContent =
+    safeName ? `✅ ${pet.name} is now named ${finalName} in this DEV Activity.` : `✅ ${pet.name} is using its species name again.`;
+}
+
+function closeDetail() { document.getElementById("detailModal").classList.add("hidden"); }
+document.getElementById("closeDetail").onclick = closeDetail;
+document.getElementById("detailModal").addEventListener("click", e => { if (e.target.id === "detailModal") closeDetail(); });
+document.getElementById("closeRenamePet").onclick = closeRenamePet;
+document.getElementById("savePetName").onclick = () => commitPetName(false);
+document.getElementById("clearPetName").onclick = () => commitPetName(true);
+document.getElementById("renamePetModal").addEventListener("click", e => { if (e.target.id === "renamePetModal") closeRenamePet(); });
+document.getElementById("petNameInput").addEventListener("keydown", e => {
+  if (e.key === "Enter") commitPetName(false);
+});
+
+
+function renderDex() {
+  if (!gameData) return;
+  const discovered = new Set(gameData.ownedPets.map(p => p.key));
+  const habitats = ["Forest","Ocean","Mountain","Volcano","Arctic","Void","Sky","Undead"];
+  const habitatIcons = {Forest:"🌲",Ocean:"🌊",Mountain:"🏔️",Volcano:"🌋",Arctic:"❄️",Void:"🌌",Sky:"☁️",Undead:"🪦"};
+  const host = document.getElementById("dexHabitats");
+  host.innerHTML = habitats.map(h => {
+    const pets = gameData.petDex.filter(p => p.habitat === h);
+    const count = pets.filter(p => discovered.has(p.key)).length;
+    return `
+      <section class="habitat-section">
+        <div class="habitat-heading"><h3>${habitatIcons[h]} ${h}</h3><span class="level-pill">${count}/${pets.length}</span></div>
+        <div class="dex-list">
+          ${pets.map(p => `
+            <div class="dex-entry ${discovered.has(p.key) ? "" : "locked"}">
+              <div class="dex-icon">
+                ${discovered.has(p.key) && petArtPath(p)
+                  ? `<img class="dex-pet-image" src="${petArtPath(p)}" alt="${p.name} art" />`
+                  : discovered.has(p.key) ? p.icon : "❔"}
+              </div>
+              <div><b>${discovered.has(p.key) ? (ownedPet(p.key) ? petDisplayName(ownedPet(p.key)) : p.name) : "Undiscovered"}</b><small>${discovered.has(p.key) ? `${p.rarity} • ${p.ability}` : "Keep hatching eggs"}</small></div>
+            </div>`).join("")}
+        </div>
+      </section>`;
+  }).join("");
+
+  const beyond = document.getElementById("beyondGrid");
+  beyond.innerHTML = gameData.beyondPets.map(p => {
+    const found = discovered.has(p.key);
+    return `
+      <article class="pet-card ${found ? "" : "locked"}" data-rarity="${p.rarity}" ${found ? `data-pet-key="${p.key}"` : ""}>
+        <div class="pet-portrait">
+          <span class="rarity-pill">${found ? p.rarity : "???"}</span>
+          ${found && petArtPath(p)
+            ? `<img class="pet-card-image" src="${petArtPath(p)}" alt="${p.name} art" />`
+            : `<span class="pet-symbol">${found ? p.icon : "🌀"}</span>`}
+        </div>
+        <div class="pet-card-body"><h3>${found ? (ownedPet(p.key) ? petDisplayName(ownedPet(p.key)) : p.name) : "Unknown Companion"}</h3><p class="card-meta">${found ? p.habitat : "Beyond the known habitats"}</p></div>
+      </article>`;
+  }).join("");
+  beyond.querySelectorAll("[data-pet-key]").forEach(card => card.onclick = () => showPetDetail(card.dataset.petKey));
+}
+
+function renderInventoryFilters() {
+  const filters = ["All","Capture Item","Bait","Merchant","Collectible"];
+  const row = document.getElementById("inventoryFilters");
+  row.innerHTML = "";
+  filters.forEach(name => {
+    const b = document.createElement("button");
+    b.className = `filter-chip${currentInventoryFilter === name ? " active" : ""}`;
+    b.textContent = name;
+    b.onclick = () => { currentInventoryFilter = name; renderInventoryFilters(); renderInventory(); };
+    row.appendChild(b);
+  });
+}
+
+function renderInventory() {
+  if (!gameData) return;
+  let items = gameData.inventory;
+  if (currentInventoryFilter !== "All") items = items.filter(i => i.type === currentInventoryFilter);
+  document.getElementById("inventoryGrid").innerHTML = items.map(i => `
+    <article class="inventory-card ${i.qty === 0 ? "zero" : ""}">
+      <div class="inventory-top"><span class="inventory-icon">${i.icon}</span><span class="qty-badge">×${i.qty}</span></div>
+      <div class="inventory-body"><h3>${i.name}</h3><p class="card-meta">${i.type}</p><p class="card-ability">${i.effect}</p></div>
+    </article>
+  `).join("");
+}
+
+function renderCollection() {
+  if (!gameData) return;
+
+  document.getElementById("trophyGrid").innerHTML = gameData.trophies.map(t => `
+    <article class="trophy-card ${t.earned ? "" : "locked"}">
+      <div class="trophy-art">${t.earned ? t.icon : "🔒"}</div>
+      <div class="trophy-body"><h3>${t.earned ? t.name : "Unknown Trophy"}</h3><p class="card-meta">${t.source}</p><p class="card-ability">${t.earned ? t.description : "Complete the matching bounty to reveal this trophy."}</p></div>
+    </article>
+  `).join("");
+
+  document.getElementById("titleList").innerHTML = gameData.titles.map(t => `
+    <div class="title-row ${t.unlocked ? "" : "locked"} ${hunter?.title === t.name ? "equipped" : ""}">
+      <div><b>${t.secret && !t.unlocked ? "???" : t.name}</b><div class="title-state">${t.unlocked ? (hunter?.title === t.name ? "⭐ Equipped" : "Unlocked") : "Undiscovered"}</div></div>
+      <span>${t.unlocked ? "🎖️" : "🔒"}</span>
+    </div>
+  `).join("");
+
+  document.getElementById("cosmeticGrid").innerHTML = gameData.cosmetics.map(c => `
+    <article class="cosmetic-card ${c.unlocked ? "" : "locked"}">
+      <div class="cosmetic-art">${c.unlocked ? cosmeticIcon(c.slot) : "🔒"}</div>
+      <div class="cosmetic-body"><h3>${c.name}</h3><p class="card-meta">${c.slot}</p><p class="card-ability">${c.unlocked ? "Unlocked" : c.requirement}</p></div>
+    </article>
+  `).join("");
+}
+function cosmeticIcon(slot) {
+  return ({Cloak:"🧥",Headgear:"🪖",Outfit:"🥋",Weapon:"⚔️"}[slot] || "✨");
+}
+
+function buildCustomizerControls() {
+  createChoiceButtons("bodyOptions","body",OPTIONS.body);
+  createSwatches("skinOptions","skin",OPTIONS.skin);
+  createChoiceButtons("hairOptions","hair",OPTIONS.hair);
+  createSwatches("hairColorOptions","hairColor",OPTIONS.hairColor);
+  createChoiceButtons("eyeOptions","eyes",OPTIONS.eyes);
+  createChoiceButtons("beardOptions","beard",OPTIONS.beard);
+  createChoiceButtons("outfitOptions","outfit",OPTIONS.outfit);
+  createChoiceButtons("cloakOptions","cloak",OPTIONS.cloak);
+  createChoiceButtons("headgearOptions","headgear",OPTIONS.headgear);
+  createChoiceButtons("weaponOptions","weapon",OPTIONS.weapon);
+}
+function createChoiceButtons(containerId,key,items) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = "";
+  items.forEach(option => {
+    const unlocked = isUnlocked(option);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `choice${unlocked ? "" : " locked"}`;
+    btn.dataset.value = option.value;
+    btn.disabled = !unlocked;
+    btn.innerHTML = `<span>${option.label}</span>${unlocked ? "" : `<small class="unlock-note">${unlockText(option.unlock)}</small>`}`;
+    btn.onclick = () => { if (unlocked) { workingAppearance[key] = option.value; updateEditor(); } };
+    container.appendChild(btn);
+  });
+}
+function createSwatches(containerId,key,items) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = "";
+  items.forEach(option => {
+    const unlocked = isUnlocked(option);
+    const wrap = document.createElement("div");
+    wrap.className = "swatch-wrap";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `swatch${unlocked ? "" : " locked"}`;
+    btn.style.setProperty("--swatch",option.value);
+    btn.dataset.value = option.value;
+    btn.disabled = !unlocked;
+    btn.title = unlocked ? option.label : `${option.label} — ${unlockText(option.unlock)}`;
+    btn.onclick = () => { if (unlocked) { workingAppearance[key] = option.value; updateEditor(); } };
+    wrap.appendChild(btn);
+    if (!unlocked) {
+      const note = document.createElement("span"); note.className="swatch-unlock"; note.textContent=unlockText(option.unlock).replace("🔒 ",""); wrap.appendChild(note);
+    }
+    container.appendChild(wrap);
+  });
+}
+function syncSelectedStates() {
+  const map = [["bodyOptions","body"],["skinOptions","skin"],["hairOptions","hair"],["hairColorOptions","hairColor"],["eyeOptions","eyes"],["beardOptions","beard"],["outfitOptions","outfit"],["cloakOptions","cloak"],["headgearOptions","headgear"],["weaponOptions","weapon"]];
+  map.forEach(([id,key]) => document.querySelectorAll(`#${id} [data-value]`).forEach(b => b.classList.toggle("selected",b.dataset.value===workingAppearance[key])));
+}
+function cloneAvatarForEditor() {
+  const host = document.getElementById("editorAvatarHost");
+  host.innerHTML="";
+  const clone = document.getElementById("avatarPreview").cloneNode(true);
+  clone.id="editorAvatarPreview";
+  clone.querySelectorAll("[id]").forEach(el => el.removeAttribute("id"));
+  host.appendChild(clone);
+  applyAppearanceToAvatar(clone.querySelector(".avatar"),workingAppearance);
+}
+function updateEditor() {
+  applyAppearanceToAvatar(document.querySelector("#editorAvatarHost .avatar"),workingAppearance);
+  syncSelectedStates();
+}
+function openCustomizer() {
+  workingAppearance={...savedAppearance};
+  buildCustomizerControls();
+  cloneAvatarForEditor();
+  syncSelectedStates();
+  document.getElementById("customizerModal").classList.remove("hidden");
+}
+function closeCustomizer() { document.getElementById("customizerModal").classList.add("hidden"); }
+
+document.getElementById("customizeBtn").onclick=openCustomizer;
+document.getElementById("closeCustomizer").onclick=closeCustomizer;
+document.getElementById("customizerModal").addEventListener("click",e=>{if(e.target.id==="customizerModal")closeCustomizer();});
+document.getElementById("resetAppearance").onclick=()=>{workingAppearance={...DEFAULT_APPEARANCE};updateEditor();};
+document.getElementById("saveAppearance").onclick=()=>{
+  savedAppearance={...workingAppearance}; saveAppearance(); renderMainAvatar(); closeCustomizer();
+  document.getElementById("status").textContent="✅ Hunter appearance saved locally in the Phase D sandbox.";
+};
+
+
+
+function renderHomeLeaderboard() {
+  if (!phaseG5Leaderboards) return;
+  const rows = phaseG5Leaderboards[activeLeaderboard] || [];
+  const list = document.getElementById("leaderboardList");
+  if (!list) return;
+  list.innerHTML = rows.map(row => `
+    <div class="leader-row ${row.self ? "self" : ""}">
+      <span class="leader-rank">${row.rank === 1 ? "🥇" : row.rank === 2 ? "🥈" : row.rank === 3 ? "🥉" : `#${row.rank}`}</span>
+      <span class="leader-name">${row.name}${row.self ? " <small>YOU</small>" : ""}</span>
+      <b>${row.points} ⭐</b>
+    </div>
+  `).join("");
+  document.querySelectorAll("[data-leaderboard]").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.leaderboard === activeLeaderboard);
+    btn.onclick = () => {
+      activeLeaderboard = btn.dataset.leaderboard;
+      renderHomeLeaderboard();
+    };
+  });
+}
+
+function renderPhaseFHunting() {
+  if (!phaseFHunting) return;
+
+  const grid = document.getElementById("huntZoneGrid");
+  grid.innerHTML = phaseFHunting.zones.map(zone => `
+    <button class="hunt-zone-card" data-zone="${zone.key}">
+      <div class="hunt-zone-art">${zone.icon}</div>
+      <div class="hunt-zone-body">
+        <p class="eyebrow">${zone.subtitle}</p>
+        <h3>${zone.name}</h3>
+        <p>${zone.description}</p>
+      </div>
+    </button>
+  `).join("");
+
+  grid.querySelectorAll("[data-zone]").forEach(card => {
+    card.onclick = () => enterHuntZone(card.dataset.zone);
+  });
+
+  localToolUses = Object.fromEntries(phaseFHunting.captureTools.map(t => [t.key, t.uses]));
+  document.getElementById("leaveHuntBtn").onclick = leaveHuntZone;
+  document.getElementById("searchEncounterBtn").onclick = searchEncounter;
+  document.getElementById("huntAgainBtn").onclick = resetEncounterForNextHunt;
+}
+
+function enterHuntZone(key) {
+  activeHuntZone = phaseFHunting.zones.find(z => z.key === key);
+  if (!activeHuntZone) return;
+
+  document.getElementById("huntZoneGrid").classList.add("hidden");
+  document.getElementById("huntArena").classList.remove("hidden");
+  document.getElementById("arenaZoneName").textContent = activeHuntZone.name;
+  document.getElementById("arenaZoneType").textContent = activeHuntZone.subtitle.toUpperCase();
+  document.getElementById("encounterStage").className = `encounter-stage ${activeHuntZone.backgroundClass || "forest"}`;
+  huntAttemptNumber = 1;
+  document.getElementById("arenaAttempts").textContent = `Attempt ${huntAttemptNumber}`;
+  resetEncounterForNextHunt();
+}
+
+function leaveHuntZone() {
+  activeHuntZone = null;
+  currentEncounter = null;
+  document.getElementById("huntArena").classList.add("hidden");
+  document.getElementById("huntZoneGrid").classList.remove("hidden");
+}
+
+function weightedRandomMonster(zone) {
+  // DEV rarity weighting: common > rare > epic > legendary.
+  if (zone.monsters.length === 1) return zone.monsters[0];
+  const weights = zone.monsters.map(m => {
+    if (m.rarity === "Common") return 50;
+    if (m.rarity === "Rare") return 28;
+    if (m.rarity === "Epic") return 15;
+    if (m.rarity === "Legendary") return 7;
+    return 20;
+  });
+  let roll = Math.random() * weights.reduce((a,b)=>a+b,0);
+  for (let i=0;i<zone.monsters.length;i++) {
+    roll -= weights[i];
+    if (roll <= 0) return zone.monsters[i];
+  }
+  return zone.monsters[0];
+}
+
+function searchEncounter() {
+  if (!activeHuntZone) return;
+
+  currentEncounter = weightedRandomMonster(activeHuntZone);
+  selectedTool = null;
+  rimebitSecondChanceUsed = false;
+
+  document.getElementById("monsterVisual").textContent = currentEncounter.icon;
+  document.getElementById("monsterRarity").textContent = currentEncounter.rarity;
+  document.getElementById("monsterName").textContent = currentEncounter.name;
+  document.getElementById("encounterFlavor").textContent =
+    activeHuntZone.key === "bounty"
+      ? "A suspicious trail has been found. This DEV hunt checks the active bounty trail."
+      : `A ${currentEncounter.rarity.toLowerCase()} creature has appeared. Choose whether to hunt normally or use bait.`;
+
+  updateCaptureChance(currentEncounter.baseChance);
+  document.getElementById("captureTools").classList.remove("hidden");
+  document.getElementById("huntResultPanel").classList.add("hidden");
+  renderCaptureTools();
+  flashEncounterEffect("✨");
+}
+
+function renderCaptureTools() {
+  const grid = document.getElementById("captureToolGrid");
+  grid.innerHTML = phaseFHunting.captureTools.map(tool => {
+    const uses = localToolUses[tool.key];
+    const unavailable = uses === 0;
+    return `
+      <button class="capture-tool ${selectedTool === tool.key ? "selected" : ""}" data-tool="${tool.key}" ${unavailable ? "disabled" : ""}>
+        <span class="tool-icon">${tool.icon}</span>
+        <strong>${tool.name}</strong>
+        <small>${tool.bonus >= 100 ? "Guaranteed DEV catch" : tool.bonus ? `+${tool.bonus}% chance` : "No bait used"}</small>
+        <small>${uses === null ? "Unlimited" : `${uses} left in DEV`}</small>
+      </button>
+    `;
+  }).join("");
+
+  grid.querySelectorAll("[data-tool]").forEach(btn => {
+    btn.onclick = () => selectCaptureTool(btn.dataset.tool);
+  });
+}
+
+function selectCaptureTool(key) {
+  if (!currentEncounter) return;
+  const tool = phaseFHunting.captureTools.find(t => t.key === key);
+  if (!tool) return;
+  if (localToolUses[key] === 0) return;
+
+  selectedTool = key;
+  renderCaptureTools();
+  const chance = Math.min(100, currentEncounter.baseChance + tool.bonus);
+  updateCaptureChance(chance);
+
+  // Add/refresh Capture button under tool grid.
+  let captureBtn = document.getElementById("performCaptureBtn");
+  if (!captureBtn) {
+    captureBtn = document.createElement("button");
+    captureBtn.id = "performCaptureBtn";
+    captureBtn.className = "primary full event-action";
+    captureBtn.textContent = "🎯 Attempt Catch";
+    document.getElementById("captureTools").appendChild(captureBtn);
+  }
+  captureBtn.onclick = performCapture;
+}
+
+function updateCaptureChance(chance) {
+  document.getElementById("captureChance").textContent = `${chance}%`;
+  document.getElementById("chanceMeterFill").style.width = `${chance}%`;
+}
+
+function performCapture() {
+  if (!currentEncounter || !selectedTool) return;
+
+  const tool = phaseFHunting.captureTools.find(t => t.key === selectedTool);
+  const chance = Math.min(100, currentEncounter.baseChance + tool.bonus);
+  if (localToolUses[selectedTool] !== null && localToolUses[selectedTool] > 0) {
+    localToolUses[selectedTool]--;
+  }
+
+  const roll = Math.floor(Math.random() * 100) + 1;
+  const success = chance >= 100 || roll <= chance;
+
+  document.getElementById("captureTools").classList.add("hidden");
+
+  if (success) {
+    showCaptureSuccess(roll, chance, tool);
+  } else {
+    maybeUseRimebitSecondChance(roll, chance, tool);
+  }
+}
+
+function maybeUseRimebitSecondChance(roll, chance, tool) {
+  // 55% DEV demo chance so players see the companion mechanic often.
+  if (!rimebitSecondChanceUsed && Math.random() < 0.55) {
+    rimebitSecondChanceUsed = true;
+    flashEncounterEffect("❄️");
+    document.getElementById("huntResultPanel").classList.remove("hidden");
+    document.getElementById("huntResultTitle").textContent = "❄️ Rimebit Used Second Chance!";
+    document.getElementById("huntResultText").textContent =
+      `Your catch roll was ${roll} against ${chance}%. The creature started to flee, but Rimebit froze the moment long enough for one more attempt.`;
+    document.getElementById("huntResultRewards").innerHTML = `<span>💎 Companion Ability Triggered</span>`;
+    document.getElementById("huntAgainBtn").textContent = "🎯 Reroll Capture";
+    document.getElementById("huntAgainBtn").onclick = performRimebitReroll;
+  } else {
+    showCaptureFailure(roll, chance);
+  }
+}
+
+function performRimebitReroll() {
+  const tool = phaseFHunting.captureTools.find(t => t.key === selectedTool);
+  const chance = Math.min(100, currentEncounter.baseChance + tool.bonus);
+  const roll = Math.floor(Math.random() * 100) + 1;
+  if (roll <= chance) showCaptureSuccess(roll, chance, tool, true);
+  else showCaptureFailure(roll, chance, true);
+}
+
+function showCaptureSuccess(roll, chance, tool, secondChance=false) {
+  flashEncounterEffect("🎉");
+  document.getElementById("huntResultPanel").classList.remove("hidden");
+  document.getElementById("huntResultTitle").textContent = `🎉 ${currentEncounter.name} Captured!`;
+
+  const extra = [];
+  if (activeHuntZone.key === "biggame") extra.push(`+${currentEncounter.tokens || 1} DEV Hunt Tokens`);
+  if (activeHuntZone.key === "distortion" && Math.random() < 0.40) extra.push("❄️🥚 Shardbound Egg found!");
+  if (activeHuntZone.key === "bounty") extra.push("🔎 New bounty evidence collected");
+
+  document.getElementById("huntResultText").textContent =
+    `${secondChance ? "Rimebit's second chance worked! " : ""}Roll ${roll} succeeded against a ${chance}% DEV catch chance using ${tool.name}.`;
+
+  document.getElementById("huntResultRewards").innerHTML =
+    `<span>⭐ +${currentEncounter.points || 0} DEV Points</span>` +
+    extra.map(x => `<span>${x}</span>`).join("");
+
+  document.getElementById("huntAgainBtn").textContent = "🏹 Hunt Again";
+  document.getElementById("huntAgainBtn").onclick = resetEncounterForNextHunt;
+}
+
+function showCaptureFailure(roll, chance, secondChance=false) {
+  flashEncounterEffect("💨");
+  document.getElementById("huntResultPanel").classList.remove("hidden");
+  document.getElementById("huntResultTitle").textContent = "💨 The Creature Escaped";
+  document.getElementById("huntResultText").textContent =
+    `${secondChance ? "Even after Rimebit's second chance, " : ""}roll ${roll} missed the ${chance}% DEV catch chance.`;
+  document.getElementById("huntResultRewards").innerHTML = `<span>🧪 No live rewards lost</span>`;
+  document.getElementById("huntAgainBtn").textContent = "🏹 Hunt Again";
+  document.getElementById("huntAgainBtn").onclick = resetEncounterForNextHunt;
+}
+
+function resetEncounterForNextHunt() {
+  if (!activeHuntZone) return;
+  currentEncounter = null;
+  selectedTool = null;
+  huntAttemptNumber++;
+  document.getElementById("arenaAttempts").textContent = `Attempt ${huntAttemptNumber}`;
+  document.getElementById("monsterVisual").textContent = "❔";
+  document.getElementById("monsterRarity").textContent = "Unknown";
+  document.getElementById("monsterName").textContent = "Searching…";
+  document.getElementById("captureChance").textContent = "—%";
+  document.getElementById("chanceMeterFill").style.width = "0%";
+  document.getElementById("encounterFlavor").textContent = "Start the hunt to roll an encounter.";
+  document.getElementById("captureTools").classList.add("hidden");
+  document.getElementById("huntResultPanel").classList.add("hidden");
+  document.getElementById("searchEncounterBtn").disabled = false;
+}
+
+function flashEncounterEffect(symbol) {
+  const effect = document.getElementById("encounterEffect");
+  effect.textContent = symbol;
+  effect.classList.remove("hidden");
+  effect.style.animation = "none";
+  void effect.offsetWidth;
+  effect.style.animation = "";
+  setTimeout(() => effect.classList.add("hidden"), 900);
+}
+
+function formatCountdown(ms) {
+  ms = Math.max(0, Number(ms) || 0);
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+
+function switchEventView(view) {
+  document.querySelectorAll(".event-tab").forEach(b => b.classList.toggle("active", b.dataset.eventView === view));
+  document.querySelectorAll("[data-event-view-panel]").forEach(p => p.classList.toggle("active", p.dataset.eventViewPanel === view));
+}
+
+function setupEventNavigation() {
+  document.querySelectorAll(".event-tab").forEach(b => {
+    b.onclick = () => switchEventView(b.dataset.eventView);
+  });
+  document.querySelectorAll("[data-open-event]").forEach(b => {
+    b.onclick = () => switchEventView(b.dataset.openEvent);
+  });
+}
+
+function renderPhaseEEvents() {
+  if (!phaseEEvents) return;
+  setupEventNavigation();
+
+  const big = phaseEEvents.bigGame;
+  document.getElementById("bigGameScore").textContent = `${big.playerScore} 🪙`;
+  document.getElementById("bigGameWallet").textContent = `${big.tokenBalance} 🪙`;
+
+  document.getElementById("bigGameLeaderboard").innerHTML = big.leaderboard.map((entry, i) => `
+    <div class="leaderboard-row ${entry.name === "Activity Test Hunter" ? "you" : ""}">
+      <div class="rank-medal">${["🥇","🥈","🥉"][i] || `#${i+1}`}</div>
+      <div><b>${entry.name}</b>${entry.name === "Activity Test Hunter" ? `<small style="display:block;color:#a5b4fc">You</small>` : ""}</div>
+      <div class="leader-score">${entry.score} 🪙</div>
+    </div>
+  `).join("");
+
+  document.getElementById("bigGameTokenRewards").innerHTML = Object.entries(big.tokenRewards).map(([rarity,value]) => `
+    <div class="reward-chip">${rarity}<b>+${value} 🪙</b></div>
+  `).join("");
+
+  const bounty = phaseEEvents.bounty;
+  document.getElementById("bountyNpc").textContent = bounty.npc;
+  document.getElementById("bountyClue").textContent = bounty.clue;
+  document.getElementById("bountyParticipants").textContent = bounty.participants;
+  document.getElementById("bountyAttempts").textContent = bounty.attempts;
+
+  const distortion = phaseEEvents.distortion;
+  document.getElementById("distortionName").textContent = distortion.name;
+  document.getElementById("distortionStory").textContent = distortion.story;
+  document.getElementById("distortionMonsters").innerHTML = distortion.monsters.map(m => `
+    <div class="distortion-monster">
+      <span class="monster-icon">${m.icon}</span>
+      <div><b>${m.name}</b><small>${m.rarity}</small></div>
+      <span class="distortion-points">+${m.points} pts</span>
+    </div>
+  `).join("");
+
+  document.getElementById("planeGrid").innerHTML = distortion.knownPlanes.map(p => `
+    <div class="plane-card ${p.discovered ? "" : "unknown"}">
+      <span>${p.icon}</span><b>${p.name}</b>
+    </div>
+  `).join("");
+
+  setupDevEventButtons();
+  updateEventTimers();
+}
+
+function updateEventTimers() {
+  if (!phaseEEvents) return;
+  const now = Date.now();
+  const bigRemaining = phaseEEvents.bigGame.endsAt - now;
+  const distortionRemaining = phaseEEvents.distortion.endsAt - now;
+  const bigText = formatCountdown(bigRemaining);
+  const distortionText = formatCountdown(distortionRemaining);
+
+  const bg = document.getElementById("bigGameTimer");
+  const dt = document.getElementById("distortionTimer");
+  const obg = document.getElementById("overviewBigGameTime");
+  const od = document.getElementById("overviewDistortionTime");
+  if (bg) bg.textContent = `${bigText} remaining`;
+  if (dt) dt.textContent = `${distortionText} remaining`;
+  if (obg) obg.textContent = `${bigText} remaining`;
+  if (od) od.textContent = `${distortionText} remaining`;
+}
+
+function startEventTimers() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(updateEventTimers, 1000);
+}
+
+function showDevResult(button, text) {
+  const old = button.parentElement.querySelector(".dev-result");
+  if (old) old.remove();
+  const result = document.createElement("div");
+  result.className = "dev-result";
+  result.textContent = text;
+  button.insertAdjacentElement("afterend", result);
+}
+
+function setupDevEventButtons() {
+  const bigBtn = document.getElementById("devBigGameHunt");
+  const bountyBtn = document.getElementById("devBountyHunt");
+  const distortionBtn = document.getElementById("devDistortionHunt");
+
+  if (bigBtn) bigBtn.onclick = () => {
+    const samples = [
+      "🐺 Rare creature caught! DEV reward: +2 Hunt Tokens.",
+      "🌿 Common creature caught! DEV reward: +1 Hunt Token.",
+      "🐉 Legendary trail found! DEV reward: +8 Hunt Tokens.",
+      "💨 The creature escaped. No DEV tokens awarded."
+    ];
+    showDevResult(bigBtn, samples[Math.floor(Math.random()*samples.length)]);
+  };
+
+  if (bountyBtn) bountyBtn.onclick = () => {
+    devBountyAttempts++;
+    const samples = [
+      "🔎 You found fresh thorn-covered fur. The target passed through recently.",
+      "🐾 The tracks turn toward the creek. Whatever made them is heavy.",
+      "🌲 A damaged tree reveals deep claw marks several feet above the ground.",
+      "💨 Nothing. The trail goes cold."
+    ];
+    document.getElementById("bountyAttempts").textContent = phaseEEvents.bounty.attempts + devBountyAttempts;
+    showDevResult(bountyBtn, samples[Math.floor(Math.random()*samples.length)]);
+  };
+
+  if (distortionBtn) distortionBtn.onclick = () => {
+    const m = phaseEEvents.distortion.monsters[Math.floor(Math.random()*phaseEEvents.distortion.monsters.length)];
+    showDevResult(distortionBtn, `🌀 DEV encounter: ${m.icon} ${m.name} — ${m.rarity}. No live hunt was created.`);
+  };
+}
+
+async function boot() {
+  try {
+    const [hunterRes,dataRes,eventRes,huntRes,alignRes,leaderRes] = await Promise.all([
+      fetch("/api/test-hunter",{cache:"no-store"}),
+      fetch("/api/phase-d-data",{cache:"no-store"}),
+      fetch("/api/phase-e-events",{cache:"no-store"}),
+      fetch("/api/phase-f-hunting",{cache:"no-store"}),
+      fetch("/api/phase-g-alignment",{cache:"no-store"}),
+      fetch("/api/phase-g5-leaderboards",{cache:"no-store"})
+    ]);
+    if (!hunterRes.ok || !dataRes.ok || !eventRes.ok || !huntRes.ok || !alignRes.ok || !leaderRes.ok) throw new Error("Failed to load DEV data.");
+    hunter = await hunterRes.json();
+    gameData = await dataRes.json();
+    phaseEEvents = await eventRes.json();
+    phaseFHunting = await huntRes.json();
+    phaseGAlignment = await alignRes.json();
+    phaseG5Leaderboards = await leaderRes.json();
+    applyLocalPetNames();
+
+    document.getElementById("hunterName").textContent=hunter.name;
+    document.getElementById("hunterTitle").textContent=hunter.title;
+    document.getElementById("level").textContent=hunter.level;
+    document.getElementById("points").textContent=hunter.points;
+    document.getElementById("tokens").textContent=hunter.tokens;
+    document.getElementById("petsCount").textContent=`${gameData.ownedPets.length} owned`;
+    document.getElementById("ownedPetCount").textContent=gameData.ownedPets.length;
+    document.getElementById("petdexCount").textContent=hunter.stats.petDex;
+    document.getElementById("dexProgress").textContent=hunter.stats.petDex;
+    document.getElementById("trophyCount").textContent=`${hunter.stats.trophies} trophies`;
+
+    playerProgress={
+      level:Number(hunter.level)||0,
+      trophies:Number(hunter.stats.trophies)||0,
+      petdex:Number(String(hunter.stats.petDex).split("/")[0])||0
+    };
+
+    const ownedKeys=new Set(gameData.ownedPets.map(p=>p.key));
+    if (!ownedKeys.has(activePetKey)) activePetKey=hunter.activePetKey;
+
+    renderMainAvatar();
+    renderPetFilters();
+    renderPets();
+    renderDex();
+    renderInventoryFilters();
+    renderInventory();
+    renderCollection();
+    renderActivePet();
+
+    renderHomeLeaderboard();
+    renderPhaseEEvents();
+    renderPhaseFHunting();
+    startEventTimers();
+
+    document.getElementById("status").textContent="✅ Phase G.6 loaded. Pet art now appears on Home, Pets, and PetDex; DEV pet naming is enabled.";
+  } catch (err) {
+    console.error(err);
+    document.getElementById("status").textContent="❌ Phase D DEV data failed to load.";
+  }
+}
+
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeCustomizer();closeDetail();}});
+boot();
