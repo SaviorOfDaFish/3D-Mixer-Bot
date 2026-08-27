@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#111827" />
-  <title>Monster Hunt Activity — Phase B</title>
-  <link rel="stylesheet" href="/styles-phase-c.css?v=3" />
+  <meta name="theme-color" content="#0b1220" />
+  <title>Monster Hunt Activity — Phase D</title>
+  <link rel="stylesheet" href="/styles-phase-d.css?v=4" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">DEV BUILD • PHASE B</p>
+        <p class="eyebrow">DEV BUILD • PHASE D</p>
         <h1>🏹 Monster Hunt</h1>
       </div>
       <div class="wallet">
@@ -20,166 +20,179 @@
       </div>
     </header>
 
-    <main class="page-scroll">
-      <section class="hero-card">
-        <div class="scene">
-          <div class="moon"></div>
-          <div class="mountains"></div>
+    <main class="page-scroll" id="pageScroll">
 
-          <div class="avatar-wrap" id="avatarPreview" aria-label="Hunter avatar preview">
-            <div class="avatar-shadow"></div>
+      <section class="screen active" data-screen="home">
+        <section class="hero-card">
+          <div class="scene">
+            <div class="moon"></div>
+            <div class="mountains"></div>
+            <div class="ambient ambient-one"></div>
+            <div class="ambient ambient-two"></div>
 
-            <div class="avatar">
-              <div class="cloak-layer" id="cloakLayer"></div>
-
-              <div class="head">
-                <div class="hair hair-back" id="hairBack"></div>
-                <div class="ears"></div>
-                <div class="face" id="faceLayer">
-                  <div class="eyes" id="eyesLayer"><i></i><i></i></div>
-                  <div class="brows"></div>
-                  <div class="nose"></div>
-                  <div class="mouth"></div>
-                  <div class="beard" id="beardLayer"></div>
+            <div class="avatar-wrap" id="avatarPreview" aria-label="Hunter avatar preview">
+              <div class="avatar-shadow"></div>
+              <div class="avatar">
+                <div class="cloak-layer"></div>
+                <div class="weapon-back"></div>
+                <div class="head">
+                  <div class="hair hair-back"></div>
+                  <div class="ears"></div>
+                  <div class="face">
+                    <div class="eyes"><i></i><i></i></div>
+                    <div class="brows"></div>
+                    <div class="nose"></div>
+                    <div class="mouth"></div>
+                    <div class="beard"></div>
+                  </div>
+                  <div class="hair hair-front"></div>
+                  <div class="headgear"></div>
                 </div>
-                <div class="hair hair-front" id="hairFront"></div>
-                <div class="headgear" id="headgearLayer"></div>
+                <div class="neck"></div>
+                <div class="torso"><div class="chest-detail"></div><div class="belt"></div></div>
+                <div class="arm arm-left"><span class="bracer"></span><span class="hand"></span></div>
+                <div class="arm arm-right"><span class="bracer"></span><span class="hand"></span></div>
+                <div class="legs"><div class="leg"></div><div class="leg"></div></div>
+                <div class="boots"><div class="boot"></div><div class="boot"></div></div>
               </div>
+            </div>
 
-              <div class="neck"></div>
-
-              <div class="torso" id="outfitLayer">
-                <div class="belt"></div>
-              </div>
-
-              <div class="arm arm-left"><span class="hand"></span></div>
-              <div class="arm arm-right"><span class="hand"></span></div>
-
-              <div class="legs">
-                <div class="leg"></div>
-                <div class="leg"></div>
-              </div>
-              <div class="boots">
-                <div class="boot"></div>
-                <div class="boot"></div>
-              </div>
+            <div class="active-pet-portrait" id="activePetPortrait">
+              <div class="pet-aura"></div>
+              <div class="pet-art" id="petIcon">💎</div>
             </div>
           </div>
 
-          <div class="pet" id="petIcon" aria-label="Active pet">🐲</div>
-        </div>
-
-        <div class="identity">
-          <div>
-            <p class="eyebrow">YOUR HUNTER</p>
-            <h2 id="hunterName">Loading…</h2>
-            <p><span id="hunterTitle">—</span> • Level <span id="level">—</span></p>
+          <div class="identity">
+            <div>
+              <p class="eyebrow">YOUR HUNTER</p>
+              <h2 id="hunterName">Loading…</h2>
+              <p><span id="hunterTitle">—</span> • Level <span id="level">—</span></p>
+            </div>
+            <button class="secondary" id="customizeBtn" type="button">Customize</button>
           </div>
-          <button class="secondary" id="customizeBtn" type="button">Customize</button>
-        </div>
-      </section>
+        </section>
 
-      <section class="quick-grid" aria-label="Hunter dashboard">
-        <button class="tile" data-demo="pets"><span>🐾</span><b>Pets</b><small id="petsCount">— owned</small></button>
-        <button class="tile" data-demo="inventory"><span>🎒</span><b>Inventory</b><small>View supplies</small></button>
-        <button class="tile" data-demo="petdex"><span>📖</span><b>PetDex</b><small id="petdexCount">—</small></button>
-        <button class="tile" data-demo="trophies"><span>🏆</span><b>Trophies</b><small id="trophyCount">— earned</small></button>
-      </section>
+        <section class="quick-grid" aria-label="Hunter dashboard">
+          <button class="tile" data-nav="pets"><span>🐾</span><b>Pets</b><small id="petsCount">— owned</small></button>
+          <button class="tile" data-nav="inventory"><span>🎒</span><b>Inventory</b><small>Supplies & relics</small></button>
+          <button class="tile" data-nav="petdex"><span>📖</span><b>PetDex</b><small id="petdexCount">—</small></button>
+          <button class="tile" data-nav="collection"><span>🏆</span><b>Collection</b><small id="trophyCount">— trophies</small></button>
+        </section>
 
-      <section class="panel">
-        <div class="panel-heading">
-          <div>
-            <p class="eyebrow">ACTIVE COMPANION</p>
-            <h3 id="petName">—</h3>
+        <section class="panel companion-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">ACTIVE COMPANION</p>
+              <h3 id="petName">—</h3>
+            </div>
+            <span class="level-pill">Lv. <span id="petLevel">—</span></span>
           </div>
-          <span class="level-pill">Lv. <span id="petLevel">—</span></span>
-        </div>
-        <p class="muted">Still sandboxed. Character customization is saved only in this browser/device. Some cosmetics are now progression-locked for testing.</p>
-        <button class="primary full" type="button" data-demo="change-pet">Change Active Pet</button>
+          <div class="companion-stats">
+            <span>💞 Bond <b id="petBond">—</b>/5</span>
+            <span>✨ Ability <b id="petAbility">—</b></span>
+          </div>
+          <button class="primary full" type="button" data-nav="pets">Manage Companions</button>
+        </section>
+
+        <section class="panel">
+          <p class="eyebrow">PHASE D</p>
+          <h3>Complete Visual Game UI</h3>
+          <p class="muted">Pets, PetDex, inventory, trophies, titles, cosmetics, and detailed Hunter customization now live in one mobile-first Activity shell. Still sandboxed from the live game.</p>
+          <div id="status" class="status">✅ Loading Phase D…</div>
+        </section>
       </section>
 
-      <section class="panel">
-        <p class="eyebrow">PHASE B CHECK</p>
-        <h3>Character Creator + Unlocks</h3>
-        <p class="muted">Male and female body presets are available. Locked cosmetics show the level, trophy, or PetDex milestone needed to earn them.</p>
-        <div id="status" class="status">✅ Activity shell loaded.</div>
+      <section class="screen" data-screen="pets">
+        <div class="screen-header">
+          <div><p class="eyebrow">COMPANIONS</p><h2>Your Pets</h2></div>
+          <span class="screen-count" id="ownedPetCount">0</span>
+        </div>
+        <div class="filter-row" id="petFilters"></div>
+        <div class="pet-grid" id="petGrid"></div>
       </section>
+
+      <section class="screen" data-screen="petdex">
+        <div class="screen-header">
+          <div><p class="eyebrow">COLLECTION</p><h2>PetDex</h2></div>
+          <span class="screen-count" id="dexProgress">0/32</span>
+        </div>
+        <p class="muted intro-copy">Known habitats remain the core collection. Distortion companions appear separately as discoveries beyond the known world.</p>
+        <div id="dexHabitats"></div>
+        <section class="panel">
+          <p class="eyebrow">BEYOND THE KNOWN HABITATS</p>
+          <h3>🌀 Distortion Companions</h3>
+          <div class="pet-grid compact-grid" id="beyondGrid"></div>
+        </section>
+      </section>
+
+      <section class="screen" data-screen="inventory">
+        <div class="screen-header">
+          <div><p class="eyebrow">HUNTER PACK</p><h2>Inventory</h2></div>
+          <span class="screen-count">🎒</span>
+        </div>
+        <div class="filter-row" id="inventoryFilters"></div>
+        <div class="inventory-grid" id="inventoryGrid"></div>
+      </section>
+
+      <section class="screen" data-screen="collection">
+        <div class="screen-header">
+          <div><p class="eyebrow">ACHIEVEMENTS</p><h2>Hunter Collection</h2></div>
+          <span class="screen-count">🏆</span>
+        </div>
+
+        <section class="panel">
+          <div class="section-title-row"><div><p class="eyebrow">BOUNTY TROPHIES</p><h3>Monster Trophies</h3></div></div>
+          <div class="trophy-grid" id="trophyGrid"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-title-row"><div><p class="eyebrow">IDENTITY</p><h3>Titles</h3></div></div>
+          <div class="title-list" id="titleList"></div>
+        </section>
+
+        <section class="panel">
+          <div class="section-title-row"><div><p class="eyebrow">PROGRESSION REWARDS</p><h3>Cosmetics</h3></div></div>
+          <div class="cosmetic-grid" id="cosmeticGrid"></div>
+        </section>
+      </section>
+
     </main>
 
     <nav class="bottom-nav" aria-label="Main navigation">
-      <button class="nav-active" data-demo="home"><span>🏕️</span><small>Home</small></button>
-      <button data-demo="pets"><span>🐾</span><small>Pets</small></button>
-      <button data-demo="hunt"><span>🏹</span><small>Hunt</small></button>
-      <button data-demo="events"><span>🌀</span><small>Events</small></button>
+      <button class="nav-active" data-nav="home"><span>🏕️</span><small>Home</small></button>
+      <button data-nav="pets"><span>🐾</span><small>Pets</small></button>
+      <button data-nav="petdex"><span>📖</span><small>PetDex</small></button>
+      <button data-nav="inventory"><span>🎒</span><small>Gear</small></button>
+      <button data-nav="collection"><span>🏆</span><small>Collection</small></button>
     </nav>
   </div>
 
-  <div class="modal-backdrop hidden" id="customizerModal" role="dialog" aria-modal="true" aria-labelledby="customizerTitle">
+  <div class="modal-backdrop hidden" id="customizerModal" role="dialog" aria-modal="true">
     <section class="customizer-sheet">
       <header class="customizer-header">
-        <div>
-          <p class="eyebrow">APPEARANCE EDITOR</p>
-          <h2 id="customizerTitle">Customize Hunter</h2>
-        </div>
-        <button class="icon-button" id="closeCustomizer" aria-label="Close customizer">✕</button>
+        <div><p class="eyebrow">APPEARANCE EDITOR</p><h2>Customize Hunter</h2></div>
+        <button class="icon-button" id="closeCustomizer" aria-label="Close">✕</button>
       </header>
-
       <div class="customizer-body">
         <div class="editor-preview-card">
-          <div class="mini-stage">
-            <div id="editorAvatarHost"></div>
-          </div>
+          <div class="mini-stage"><div id="editorAvatarHost"></div></div>
           <p class="preview-name">Activity Test Hunter</p>
+          <p class="muted mini-note">Progression-locked cosmetics stay visible so players know what they can earn next.</p>
         </div>
-
         <div class="editor-controls">
-          <div class="control-section">
-            <label>Body</label>
-            <div class="choice-grid" id="bodyOptions"></div>
-          </div>
-
-          <div class="control-section">
-            <label>Skin Tone</label>
-            <div class="swatch-row" id="skinOptions"></div>
-          </div>
-
-          <div class="control-section">
-            <label>Hair Style</label>
-            <div class="choice-grid" id="hairOptions"></div>
-          </div>
-
-          <div class="control-section">
-            <label>Hair Color</label>
-            <div class="swatch-row" id="hairColorOptions"></div>
-          </div>
-
-          <div class="control-section">
-            <label>Eyes</label>
-            <div class="choice-grid compact" id="eyeOptions"></div>
-          </div>
-
-          <div class="control-section">
-            <label>Facial Hair</label>
-            <div class="choice-grid" id="beardOptions"></div>
-          </div>
-
-          <div class="control-section">
-            <label>Outfit</label>
-            <div class="choice-grid" id="outfitOptions"></div>
-          </div>
-
-          <div class="control-section">
-            <label>Cloak</label>
-            <div class="choice-grid" id="cloakOptions"></div>
-          </div>
-
-          <div class="control-section">
-            <label>Headgear</label>
-            <div class="choice-grid" id="headgearOptions"></div>
-          </div>
+          <div class="control-section"><label>Body</label><div class="choice-grid" id="bodyOptions"></div></div>
+          <div class="control-section"><label>Skin Tone</label><div class="swatch-row" id="skinOptions"></div></div>
+          <div class="control-section"><label>Hair Style</label><div class="choice-grid" id="hairOptions"></div></div>
+          <div class="control-section"><label>Hair Color</label><div class="swatch-row" id="hairColorOptions"></div></div>
+          <div class="control-section"><label>Eyes</label><div class="choice-grid compact" id="eyeOptions"></div></div>
+          <div class="control-section"><label>Facial Hair</label><div class="choice-grid" id="beardOptions"></div></div>
+          <div class="control-section"><label>Outfit</label><div class="choice-grid" id="outfitOptions"></div></div>
+          <div class="control-section"><label>Cloak</label><div class="choice-grid" id="cloakOptions"></div></div>
+          <div class="control-section"><label>Headgear</label><div class="choice-grid" id="headgearOptions"></div></div>
+          <div class="control-section"><label>Weapon Display</label><div class="choice-grid" id="weaponOptions"></div></div>
         </div>
       </div>
-
       <footer class="customizer-footer">
         <button class="secondary" id="resetAppearance" type="button">Reset</button>
         <button class="primary" id="saveAppearance" type="button">Save Appearance</button>
@@ -187,6 +200,16 @@
     </section>
   </div>
 
-  <script src="/app-phase-c.js?v=3"></script>
+  <div class="modal-backdrop hidden" id="detailModal" role="dialog" aria-modal="true">
+    <section class="detail-sheet">
+      <header class="customizer-header">
+        <div><p class="eyebrow" id="detailEyebrow">COMPANION</p><h2 id="detailTitle">Pet</h2></div>
+        <button class="icon-button" id="closeDetail" aria-label="Close">✕</button>
+      </header>
+      <div class="detail-body" id="detailBody"></div>
+    </section>
+  </div>
+
+  <script src="/app-phase-d.js?v=4"></script>
 </body>
 </html>
