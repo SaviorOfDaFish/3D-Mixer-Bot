@@ -1,52 +1,116 @@
-# Monster Hunt — Phase H.1.1
-## Discord Activity Proxy Fix
+# Monster Hunt — Phase H.2A
+## Full Live Systems
 
-H.1 loaded the Activity shell but did not complete the live Discord-user/API
-connection. The screenshots showed the exact symptoms:
-- Home stuck on `Loading...`
-- Hunt still showing `Activity Test Hunter`
-- no live `Begin Hunt` button
+Built directly on the WORKING H.1.1 Discord Activity proxy/auth version.
 
-H.1.1 fixes the Activity API routing to use Discord's official embedded-app
-proxy path:
+### Live systems now connected to `/data/monster-hunt.db`
 
-`/.proxy/api/...`
+- real Discord player
+- real normal hunting + capture resolution
+- real owned pets
+- real equipped pet
+- real pet naming
+- real PetDex discoveries
+- real egg inventory
+- real incubator slots/timers
+- real Activity incubation
+- real Activity hatching
+- real bait / capture-item inventory
+- real merchant collection inventory
+- real current leaderboard
+- real weekly leaderboard when weekly score data exists
+- real Recent Hunts feed
+- real active-event overview
+- inactive special events are hidden
+- real Activity hunt announcements in Discord
+- real Activity hatch announcements in Eggs & Pets channel
 
-This includes authentication, profile loading, leaderboards, player data, hunt
-start, capture resolution, and all other Activity API calls.
+### Recent Hunts
 
-## Upload
+Every successful normal capture through either:
+- Discord `!hunt`
+- the Discord Activity
 
-Replace the H.1 files in the SAME new GitHub repo with this build.
+is now added to the same Recent Hunts feed.
 
-Keep the existing Railway Volume mounted at:
+### Eggs
 
-`/data`
+The Eggs tab no longer creates fake DEV eggs.
 
-Keep the Railway variables:
+If you own no eggs, it correctly shows an empty inventory.
+
+When a real egg drops:
+1. it appears in Eggs
+2. click it to incubate
+3. the real timer is saved in SQLite
+4. when ready, Hatch becomes available
+5. the resulting real pet is saved in SQLite
+6. PetDex updates
+7. the Eggs & Pets Discord channel receives the hatch update
+
+### Pets
+
+Equip and pet-name actions now save to SQLite rather than only browser storage.
+
+### Events
+
+The Activity only displays special systems that are actually active:
+- current daily event
+- Big Game Hunt
+- World Distortion
+- Token Surge
+- active Merchant
+
+Detailed Big Game and Distortion tabs appear only while those systems are live.
+
+### Chat commands
+
+All existing `!commands` are preserved and continue to use the same SQLite save.
+
+### Railway
+
+No new Railway storage is needed.
+
+Keep:
+- `/data` Volume
 - `DISCORD_TOKEN`
-- `BOT_ENABLED`
 - `DISCORD_CLIENT_ID`
 - `DISCORD_CLIENT_SECRET`
+- `BOT_ENABLED`
 
-## Test
+### Upload
 
-After Railway deploys, the logs should say:
+Replace the files in your current H.1.1 GitHub repo with this ZIP.
 
-`Monster Hunt Activity H.1.1 listening on port 8080`
+After deployment look for:
 
-Then open the Activity in Discord.
+`Monster Hunt Activity H.2A listening on port 8080`
 
-Expected:
-1. Home changes from `Loading...` to your Discord display name.
-2. Hunt no longer says `Activity Test Hunter`.
-3. Hunt displays `Begin Hunt`.
-4. Opening the Activity creates/loads your real SQLite player.
-5. `!volumestatus` should show the saved-player count.
+and:
 
-If it still fails, send the Railway logs immediately after opening the Activity.
+`PHASE H.2A • LIVE SYSTEMS`
 
-## Chat commands
+### Recommended tests
 
-All existing `!commands` still work. Activity support is additive; players who
-cannot use Activities can continue playing entirely through Discord chat.
+1. Open Home — real player + leaderboard.
+2. Hunt once — Recent Hunts should update after a successful catch.
+3. Gear — should show actual quantities, including zeroes.
+4. Pets — if you own a pet, rename/equip it and reload Activity.
+5. Use the admin Discord command `!giveegg @you common` for testing.
+6. Open Eggs — the real egg should appear.
+7. Click egg — it should move into a real incubator.
+8. Wait or use your normal admin testing workflow to make it ready.
+9. Hatch — real pet should appear and persist after reload.
+10. Events — only currently active event cards should appear.
+
+### Next: H.2B
+
+Automated monthly season management:
+- 24-hour channel warning
+- DMs to participating players
+- 1-hour warning
+- final standings archive
+- competitive reset
+- preserve permanent Monster Dex/PetDex/history only
+- wipe anything that can help next season: points, tokens, bait, lures, items,
+  merchant-use inventory, eggs, pets, knowledge, relics, cooldowns, event state, etc.

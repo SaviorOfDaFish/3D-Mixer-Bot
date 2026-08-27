@@ -1,8 +1,8 @@
 {
   "name": "mixer-monster-hunt-h0",
-  "version": "2.1.1-h1.1",
+  "version": "2.2.0-h2a",
   "private": true,
-  "description": "Monster Hunt H.1.1 - Discord Activity proxy routing fix",
+  "description": "Monster Hunt H.2A - live pets, eggs, inventory, leaderboards, recent hunts, active events",
   "main": "index.js",
   "scripts": {
     "start": "npm run build:activity && node index.js",

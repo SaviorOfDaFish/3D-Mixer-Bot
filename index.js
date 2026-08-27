@@ -2793,6 +2793,7 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
     addWeeklyProgress(data, player, pointsEarned, monster);
     player.caught.push(monster);
     player.lifetimeCaught.push({ ...monster });
+    recordRecentHunt(data, userId, monster, pointsEarned, "Monster Hunt");
     player.currentMonster = null;
     updateQuestProgress(player, "catch", monster);
 
@@ -10955,6 +10956,363 @@ function json(res, payload) {
 
 
 
+
+// ==================== H.2A LIVE SYSTEM HELPERS ====================
+
+function ensureRecentHunts(data) {
+  if (!Array.isArray(data.recentHunts)) data.recentHunts = [];
+  return data.recentHunts;
+}
+
+function recordRecentHunt(data, userId, monster, pointsEarned = 0, source = "Discord") {
+  if (!monster) return;
+  const player = getPlayer(data, userId);
+  const recent = ensureRecentHunts(data);
+  recent.unshift({
+    id: `${Date.now()}-${userId}-${Math.random().toString(36).slice(2,7)}`,
+    userId,
+    player: player.discordDisplayName || player.discordUsername || `Hunter ${String(userId).slice(-4)}`,
+    monster: cleanMonsterName(monster.name || "Unknown Monster"),
+    rarity: monster.rarity || "Unknown",
+    points: Number(pointsEarned || monster.points || 0),
+    shiny: Boolean(monster.shiny || String(monster.name || "").includes("Shiny")),
+    habitat: monster.habitat || "Unknown",
+    icon: monster.shiny ? "✨" : "🏹",
+    image: monster.image || null,
+    source,
+    at: Date.now()
+  });
+  data.recentHunts = recent.slice(0, 50);
+}
+
+function activityEggInventoryPayload(player) {
+  return (player.eggs || []).map((egg, index) => {
+    const eggKey = egg.eggKey || egg.distortionKey || null;
+    const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
+    const rarity = egg.rarity || "Common";
+    return {
+      id: egg.id || `egg-${index + 1}`,
+      inventoryIndex: index,
+      eggKey,
+      rarity,
+      name: distortion?.name || `${rarity} Egg`,
+      icon: distortion?.icon || EGG_TYPES[rarity]?.icon || "🥚",
+      image: distortion?.image || null,
+      incubationMs: Number(distortion?.incubationMs || EGG_TYPES[rarity]?.incubationMs || EGG_TYPES.Common.incubationMs)
+    };
+  });
+}
+
+function activityIncubatorPayload(player) {
+  const slots = getIncubatorSlots(player);
+  const incubations = (player.incubatingEggs || []).map((egg, index) => {
+    const eggKey = egg.eggKey || egg.distortionKey || null;
+    const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
+    const rarity = egg.rarity || "Common";
+    return {
+      slot:index + 1,
+      id:egg.id || `incubation-${index + 1}`,
+      eggKey,
+      rarity,
+      name:distortion?.name || `${rarity} Egg`,
+      icon:distortion?.icon || EGG_TYPES[rarity]?.icon || "🥚",
+      image:distortion?.image || null,
+      startedAt:Number(egg.startedAt || 0),
+      readyAt:Number(egg.readyAt || 0),
+      ready:Date.now() >= Number(egg.readyAt || 0)
+    };
+  });
+  return { slots, incubations };
+}
+
+function activityFullInventoryPayload(player) {
+  const rows = [
+    { key:"berry", name:"Hunter Berry", icon:"🍓", qty:Number(player.captureItems?.berry || 0), type:"Capture Item", effect:"+10% to one capture attempt." },
+    { key:"honey", name:"Sticky Honey", icon:"🍯", qty:Number(player.captureItems?.honey || 0), type:"Capture Item", effect:"+20% to one capture attempt." },
+    { key:"net", name:"Enchanted Net", icon:"🕸️", qty:Number(player.captureItems?.net || 0), type:"Capture Item", effect:"+30% to one capture attempt." },
+    { key:"masterCharm", name:"Master Charm", icon:"🌟", qty:Number(player.captureItems?.masterCharm || 0), type:"Capture Item", effect:"Guarantees one capture attempt." },
+    { key:"rare_bait", name:"Rare Bait", icon:"🔵", qty:Number(player.bait?.rare || 0), type:"Bait", effect:"Improves Rare odds on your next normal hunt." },
+    { key:"epic_bait", name:"Epic Bait", icon:"🟣", qty:Number(player.bait?.epic || 0), type:"Bait", effect:"Improves Epic odds on your next normal hunt." },
+    { key:"legendary_bait", name:"Legendary Bait", icon:"🟠", qty:Number(player.bait?.legendary || 0), type:"Bait", effect:"Improves Legendary odds on your next normal hunt." }
+  ];
+
+  // Merchant purchases/collection are real live values.
+  for (const [key, qtyRaw] of Object.entries(player.merchantCollection || {})) {
+    const qty = Number(qtyRaw || 0);
+    const def = MERCHANT_ITEMS[key];
+    if (!def || qty <= 0) continue;
+    rows.push({
+      key,
+      name:def.name,
+      icon:def.icon || "🎒",
+      qty,
+      type:def.kind === "collectible" ? "Collectible" : "Merchant",
+      effect:def.effectDescription || def.description || "Merchant item."
+    });
+  }
+
+  return rows;
+}
+
+function activityLeaderboardPayload(data, userId) {
+  const entries = Object.entries(data.players || {}).map(([id]) => {
+    const p = getPlayer(data, id);
+    return {
+      id,
+      name:p.discordDisplayName || p.discordUsername || `Hunter ${String(id).slice(-4)}`,
+      points:Number(p.points || 0),
+      self:id === userId
+    };
+  }).sort((a,b) => b.points - a.points || a.name.localeCompare(b.name));
+
+  const current = entries.slice(0,10).map((row,index) => ({...row, rank:index+1}));
+  const weeklyRows = Object.entries(data.weeklyCompetition?.scores || data.weeklyScores || {}).map(([id, score]) => {
+    const p = getPlayer(data,id);
+    return {
+      id,
+      name:p.discordDisplayName || p.discordUsername || `Hunter ${String(id).slice(-4)}`,
+      points:Number(score || 0),
+      self:id === userId
+    };
+  }).sort((a,b) => b.points-a.points || a.name.localeCompare(b.name))
+    .slice(0,10).map((row,index) => ({...row,rank:index+1}));
+
+  return { current, weekly: weeklyRows.length ? weeklyRows : current, userId };
+}
+
+function activityRecentHuntsPayload(data) {
+  return ensureRecentHunts(data).slice(0,12).map(entry => ({
+    ...entry,
+    ageMs:Math.max(0, Date.now() - Number(entry.at || Date.now()))
+  }));
+}
+
+function activityLiveEventsPayload(data, userId) {
+  const now = Date.now();
+  const daily = getActiveEvent();
+  const active = [];
+
+  if (daily) {
+    active.push({
+      key:"daily",
+      icon:"🎉",
+      name:daily.name,
+      description:daily.description,
+      endsAt:0,
+      type:"Daily Event"
+    });
+  }
+
+  if (isBigGameActive(data, now)) {
+    active.push({
+      key:"biggame",
+      icon:"🎯",
+      name:"Big Game Hunt",
+      description:"30-minute hunt cooldowns, Hunt Tokens, and Top 3 placement rewards.",
+      endsAt:Number(data.bigGame?.endsAt || 0),
+      type:"Live Event"
+    });
+  }
+
+  if (data.activeDistortion && !data.activeDistortion.ended && now < Number(data.activeDistortion.endAt || 0)) {
+    const def = DISTORTIONS[data.activeDistortion.key];
+    active.push({
+      key:"distortion",
+      icon:def?.icon || "🌀",
+      name:def?.name || "World Distortion",
+      description:"Planar monsters and special Distortion Egg drops are active.",
+      endsAt:Number(data.activeDistortion.endAt || 0),
+      distortionKey:data.activeDistortion.key,
+      type:"World Event"
+    });
+  }
+
+  if (data.tokenSurge?.active && now < Number(data.tokenSurge.endsAt || 0)) {
+    active.push({
+      key:"tokensurge",
+      icon:"🪙",
+      name:"Token Surge",
+      description:"Successful catches may award bonus Hunt Tokens.",
+      endsAt:Number(data.tokenSurge.endsAt || 0),
+      type:"Live Event"
+    });
+  }
+
+  if (data.merchant?.active && now < Number(data.merchant.departureAt || 0)) {
+    const def = MERCHANT_TYPE_DEFINITIONS[data.merchant.type];
+    active.push({
+      key:"merchant",
+      icon:def?.icon || "🧙",
+      name:def?.name || "Traveling Merchant",
+      description:"A merchant is currently visiting the hunting grounds.",
+      endsAt:Number(data.merchant.departureAt || 0),
+      type:"Merchant"
+    });
+  }
+
+  // Build compatible detailed objects only when those systems are active.
+  const bigActive = isBigGameActive(data, now);
+  const bigScores = Object.entries(data.bigGame?.scores || {}).map(([id,score]) => {
+    const p = getPlayer(data,id);
+    return { name:p.discordDisplayName || p.discordUsername || `Hunter ${String(id).slice(-4)}`, score:Number(score || 0), id };
+  }).sort((a,b)=>b.score-a.score).slice(0,10);
+
+  const distortionState = data.activeDistortion;
+  const distortionDef = distortionState ? DISTORTIONS[distortionState.key] : null;
+
+  return {
+    active,
+    hasAny:active.length > 0,
+    bigGame:{
+      active:bigActive,
+      endsAt:Number(data.bigGame?.endsAt || 0),
+      playerScore:Number(data.bigGame?.scores?.[userId] || 0),
+      tokenBalance:Number(getPlayer(data,userId).huntTokens || 0),
+      leaderboard:bigScores,
+      tokenRewards:{...BIG_GAME_TOKEN_REWARDS}
+    },
+    bounty:{ active:false, npc:"", clue:"", participants:0, attempts:0 },
+    distortion:{
+      active:Boolean(distortionDef),
+      name:distortionDef?.name || "No Distortion Active",
+      icon:distortionDef?.icon || "🌀",
+      endsAt:Number(distortionState?.endAt || 0),
+      story:distortionDef ? "A live planar breach is affecting the Monster Hunt world." : "No planar breach is currently active.",
+      monsters:(distortionDef?.monsters || []).map(m => ({...m,icon:"👹"})),
+      knownPlanes:Object.entries(DISTORTIONS).filter(([key])=>key!=="unmade").map(([key,def])=>({
+        key, name:def.name, icon:def.icon, discovered:Boolean(data.worldStory?.knownDistortions?.includes?.(key) || data.worldProgress?.[key])
+      }))
+    }
+  };
+}
+
+function activityPetById(player, petId) {
+  return (player.pets || []).find(p => String(p.id) === String(petId)) || null;
+}
+
+async function activityIncubateEgg(user, inventoryIndex) {
+  const data = loadData();
+  const player = getPlayer(data,user.id);
+  const slots = getIncubatorSlots(player);
+
+  if ((player.incubatingEggs || []).length >= slots) return {ok:false,error:`All ${slots} incubator slot${slots===1?" is":"s are"} in use.`};
+  if (!player.eggs?.length) return {ok:false,error:"You do not have any eggs available to incubate."};
+
+  const index = Number(inventoryIndex);
+  if (!Number.isInteger(index) || index < 0 || !player.eggs[index]) return {ok:false,error:"That egg is no longer in your inventory."};
+
+  const [egg] = player.eggs.splice(index,1);
+  const eggKey = egg.eggKey || egg.distortionKey || null;
+  const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
+  const duration = Number(distortion?.incubationMs || EGG_TYPES[egg.rarity]?.incubationMs || EGG_TYPES.Common.incubationMs);
+  player.incubatingEggs.push({
+    id:egg.id,
+    rarity:egg.rarity || "Common",
+    eggKey,
+    adminTest:Boolean(egg.adminTest),
+    startedAt:Date.now(),
+    readyAt:Date.now()+duration,
+    notified:false
+  });
+  saveData(data);
+  return {ok:true, ...activityIncubatorPayload(player), eggs:activityEggInventoryPayload(player)};
+}
+
+async function activityHatchEgg(user, slotNumber) {
+  const data = loadData();
+  const player = getPlayer(data,user.id);
+  const index = Number(slotNumber) - 1;
+  const incubation = player.incubatingEggs?.[index];
+  if (!incubation) return {ok:false,error:"That incubator slot is empty."};
+  if (Date.now() < Number(incubation.readyAt || 0)) return {ok:false,error:"That egg is not ready to hatch yet.",readyAt:incubation.readyAt};
+
+  const distortionEgg = incubation.eggKey ? DISTORTION_EGGS[incubation.eggKey] : null;
+  const rarity = incubation.rarity;
+  const definition = distortionEgg ? chooseDistortionPet(incubation.eggKey) : choosePetFromEgg(rarity);
+  if (!definition) return {ok:false,error:"That egg could not find a matching pet."};
+  if (!distortionEgg && !isNormalEggPet(definition)) return {ok:false,error:"Egg pool safety blocked an invalid companion."};
+  if (distortionEgg && !distortionEgg.pets.some(choice => choice.key === definition.key)) return {ok:false,error:"Distortion Egg pool safety blocked an invalid companion."};
+
+  const already = player.discoveredPetKeys.includes(definition.key);
+  const owned = {
+    id:player.nextPetId++,
+    key:definition.key,
+    nickname:null,
+    personality:PET_PERSONALITIES[Math.floor(Math.random()*PET_PERSONALITIES.length)],
+    companionXp:0,
+    affectionEvents:0,
+    timesHelped:0,
+    hatchedAt:Date.now()
+  };
+
+  const previousPoints = player.points;
+  const hatchPoints = HATCH_POINT_REWARDS[distortionEgg ? definition.rarity : rarity] || 0;
+  const dexBonus = already ? 0 : NEW_PET_SPECIES_BONUS;
+  player.pets.push(owned);
+  if (!already) player.discoveredPetKeys.push(definition.key);
+  player.incubatingEggs.splice(index,1);
+  const total = applyCommunityPointBlessing(data,hatchPoints+dexBonus);
+  player.points += total;
+  addWeeklyProgress(data,player,total);
+  player.titleProgress.eggsHatched=(player.titleProgress.eggsHatched||0)+1;
+  if (player.equippedPetId===null) player.equippedPetId=owned.id;
+  evaluatePetCollectionRewards(data,player);
+  checkTitleUnlocks(player);
+  recordPointMilestoneMoments(data,user.id,previousPoints,player.points);
+
+  saveData(data);
+
+  const channel = await getTextChannel(EGGS_PETS_CHANNEL_ID);
+  if (channel?.isTextBased()) {
+    await channel.send({
+      content:`🐣 **ACTIVITY HATCH!**\n<@${user.id}> hatched ${getPetDisplayIcon(definition)} **${definition.name}** (${definition.rarity})!\n⭐ +${total} Hunter Points`,
+      allowedMentions:{users:[user.id]}
+    }).catch(()=>{});
+  }
+
+  return {
+    ok:true,
+    pet:{
+      id:owned.id,key:definition.key,name:definition.name,nickname:null,icon:definition.icon,
+      rarity:definition.rarity,habitat:definition.habitat,image:definition.image||null,
+      level:1,bond:1,xp:0,ability:definition.signatureName||definition.ability,description:definition.description
+    },
+    pointsAwarded:total,
+    newDex:!already
+  };
+}
+
+function activityEquipPet(user, petId) {
+  const data=loadData();
+  const player=getPlayer(data,user.id);
+  const owned=activityPetById(player,petId);
+  if (!owned) return {ok:false,error:"That pet is not in your collection."};
+  player.equippedPetId=owned.id;
+  saveData(data);
+  const def=getOwnedPetDefinition(owned);
+  return {ok:true,petId:owned.id,key:def?.key||owned.key,name:getOwnedPetName(owned)};
+}
+
+function activityRenamePet(user, petId, nickname) {
+  const data=loadData();
+  const player=getPlayer(data,user.id);
+  const owned=activityPetById(player,petId);
+  if (!owned) return {ok:false,error:"That pet is not in your collection."};
+
+  const clean=String(nickname||"").replace(/\s+/g," ").trim();
+  if (!clean) {
+    owned.nickname=null;
+  } else {
+    const length=[...clean].length;
+    if (length<2 || length>24) return {ok:false,error:"Pet names must contain 2-24 characters."};
+    if (/[@`*_~|<>\\\r\n]/u.test(clean)) return {ok:false,error:"That pet name contains unsupported characters."};
+    owned.nickname=clean;
+  }
+  saveData(data);
+  return {ok:true,nickname:owned.nickname,name:getOwnedPetName(owned)};
+}
+
+
 // ==================== H.1 DISCORD ACTIVITY AUTH + LIVE GAME BRIDGE ====================
 const activityTokenCache = new Map();
 
@@ -11142,12 +11500,13 @@ function activityPlayerPayload(data, user) {
       ownedPets,
       petDex: standardDex,
       beyondPets: activityPetDexPayload(player, true),
-      inventory: activityInventoryPayload(player),
+      inventory: activityFullInventoryPayload(player),
       trophies: H1_TROPHIES,
       titles: H1_TITLES,
       cosmetics: H1_COSMETICS
     },
-    eggs: activityEggPayload(player)
+    eggs: activityEggInventoryPayload(player),
+    incubators: activityIncubatorPayload(player)
   };
 }
 
@@ -11281,7 +11640,7 @@ async function activityCapture(user, itemKey = null) {
   };
 }
 
-// ==================== H.1.1 DISCORD ACTIVITY WEB SERVER ====================
+// ==================== H.2A DISCORD ACTIVITY WEB SERVER ====================
 const ACTIVITY_PUBLIC_DIR = path.join(__dirname, "public");
 const ACTIVITY_PORT = Number(process.env.PORT || 8080);
 
@@ -11318,7 +11677,7 @@ function sqliteStatusPayload() {
   const row = db.prepare("SELECT updated_at, length(payload) AS bytes FROM game_state WHERE id = 1").get();
   const state = loadData();
   return {
-    phase: "H.1.1",
+    phase: "H.2A",
     storage: "sqlite-volume",
     databaseFile: DATABASE_FILE,
     volumeDetected: fs.existsSync("/data"),
@@ -11379,25 +11738,17 @@ const activityServer = http.createServer(async (req, res) => {
 
       if (req.method === "GET" && requestUrl.pathname === "/api/phase-g5-leaderboards") {
         const data = loadData();
-        const ranked = Object.entries(data.players || {}).map(([id]) => {
-          const p = getPlayer(data, id);
-          return { id, name:p.discordDisplayName || p.discordUsername || `Hunter ${id.slice(-4)}`, points:Number(p.points || 0) };
-        }).sort((a,b) => b.points - a.points).slice(0,10);
-        return activityJson(res, { current:ranked, weekly:ranked, userId:user.id });
+        return activityJson(res, activityLeaderboardPayload(data, user.id));
       }
 
       if (req.method === "GET" && requestUrl.pathname === "/api/phase-g9-social") {
         const data = loadData();
         const payload = activityPlayerPayload(data, user);
-        const recentHunts = (data.seasonMoments || []).slice(-8).reverse().map(m => ({
-          player:m.playerId ? (data.players?.[m.playerId]?.discordDisplayName || "Hunter") : "Monster Hunt",
-          icon:m.icon || "🏹",
-          action:m.text || "A hunt update was recorded.",
-          age:"recent"
-        }));
         return activityJson(res, {
-          eggs:payload.eggs.map(egg => ({ ...egg, count:1, hatchMinutes:30 })),
-          recentHunts
+          eggs:payload.eggs,
+          incubatorSlots:payload.incubators.slots,
+          incubations:payload.incubators.incubations,
+          recentHunts:activityRecentHuntsPayload(data)
         });
       }
 
@@ -11424,6 +11775,35 @@ const activityServer = http.createServer(async (req, res) => {
         }
         saveData(data);
         return activityJson(res, { ok:true, activeBait:player.activeBait, bait:{...player.bait} });
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/live-events") {
+        const data=loadData();
+        return activityJson(res,activityLiveEventsPayload(data,user.id));
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/egg/incubate") {
+        const body=await readRequestJson(req);
+        const result=await activityIncubateEgg(user,body.inventoryIndex);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/egg/hatch") {
+        const body=await readRequestJson(req);
+        const result=await activityHatchEgg(user,body.slot);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/equip") {
+        const body=await readRequestJson(req);
+        const result=activityEquipPet(user,body.petId);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/name") {
+        const body=await readRequestJson(req);
+        const result=activityRenamePet(user,body.petId,body.nickname);
+        return activityJson(res,result,result.ok?200:400);
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunt/start") {
@@ -11482,7 +11862,7 @@ const activityServer = http.createServer(async (req, res) => {
 });
 
 activityServer.listen(ACTIVITY_PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity H.1.1 listening on port ${ACTIVITY_PORT}`);
+  console.log(`Monster Hunt Activity H.2A listening on port ${ACTIVITY_PORT}`);
 });
 
 // BOT_ENABLED=false lets you deploy/test the new Railway service without
