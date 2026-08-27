@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-g.css?v=90" />
+  <link rel="stylesheet" href="/styles-phase-g5.css?v=95" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">DEV BUILD • PHASE G</p>
+        <p class="eyebrow">DEV BUILD • PHASE G.5</p>
         <h1>🏹 Monster Hunt</h1>
       </div>
       <div class="wallet">
@@ -23,54 +23,86 @@
     <main class="page-scroll" id="pageScroll">
 
       <section class="screen active" data-screen="home">
-        <section class="hero-card">
-          <div class="scene">
-            <div class="moon"></div>
-            <div class="mountains"></div>
-            <div class="ambient ambient-one"></div>
-            <div class="ambient ambient-two"></div>
+        <section class="home-split">
+          <section class="home-player-panel">
+            <div class="home-panel-heading">
+              <div>
+                <p class="eyebrow">YOUR HUNTER</p>
+                <h2 id="hunterName">Loading…</h2>
+                <p class="hunter-meta"><span id="hunterTitle">—</span> • Level <span id="level">—</span></p>
+              </div>
+              <button class="secondary" id="customizeBtn" type="button">Customize</button>
+            </div>
 
-            <div class="avatar-wrap" id="avatarPreview" aria-label="Hunter avatar preview">
-              <div class="avatar-shadow"></div>
-              <div class="avatar">
-                <div class="cloak-layer"></div>
-                <div class="weapon-back"></div>
-                <div class="head">
-                  <div class="hair hair-back"></div>
-                  <div class="ears"></div>
-                  <div class="face">
-                    <div class="eyes"><i></i><i></i></div>
-                    <div class="brows"></div>
-                    <div class="nose"></div>
-                    <div class="mouth"></div>
-                    <div class="beard"></div>
+            <div class="compact-scene">
+              <div class="moon"></div>
+              <div class="mountains"></div>
+
+              <div class="avatar-wrap home-avatar" id="avatarPreview" aria-label="Hunter avatar preview">
+                <div class="avatar-shadow"></div>
+                <div class="avatar">
+                  <div class="cloak-layer"></div>
+                  <div class="weapon-back"></div>
+                  <div class="head">
+                    <div class="hair hair-back"></div>
+                    <div class="ears"></div>
+                    <div class="face">
+                      <div class="eyes"><i></i><i></i></div>
+                      <div class="brows"></div>
+                      <div class="nose"></div>
+                      <div class="mouth"></div>
+                      <div class="beard"></div>
+                    </div>
+                    <div class="hair hair-front"></div>
+                    <div class="headgear"></div>
                   </div>
-                  <div class="hair hair-front"></div>
-                  <div class="headgear"></div>
+                  <div class="neck"></div>
+                  <div class="torso"><div class="chest-detail"></div><div class="belt"></div></div>
+                  <div class="arm arm-left"><span class="bracer"></span><span class="hand"></span></div>
+                  <div class="arm arm-right"><span class="bracer"></span><span class="hand"></span></div>
+                  <div class="legs"><div class="leg"></div><div class="leg"></div></div>
+                  <div class="boots"><div class="boot"></div><div class="boot"></div></div>
                 </div>
-                <div class="neck"></div>
-                <div class="torso"><div class="chest-detail"></div><div class="belt"></div></div>
-                <div class="arm arm-left"><span class="bracer"></span><span class="hand"></span></div>
-                <div class="arm arm-right"><span class="bracer"></span><span class="hand"></span></div>
-                <div class="legs"><div class="leg"></div><div class="leg"></div></div>
-                <div class="boots"><div class="boot"></div><div class="boot"></div></div>
+              </div>
+
+              <div class="home-pet-art-wrap" id="activePetPortrait">
+                <div class="pet-aura"></div>
+                <img class="home-pet-image hidden" id="petImage" alt="Active pet art" />
+                <div class="pet-art" id="petIcon">👻</div>
               </div>
             </div>
 
-            <div class="active-pet-portrait" id="activePetPortrait">
-              <div class="pet-aura"></div>
-              <div class="pet-art" id="petIcon">💎</div>
+            <div class="home-companion-strip">
+              <div>
+                <p class="eyebrow">ACTIVE COMPANION</p>
+                <h3 id="petName">—</h3>
+              </div>
+              <div class="companion-mini-stats">
+                <span>Lv. <b id="petLevel">—</b></span>
+                <span>💞 <b id="petBond">—</b>/5</span>
+              </div>
             </div>
-          </div>
+            <p class="pet-ability-line">✨ <b id="petAbility">—</b></p>
+            <button class="primary full" type="button" data-nav="pets">Manage Companions</button>
+          </section>
 
-          <div class="identity">
-            <div>
-              <p class="eyebrow">YOUR HUNTER</p>
-              <h2 id="hunterName">Loading…</h2>
-              <p><span id="hunterTitle">—</span> • Level <span id="level">—</span></p>
+          <section class="home-leaderboard-panel">
+            <div class="home-panel-heading leaderboard-heading">
+              <div>
+                <p class="eyebrow">THE HUNT</p>
+                <h2>Leaderboards</h2>
+              </div>
+              <span class="screen-count">🏆</span>
             </div>
-            <button class="secondary" id="customizeBtn" type="button">Customize</button>
-          </div>
+
+            <div class="leaderboard-tabs">
+              <button class="leader-tab active" data-leaderboard="current">Current</button>
+              <button class="leader-tab" data-leaderboard="weekly">Weekly</button>
+            </div>
+
+            <div class="leaderboard-list" id="leaderboardList"></div>
+            <p class="leaderboard-note">DEV standings for layout testing. Phase H will read the real game standings.</p>
+          </section>
         </section>
 
         <section class="quick-grid" aria-label="Hunter dashboard">
@@ -80,26 +112,11 @@
           <button class="tile" data-nav="collection"><span>🏆</span><b>Collection</b><small id="trophyCount">— trophies</small></button>
         </section>
 
-        <section class="panel companion-panel">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">ACTIVE COMPANION</p>
-              <h3 id="petName">—</h3>
-            </div>
-            <span class="level-pill">Lv. <span id="petLevel">—</span></span>
-          </div>
-          <div class="companion-stats">
-            <span>💞 Bond <b id="petBond">—</b>/5</span>
-            <span>✨ Ability <b id="petAbility">—</b></span>
-          </div>
-          <button class="primary full" type="button" data-nav="pets">Manage Companions</button>
-        </section>
-
         <section class="panel">
-          <p class="eyebrow">PHASE D</p>
-          <h3>Gameplay Alignment</h3>
-          <p class="muted">Pets, PetDex, inventory, trophies, titles, cosmetics, and detailed Hunter customization now live in one mobile-first Activity shell. Still sandboxed from the live game.</p>
-          <div id="status" class="status">✅ Loading Phase D…</div>
+          <p class="eyebrow">PHASE G.5</p>
+          <h3>Home & Companion Visual Test</h3>
+          <p class="muted">Two-panel Home layout, leaderboard preview, expanded starter Hunter options, and real pet-art support. Veilkin is the active DEV companion for this test.</p>
+          <div id="status" class="status">✅ Loading Phase G.5…</div>
         </section>
       </section>
 
@@ -488,6 +505,6 @@
     </section>
   </div>
 
-  <script src="/app-phase-g.js?v=90"></script>
+  <script src="/app-phase-g5.js?v=95"></script>
 </body>
 </html>
