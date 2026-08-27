@@ -1,7 +1,7 @@
 import { DiscordSDK } from "@discord/embedded-app-sdk";
 
 window.discordActivityReady = (async () => {
-  const cfg = await (await fetch("/api/activity/config", {cache:"no-store"})).json();
+  const cfg = await (await fetch("/.proxy/api/activity/config", {cache:"no-store"})).json();
   if (!cfg.clientId) throw new Error("DISCORD_CLIENT_ID is missing.");
 
   const discordSdk = new DiscordSDK(cfg.clientId);
@@ -15,7 +15,7 @@ window.discordActivityReady = (async () => {
     scope:["identify"]
   });
 
-  const tokenRes = await fetch("/api/activity/token", {
+  const tokenRes = await fetch("/.proxy/api/activity/token", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify({code})
