@@ -1,8 +1,8 @@
 {
   "name": "mixer-monster-hunt-h0",
-  "version": "2.2.0-h2a",
+  "version": "2.2.1-h2a1",
   "private": true,
-  "description": "Monster Hunt H.2A - live pets, eggs, inventory, leaderboards, recent hunts, active events",
+  "description": "Monster Hunt H.2A.1 - fresh season reset + admin testing bypass",
   "main": "index.js",
   "scripts": {
     "start": "npm run build:activity && node index.js",

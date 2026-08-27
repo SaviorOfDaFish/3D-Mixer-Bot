@@ -6634,6 +6634,221 @@ client.once("clientReady", () => {
   runUltraMonitor();
   setInterval(runUltraMonitor, 10 * 1000);
 });
+
+// ==================== H.2A.1 FRESH-SEASON RESET ====================
+// Keep only permanent proof-of-accomplishment. Anything that can help
+// a player hunt in the next season is wiped.
+function hardResetSeasonForNewCompetition(data) {
+  let preservedPlayers = 0;
+  let preservedCreatures = 0;
+
+  for (const [userId, oldPlayerData] of Object.entries(data.players || {})) {
+    const lifetimeCaught = Array.isArray(oldPlayerData.lifetimeCaught)
+      ? oldPlayerData.lifetimeCaught.map(monster => ({ ...monster }))
+      : [];
+
+    const preservedDiscoveredPetKeys = [...new Set([
+      ...(oldPlayerData.discoveredPetKeys || []),
+      ...(oldPlayerData.pets || []).map(pet => pet.key).filter(Boolean)
+    ])];
+
+    const grandPetCollectionRewardClaimed = Boolean(oldPlayerData.grandPetCollectionRewardClaimed);
+
+    const permanentPetTitles = new Set([
+      ...Object.values(PET_COLLECTIONS).map(reward => reward.title),
+      GRAND_PET_COLLECTION_REWARD.title,
+      ...GRAND_PET_COLLECTION_REWARD.legendaryTitles
+    ]);
+    const preservedPetTitles = (oldPlayerData.unlockedTitles || []).filter(title => permanentPetTitles.has(title));
+
+    if (grandPetCollectionRewardClaimed) {
+      for (const title of [GRAND_PET_COLLECTION_REWARD.title, ...GRAND_PET_COLLECTION_REWARD.legendaryTitles]) {
+        if (!preservedPetTitles.includes(title)) preservedPetTitles.push(title);
+      }
+    }
+
+    const permanentPetAchievements = new Set([
+      ...Object.values(PET_COLLECTIONS).map(reward => reward.achievement),
+      GRAND_PET_COLLECTION_REWARD.achievement,
+      ...GRAND_PET_COLLECTION_REWARD.legendaryTitles.map(
+        title => `${GRAND_PET_COLLECTION_REWARD.achievement}: ${title}`
+      )
+    ]);
+    const preservedPetAchievements = (oldPlayerData.secretAchievements || [])
+      .filter(achievement => permanentPetAchievements.has(achievement));
+
+    if (lifetimeCaught.length > 0 || preservedDiscoveredPetKeys.length > 0) {
+      preservedPlayers++;
+      preservedCreatures += lifetimeCaught.length;
+    }
+
+    // Force getPlayer() to rebuild every normal field from current defaults.
+    data.players[userId] = {};
+    const fresh = getPlayer(data, userId);
+
+    // Identity/cosmetic appearance is not a gameplay advantage.
+    fresh.discordUsername = oldPlayerData.discordUsername || null;
+    fresh.discordDisplayName = oldPlayerData.discordDisplayName || null;
+    if (oldPlayerData.activityProfile) {
+      fresh.activityProfile = JSON.parse(JSON.stringify(oldPlayerData.activityProfile));
+    }
+
+    // Permanent collection history.
+    fresh.lifetimeCaught = lifetimeCaught;
+    fresh.discoveredPetKeys = preservedDiscoveredPetKeys;
+    fresh.grandPetCollectionRewardClaimed = grandPetCollectionRewardClaimed;
+    fresh.unlockedTitles = preservedPetTitles;
+    fresh.secretAchievements = preservedPetAchievements;
+
+    // Explicitly wipe all hunt advantages and currencies.
+    fresh.points = 0;
+    fresh.caught = [];
+    fresh.currentMonster = null;
+    fresh.lastHunt = 0;
+    fresh.huntCount = 0;
+    fresh.title = null;
+
+    fresh.huntTokens = 0;
+    fresh.lifetimeTokens = 0;
+    fresh.tokensSpent = 0;
+
+    fresh.bait = { rare: 0, epic: 0, legendary: 0 };
+    fresh.activeBait = null;
+    fresh.captureItems = { berry: 0, honey: 0, net: 0, masterCharm: 0 };
+    fresh.knowledge = {};
+
+    fresh.eggs = [];
+    fresh.incubatingEggs = [];
+    fresh.lastIncubatorSlots = 1;
+
+    fresh.pets = [];
+    fresh.equippedPetId = null;
+    fresh.nextPetId = 1;
+
+    // Merchant items do NOT carry across seasons.
+    fresh.merchantCollection = {};
+    fresh.merchantPurchases = [];
+    fresh.merchantEffects = {};
+    fresh.merchantGambles = 0;
+
+    fresh.relics = Object.fromEntries(RELIC_KEYS.map(relicKey => [relicKey, 0]));
+    fresh.ultraCaughtKeys = [];
+    fresh.ultraSummonedKeys = [];
+    fresh.ultraParticipationCount = 0;
+
+    fresh.bigGameWins = 0;
+    fresh.bigGamePlacements = [];
+
+    fresh.dailyQuests = [];
+    fresh.dailyClaimed = false;
+    fresh.dailyRerollsUsed = 0;
+    fresh.lastDaily = null;
+    fresh.dailyReward = 0;
+
+    fresh.lastFetch = 0;
+    if (fresh.fetch && typeof fresh.fetch === "object") {
+      fresh.fetch.active = false;
+      fresh.fetch.startedAt = 0;
+      fresh.fetch.readyAt = 0;
+    }
+
+    fresh.titleProgress = {
+      eggsFound: 0, eggsHatched: 0, ultraAttempts: 0,
+      captureItemsUsed: 0, masterCharmUsed: 0, baitUsed: 0,
+      failedCaptureStreak: 0, failedAtNinety: false,
+      mixerWithoutCharm: false, ultraAtFiveOrLess: false
+    };
+
+    fresh.reminderState = {
+      ...(fresh.reminderState || {}),
+      huntDueAt: 0, huntSent: false,
+      fetchDueAt: 0, fetchSent: false
+    };
+
+    delete fresh.pendingHatchSacrifice;
+    delete fresh.adminTest;
+  }
+
+  // Shared seasonal systems.
+  data.pendingTrades = {};
+  data.ultraRareState = null;
+  data.worldProgress = Object.fromEntries(RELIC_KEYS.map(relicKey => [relicKey, false]));
+  data.worldShatterUnlocked = false;
+  data.worldCommunityMilestonesAwarded = [];
+  data.communityBlessings = {};
+  data.ultraWeeklySchedule = null;
+  data.ultraAdminPauseUntil = 0;
+
+  data.seasonMoments = [];
+  data.seasonMomentFlags = {};
+  data.nextSeasonMomentId = 1;
+  data.recentHunts = [];
+
+  data.bigGame = {
+    active: false, weekKey: null, eventId: null, startedAt: 0, endsAt: 0,
+    scores: {}, reachedAt: {}, halftimeSent: false, resultsSent: false,
+    lastCompletedWeek: null, history: [], completedEventIds: [],
+    schedule: { weekKey: null, events: [] }, reminders: {}
+  };
+
+  data.merchant = {
+    active: false, type: null, scheduleId: null, scheduledWeekKey: null,
+    arrivalAt: 0, departureAt: 0, inventory: [], reminderSent: false,
+    specialAt: 0, specialDone: false, clearance: false, lastVisitAt: 0, history: []
+  };
+  data.merchantSchedule = { weekKey: null, visits: [] };
+  data.tokenSurge = { active: false, startsAt: 0, endsAt: 0, announced: false, scheduledWeekKey: null };
+
+  data.activeDistortion = null;
+  data.distortionState = null;
+  data.distortionSchedule = { weekKey: null, events: [] };
+
+  // Support old/new season-lock shapes.
+  data.seasonEnded = false;
+  data.seasonLocked = false;
+  data.seasonActive = true;
+  data.seasonEndAt = 0;
+  data.seasonEndedAt = 0;
+  data.finalScoresPreserved = false;
+
+  if (!data.seasonState || typeof data.seasonState !== "object") data.seasonState = {};
+  data.seasonState.active = true;
+  data.seasonState.ended = false;
+  data.seasonState.locked = false;
+  data.seasonState.startedAt = Date.now();
+  data.seasonState.endedAt = 0;
+  data.seasonState.warning24hSent = false;
+  data.seasonState.warning1hSent = false;
+
+  return { preservedPlayers, preservedCreatures };
+}
+
+function isSeasonLocked(data) {
+  if (data?.seasonState?.locked === true || data?.seasonState?.ended === true) return true;
+  if (data?.seasonLocked === true || data?.seasonEnded === true) return true;
+  if (data?.seasonActive === false) return true;
+  return false;
+}
+
+function isSeasonAdminBypassCommand(command) {
+  const exact = new Set([
+    "!resetseason", "!startnewseason", "!newseason",
+    "!volumestatus", "!activitytest",
+    "!leaderboard", "!exportdex", "!ultrastatus"
+  ]);
+  if (exact.has(command)) return true;
+
+  const prefixes = [
+    "!giveegg ", "!givepoints ", "!givetokens ", "!givebait ", "!givecapture ",
+    "!giverelic ", "!giveitem ", "!addtokens ", "!settokens ", "!removetokens ",
+    "!spawnmerchant", "!endmerchant", "!restockmerchant",
+    "!startultra", "!endultra", "!startbiggame", "!endbiggame",
+    "!startdistortion", "!enddistortion", "!test"
+  ];
+  return prefixes.some(prefix => command.startsWith(prefix));
+}
+
+
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
@@ -6641,6 +6856,22 @@ client.on("messageCreate", async (message) => {
   const command = content.toLowerCase();
   const data = loadData();
   const player = getPlayer(data, message.author.id);
+
+  // H.2A.1: normal gameplay locks when a season ends, but admins keep
+  // maintenance/testing access so they can prepare the next season.
+  if (isSeasonLocked(data)) {
+    const isAdmin = Boolean(message.member?.permissions.has(PermissionsBitField.Flags.Administrator));
+    const publicAllowed = ["!leaderboard", "!exportdex"].includes(command);
+    const adminAllowed = isAdmin && isSeasonAdminBypassCommand(command);
+
+    if (!publicAllowed && !adminAllowed) {
+      return message.reply(
+        "🏁 **The Monster Hunt season has ended!**\n\n" +
+        "All normal game functions are locked while final scores are preserved.\n" +
+        "The leaderboard remains available until the next season begins."
+      );
+    }
+  }
 
   // ==================== BIG GAME / MERCHANT PLAYER COMMANDS ====================
   if (command === "!testeconomy" || command.startsWith("!testeconomy ") || command === "!testbiggame" || command.startsWith("!testbiggame ")) {
@@ -9795,137 +10026,33 @@ ${captureChoicesText(choices)}
     return message.reply("🧹 The Season Chronicle has been cleared.");
   }
 
-  if (command === "!resetseason") {
+  if (["!resetseason", "!startnewseason", "!newseason"].includes(command)) {
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      return message.reply("Only admins can reset the season.");
+      return message.reply("Only admins can reset/start a Monster Hunt season.");
     }
 
-    let preservedPlayers = 0;
-    let preservedCreatures = 0;
-
-    for (const [userId, oldPlayerData] of Object.entries(data.players)) {
-      // Permanent collections and the cross-season Hunt Token economy are preserved.
-      const lifetimeCaught = Array.isArray(oldPlayerData.lifetimeCaught)
-        ? oldPlayerData.lifetimeCaught.map(monster => ({ ...monster }))
-        : [];
-      const preservedMerchantCollection = { ...(oldPlayerData.merchantCollection || {}) };
-      const preservedMerchantPurchases = Array.isArray(oldPlayerData.merchantPurchases) ? [...oldPlayerData.merchantPurchases] : [];
-      const preservedDiscoveredPetKeys = [...new Set([
-        ...(oldPlayerData.discoveredPetKeys || []),
-        ...(oldPlayerData.pets || []).map(pet => pet.key)
-      ])];
-      const grandPetCollectionRewardClaimed = Boolean(oldPlayerData.grandPetCollectionRewardClaimed);
-      const permanentPetTitles = new Set([
-        ...Object.values(PET_COLLECTIONS).map(reward => reward.title),
-        GRAND_PET_COLLECTION_REWARD.title,
-        ...GRAND_PET_COLLECTION_REWARD.legendaryTitles
-      ]);
-      const preservedPetTitles = (oldPlayerData.unlockedTitles || []).filter(title => permanentPetTitles.has(title));
-      if (grandPetCollectionRewardClaimed) {
-        for (const title of [GRAND_PET_COLLECTION_REWARD.title, ...GRAND_PET_COLLECTION_REWARD.legendaryTitles]) {
-          if (!preservedPetTitles.includes(title)) preservedPetTitles.push(title);
-        }
-      }
-      const permanentPetAchievements = new Set([
-        ...Object.values(PET_COLLECTIONS).map(reward => reward.achievement),
-        GRAND_PET_COLLECTION_REWARD.achievement,
-        ...GRAND_PET_COLLECTION_REWARD.legendaryTitles.map(title => `${GRAND_PET_COLLECTION_REWARD.achievement}: ${title}`)
-      ]);
-      const preservedPetAchievements = (oldPlayerData.secretAchievements || []).filter(achievement => permanentPetAchievements.has(achievement));
-
-      if (lifetimeCaught.length > 0 || preservedDiscoveredPetKeys.length > 0) {
-        preservedPlayers++;
-        preservedCreatures += lifetimeCaught.length;
-      }
-
-      data.players[userId] = {
-        points: 0,
-        caught: [],
-        lifetimeCaught,
-        currentMonster: null,
-        lastHunt: 0,
-        title: null,
-        unlockedTitles: preservedPetTitles,
-        secretAchievements: preservedPetAchievements,
-        ultraCaughtKeys: [],
-        ultraSummonedKeys: [],
-        ultraParticipationCount: 0,
-        dailyQuests: [],
-        dailyClaimed: false,
-        lastDaily: null,
-        huntCount: 0,
-        dailyReward: 0,
-        bait: {
-          rare: 0,
-          epic: 0,
-          legendary: 0
-        },
-        activeBait: null,
-        knowledge: {},
-        captureItems: {
-          berry: 0,
-          honey: 0,
-          net: 0,
-          masterCharm: 0
-        },
-        eggs: [],
-        incubatingEggs: [],
-        lastIncubatorSlots: 1,
-        pets: [],
-        discoveredPetKeys: preservedDiscoveredPetKeys,
-        grandPetCollectionRewardClaimed,
-        equippedPetId: null,
-        nextPetId: 1,
-        titleProgress: {
-          eggsFound: 0, eggsHatched: 0, ultraAttempts: 0,
-          captureItemsUsed: 0, masterCharmUsed: 0, baitUsed: 0,
-          failedCaptureStreak: 0, failedAtNinety: false,
-          mixerWithoutCharm: false, ultraAtFiveOrLess: false
-        },
-        relics: Object.fromEntries(RELIC_KEYS.map(relicKey => [relicKey, 0])),
-        huntTokens: Math.max(0, Number(oldPlayerData.huntTokens || 0)),
-        lifetimeTokens: Math.max(0, Number(oldPlayerData.lifetimeTokens || 0)),
-        tokensSpent: Math.max(0, Number(oldPlayerData.tokensSpent || 0)),
-        bigGameWins: Math.max(0, Number(oldPlayerData.bigGameWins || 0)),
-        bigGamePlacements: Array.isArray(oldPlayerData.bigGamePlacements) ? [...oldPlayerData.bigGamePlacements] : [],
-        merchantCollection: preservedMerchantCollection,
-        merchantPurchases: preservedMerchantPurchases,
-        merchantEffects: {},
-        merchantGambles: Math.max(0, Number(oldPlayerData.merchantGambles || 0))
-      };
-    }
-
-    // Reset all shared seasonal systems.
-    data.pendingTrades = {};
-    data.ultraRareState = null;
-    data.worldProgress = Object.fromEntries(
-      RELIC_KEYS.map(relicKey => [relicKey, false])
-    );
-    data.worldShatterUnlocked = false;
-    data.worldCommunityMilestonesAwarded = [];
-    data.communityBlessings = {};
-    data.ultraWeeklySchedule = null;
-    data.ultraAdminPauseUntil = 0;
-    data.seasonMoments = [];
-    data.seasonMomentFlags = {};
-    data.nextSeasonMomentId = 1;
-    data.bigGame = { active: false, weekKey: null, eventId: null, startedAt: 0, endsAt: 0, scores: {}, reachedAt: {}, halftimeSent: false, resultsSent: false, lastCompletedWeek: null, history: [], completedEventIds: [], schedule: { weekKey: null, events: [] }, reminders: {} };
-    data.merchant = { active: false, type: null, scheduleId: null, scheduledWeekKey: null, arrivalAt: 0, departureAt: 0, inventory: [], reminderSent: false, specialAt: 0, specialDone: false, clearance: false, lastVisitAt: 0, history: [] };
-    data.merchantSchedule = { weekKey: null, visits: [] };
-    data.tokenSurge = { active: false, startsAt: 0, endsAt: 0, announced: false, scheduledWeekKey: null };
-
-    // Keep Dex-import records so the same old-bot export cannot be
-    // accidentally imported over the permanent collection a second time.
+    const result = hardResetSeasonForNewCompetition(data);
     saveData(data);
 
     return message.reply(
-      `🔄 **Monster Hunt season has been fully reset!**\n\n` +
-      `✅ Preserved permanent Monster Dex, Pet Dex discoveries, and merchant collections for **${preservedPlayers} players**\n` +
-      `✅ Preserved **${preservedCreatures} lifetime monster catches**\n\n` +
-      `✅ Preserved Hunt Token wallets, lifetime token history, Big Game records, purchased collectibles, and permanent pet-collection titles\n\n` +
-      `Reset: points, seasonal catches, hunt timers, quests, bait, capture items, active merchant effects, ` +
-      `knowledge, titles, achievements, eggs, incubators, pets, Companion XP, ` +
-      `Relics, trades, Ultra records, world progress, and the random Ultra schedule.`
+      `🌅 **A NEW MONSTER HUNT SEASON HAS BEGUN!**\n\n` +
+      `✅ Preserved permanent Monster Dex / lifetime catches\n` +
+      `✅ Preserved permanent PetDex discoveries and collection-history titles\n` +
+      `✅ Preserved permanent history for **${result.preservedPlayers} players**\n` +
+      `✅ Preserved **${result.preservedCreatures} lifetime monster catches**\n\n` +
+      `🧹 **WIPED FOR EVERY PLAYER:**\n` +
+      `⭐ Hunter Points\n` +
+      `🪙 Hunt Tokens and token counters\n` +
+      `🪤 Bait / lures / active bait\n` +
+      `🎒 Capture items and merchant inventory\n` +
+      `🥚 Eggs and incubators\n` +
+      `🐾 Owned pets, equipped pet, Companion XP/bond progress\n` +
+      `📚 Species Knowledge bonuses\n` +
+      `🔮 Relics\n` +
+      `🎯 Big Game / Ultra / event progress\n` +
+      `⏱️ Hunt/fetch cooldown state\n` +
+      `📜 Daily quests and seasonal titles/achievements\n\n` +
+      `🏹 Everyone now starts competitively from zero.`
     );
   }
 if (command.startsWith("!givepoints ")) {
@@ -11192,6 +11319,7 @@ function activityPetById(player, petId) {
 
 async function activityIncubateEgg(user, inventoryIndex) {
   const data = loadData();
+  if (isSeasonLocked(data)) return {ok:false,error:"The season is currently locked."};
   const player = getPlayer(data,user.id);
   const slots = getIncubatorSlots(player);
 
@@ -11512,6 +11640,9 @@ function activityPlayerPayload(data, user) {
 
 async function activityStartNormalHunt(user) {
   const data = loadData();
+  if (isSeasonLocked(data)) {
+    return { ok:false, code:"season_ended", message:"The Monster Hunt season has ended. Hunts reopen when the new season begins." };
+  }
   const player = getPlayer(data, user.id);
   ensureActivityProfile(player, user);
 
@@ -11640,7 +11771,7 @@ async function activityCapture(user, itemKey = null) {
   };
 }
 
-// ==================== H.2A DISCORD ACTIVITY WEB SERVER ====================
+// ==================== H.2A.1 DISCORD ACTIVITY WEB SERVER ====================
 const ACTIVITY_PUBLIC_DIR = path.join(__dirname, "public");
 const ACTIVITY_PORT = Number(process.env.PORT || 8080);
 
@@ -11677,7 +11808,7 @@ function sqliteStatusPayload() {
   const row = db.prepare("SELECT updated_at, length(payload) AS bytes FROM game_state WHERE id = 1").get();
   const state = loadData();
   return {
-    phase: "H.2A",
+    phase: "H.2A.1",
     storage: "sqlite-volume",
     databaseFile: DATABASE_FILE,
     volumeDetected: fs.existsSync("/data"),
@@ -11862,7 +11993,7 @@ const activityServer = http.createServer(async (req, res) => {
 });
 
 activityServer.listen(ACTIVITY_PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity H.2A listening on port ${ACTIVITY_PORT}`);
+  console.log(`Monster Hunt Activity H.2A.1 listening on port ${ACTIVITY_PORT}`);
 });
 
 // BOT_ENABLED=false lets you deploy/test the new Railway service without
