@@ -229,7 +229,7 @@ const PHASE_F_HUNTING = {
         { name:"Mossback Grazer", icon:"🦌", rarity:"Common", baseChance:72, points:1 },
         { name:"Thornfang Lynx", icon:"🐆", rarity:"Rare", baseChance:52, points:3 },
         { name:"Gloomwing Owlbear", icon:"🦉", rarity:"Epic", baseChance:31, points:5 },
-        { name:"The Hollow King", icon:"👑", image:"/assets/monsters/the_hollow_king.png", rarity:"Epic", level:18, baseChance:52, points:15, tokens:7, petXp:220, drops:[{name:"Rift Shard",qty:2,icon:"💎"},{name:"Soul Essence",qty:1,icon:"🧪"},{name:"Ancient Crown Fragment",qty:1,icon:"👑"}] }
+        { name:"The Hollow King", icon:"👑", image:"/assets/monsters/the_hollow_king.png", rarity:"Legendary", baseChance:12, points:10 }
       ]
     },
     {
@@ -271,6 +271,14 @@ const PHASE_F_HUNTING = {
         { name:"Aurora Wyrm", icon:"🐉", rarity:"Legendary", baseChance:10, points:15 }
       ]
     }
+  ],
+  lures: [
+    { key:"none", name:"No Lure", icon:"🏹", description:"Use normal encounter odds.", uses:null },
+    { key:"rare", name:"Rare Bait", icon:"🔵", description:"Improves Rare odds on the next normal hunt.", uses:3 },
+    { key:"epic", name:"Epic Bait", icon:"🟣", description:"Improves Epic odds on the next normal hunt.", uses:2 },
+    { key:"legendary", name:"Legendary Bait", icon:"🟠", description:"Improves Legendary odds on the next normal hunt.", uses:1 },
+    { key:"compass", name:"Hunter's Compass", icon:"🧭", description:"Guarantees the next ordinary encounter is Rare or better.", uses:1 },
+    { key:"golden", name:"Golden Lure", icon:"🟡", description:"Guarantees the next ordinary encounter is Legendary.", uses:1 }
   ],
   captureTools: [
     { key:"none", name:"Normal Hunt", icon:"🏹", bonus:0, uses:null },
@@ -407,6 +415,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity Phase G.8.3 DEV running on port ${PORT}`);
+  console.log(`Monster Hunt Activity Phase G.8.4 DEV running on port ${PORT}`);
   console.log("SAFE MODE: fake test data + local cosmetic/pet selection only.");
 });
