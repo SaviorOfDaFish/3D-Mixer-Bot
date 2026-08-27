@@ -1,71 +1,86 @@
-# Monster Hunt — Phase H.0.1
-## Fresh Season + New Railway Volume + SQLite + Discord Bridge
+# Monster Hunt — Phase H.1
 
-This build starts the new Monster Hunt season from zero.
+## Live player + live hunting
 
-There is NO old-season save migration and NO data.json import.
+H.1 connects the Discord Activity to the actual Discord user with the official
+Embedded App SDK and the `identify` OAuth scope.
 
-## Storage
-
-Mount the NEW Railway Volume at:
-
-`/data`
-
-The new season is stored in:
+Both the Discord chat commands and the Activity use the same:
 
 `/data/monster-hunt.db`
 
-Both the Discord bot and Discord Activity are served by this same new Railway
-service.
+### Railway variables required
 
-## Admin checks
+Keep:
 
-`!volumestatus`
-- verifies the `/data` Volume
-- shows `/data/monster-hunt.db`
-- shows saved player count
-- shows save size and last write
-- confirms Activity writes are still OFF
+`DISCORD_TOKEN`
+`BOT_ENABLED=true`
 
-`!activitytest`
-- sends a test update into the configured Monster Hunt Discord channel
-- verifies the new combined service can send Activity/game announcements
+Add:
 
-## Setup
+`DISCORD_CLIENT_ID=<your Discord Application ID>`
+`DISCORD_CLIENT_SECRET=<OAuth2 Client Secret from the same Discord Application>`
 
-1. Upload this ZIP's contents to the NEW GitHub repository.
-2. Deploy that repository in the NEW Railway project.
-3. Add a Railway Volume and mount it at `/data`.
-4. Add your existing Discord bot token as `DISCORD_TOKEN`.
-5. Set `BOT_ENABLED=false` at first.
-6. Deploy.
-7. Open the Activity and confirm `PHASE H.0.1 • FRESH SEASON`.
-8. Stop the OLD Railway bot.
-9. Change the NEW service to `BOT_ENABLED=true`.
-10. Redeploy.
-11. In Discord run `!volumestatus`.
-12. Run `!activitytest`.
+Do not put the Client Secret in GitHub.
 
-Do not run the old and new Railway deployments with the same Discord bot token
-at the same time.
+### Discord Developer Portal
 
-## What H.0.1 does NOT do yet
+Use the SAME Discord Application/Bot you already have.
 
-The Activity is still read-only and most G.9 screens still use DEV player data.
-H.0.1 is the infrastructure cutover.
+Under OAuth2, make sure there is at least one Redirect URI. For an Activity-only
+OAuth flow, Discord's own guide allows a placeholder such as:
 
-## Next: H.1
+`https://127.0.0.1`
 
-H.1 will replace DEV data with real new-season SQLite data:
-- Discord player identity
-- real profile / points / tokens
-- real pets and equipped companion
-- real eggs and incubators
-- real PetDex
-- real inventory
-- real leaderboards
-- real active events
-- real Recent Hunts
-- real monster / pet / egg image mapping
+The Embedded App SDK handles the Activity authorization flow.
 
-H.2 will enable Activity gameplay writes and real Discord hunt updates.
+### Chat commands still work
+
+YES.
+
+Players who cannot access the Discord Activity can continue using the existing
+chat commands because the original command handler is still included.
+
+Examples:
+- `!hunt`
+- `!usebait rare`
+- `!captureitems`
+- `!eggs`
+- `!incubate`
+- `!hatch`
+- `!pets`
+- `!petdex`
+- `!leaderboard`
+- `!daily`
+- merchant, Big Game, Ultra Hunt, and all other existing commands
+
+The Activity and commands share the same SQLite save.
+
+### H.1 test
+
+1. Upload this build to the new GitHub repo.
+2. Add `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in Railway.
+3. Deploy.
+4. Open the Activity.
+5. Your real Discord display name should replace `Activity Test Hunter`.
+6. Run `!volumestatus`; opening the Activity should have created your real player.
+7. Open Hunt.
+8. Your hunter should appear.
+9. Press `Begin Hunt`.
+10. A real monster encounter is generated using the same normal-hunt logic as the bot.
+11. The Monster Hunt Discord channel receives an Activity encounter update.
+12. Choose Hunt Normally or one of your real owned capture items.
+13. Roll to Catch.
+14. The actual game result is saved to SQLite and posted to Discord.
+
+### Art
+
+Real monster definitions use their existing image filenames.
+
+Add art under:
+
+`public/assets/monsters/`
+`public/assets/pets/`
+`public/assets/eggs/`
+
+Missing assets will fall back until the full art library is uploaded.

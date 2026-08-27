@@ -1,12 +1,13 @@
 {
   "name": "mixer-monster-hunt-h0",
-  "version": "2.0.1-h0.1",
+  "version": "2.1.0-h1",
   "private": true,
-  "description": "Monster Hunt Discord bot + Activity + fresh Railway Volume SQLite backend",
+  "description": "Monster Hunt H.1 - real Discord Activity identity and live hunting",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "check": "node --check index.js"
+    "start": "npm run build:activity && node index.js",
+    "check": "node --check index.js",
+    "build:activity": "node build-activity.js"
   },
   "engines": {
     "node": ">=22.5.0"
@@ -14,6 +15,8 @@
   "dependencies": {
     "discord.js": "^14.21.0",
     "dotenv": "^17.2.0",
-    "node-cron": "^4.0.0"
+    "node-cron": "^4.0.0",
+    "@discord/embedded-app-sdk": "^2.4.0",
+    "esbuild": "^0.25.0"
   }
 }

@@ -10605,7 +10605,683 @@ if (command.startsWith("!givepoints ")) {
 });
 
 
-// ==================== H.0.1 DISCORD ACTIVITY WEB SERVER ====================
+// ==================== H.1 ACTIVITY UI LAYOUT DATA ====================
+const H1_PET_DEX = [
+  { key:"briar_pup", name:"Briar Pup", icon:"🌿", habitat:"Forest", rarity:"Common", ability:"Capture", description:"Slightly increases normal monster capture chance." },
+  { key:"myceling", name:"Myceling", icon:"🍄", habitat:"Forest", rarity:"Rare", ability:"Egg Finder", description:"Increases the chance to discover eggs." },
+  { key:"rootling_guardian", name:"Rootling Guardian", icon:"🌳", habitat:"Forest", rarity:"Epic", ability:"Item Finder", description:"Finds useful hunting supplies after successful hunts." },
+  { key:"verdant_sentinel", name:"Verdant Sentinel", icon:"🦉", habitat:"Forest", rarity:"Legendary", ability:"Shiny Hunter", description:"Greatly increases shiny monster odds." },
+
+  { key:"reef_snapper", name:"Reef Snapper", icon:"🪸", habitat:"Ocean", rarity:"Common", ability:"Bonus Points", description:"Earns bonus points from successful hunts." },
+  { key:"abyss_prowler", name:"Abyss Prowler", icon:"🌊", habitat:"Ocean", rarity:"Rare", ability:"Cooldown", description:"Reduces the normal hunt cooldown." },
+  { key:"inkfiend_hatchling", name:"Inkfiend Hatchling", icon:"🦑", habitat:"Ocean", rarity:"Epic", ability:"Item Finder", description:"Frequently finds useful hunting supplies." },
+  { key:"leviacub", name:"Leviacub", icon:"🐉", habitat:"Ocean", rarity:"Legendary", ability:"Bonus Points", description:"Earns a large point bonus from successful hunts." },
+
+  { key:"pebble_maw", name:"Pebble Maw", icon:"🪨", habitat:"Mountain", rarity:"Common", ability:"Item Finder", description:"Occasionally finds capture items after successful hunts." },
+  { key:"crystal_burrower", name:"Crystal Burrower", icon:"💎", habitat:"Mountain", rarity:"Rare", ability:"Egg Finder", description:"Increases the chance to discover eggs." },
+  { key:"ironhide_cub", name:"Ironhide Cub", icon:"🦍", habitat:"Mountain", rarity:"Epic", ability:"Capture", description:"Increases normal monster capture chance." },
+  { key:"titan_spawn", name:"Titan Spawn", icon:"⛰️", habitat:"Mountain", rarity:"Legendary", ability:"Bonus Points", description:"Earns a large point bonus from successful hunts." },
+
+  { key:"cinderling", name:"Cinderling", icon:"🔥", habitat:"Volcano", rarity:"Common", ability:"Bonus Points", description:"Earns bonus points from successful hunts." },
+  { key:"ashfang", name:"Ashfang", icon:"🌋", habitat:"Volcano", rarity:"Rare", ability:"Item Finder", description:"Finds useful items after successful hunts." },
+  { key:"ember_drake", name:"Ember Drake", icon:"🐉", habitat:"Volcano", rarity:"Epic", ability:"Egg Finder", description:"Greatly increases the chance to discover eggs." },
+  { key:"infernal_wyrmling", name:"Infernal Wyrmling", icon:"🌋", habitat:"Volcano", rarity:"Legendary", ability:"Shiny Hunter", description:"Greatly increases shiny monster odds." },
+
+  { key:"ice_crawler", name:"Ice Crawler", icon:"❄️", habitat:"Arctic", rarity:"Common", ability:"Cooldown", description:"Slightly reduces the normal hunt cooldown." },
+  { key:"frost_wretch", name:"Frost Wretch", icon:"🐺", habitat:"Arctic", rarity:"Rare", ability:"Capture", description:"Increases normal monster capture chance." },
+  { key:"glacier_horror", name:"Glacier Horror", icon:"🐻", habitat:"Arctic", rarity:"Epic", ability:"Bonus Points", description:"Earns additional points from successful hunts." },
+  { key:"white_tyrant_cub", name:"White Tyrant Cub", icon:"👑", habitat:"Arctic", rarity:"Legendary", ability:"Capture", description:"Greatly increases normal monster capture chance." },
+
+  { key:"living_eye", name:"Living Eye", icon:"👁️", habitat:"Void", rarity:"Common", ability:"Egg Finder", description:"Slightly increases the chance to discover eggs." },
+  { key:"night_skitter", name:"Night Skitter", icon:"🕷️", habitat:"Void", rarity:"Rare", ability:"Shiny Hunter", description:"Slightly increases shiny monster odds." },
+  { key:"void_watcher", name:"Void Watcher", icon:"🌌", habitat:"Void", rarity:"Epic", ability:"Egg Finder", description:"Greatly increases the chance to discover eggs." },
+  { key:"astral_spawn", name:"Astral Spawn", icon:"🌠", habitat:"Void", rarity:"Legendary", ability:"Shiny Hunter", description:"Massively increases shiny monster odds." },
+
+  { key:"storm_imp", name:"Storm Imp", icon:"⚡", habitat:"Sky", rarity:"Common", ability:"Item Finder", description:"Occasionally finds capture items after successful hunts." },
+  { key:"cloud_ripper", name:"Cloud Ripper", icon:"☁️", habitat:"Sky", rarity:"Rare", ability:"Cooldown", description:"Reduces the normal hunt cooldown." },
+  { key:"tempest_hatchling", name:"Tempest Hatchling", icon:"🌩️", habitat:"Sky", rarity:"Epic", ability:"Capture", description:"Greatly increases normal monster capture chance." },
+  { key:"storm_emperor_cub", name:"Storm Emperor Cub", icon:"👑", habitat:"Sky", rarity:"Legendary", ability:"Cooldown", description:"Greatly reduces the normal hunt cooldown." },
+
+  { key:"bone_gnawer", name:"Bone Gnawer", icon:"🦴", habitat:"Undead", rarity:"Common", ability:"Bonus Points", description:"Earns bonus points from successful hunts." },
+  { key:"grave_whisper", name:"Grave Whisper", icon:"👻", habitat:"Undead", rarity:"Rare", ability:"Egg Finder", description:"Increases the chance to discover eggs." },
+  { key:"crypt_fiend", name:"Crypt Fiend", icon:"⚔️", habitat:"Undead", rarity:"Epic", ability:"Item Finder", description:"Frequently finds valuable hunting supplies." },
+  { key:"hollow_prince", name:"Hollow Prince", icon:"👑", habitat:"Undead", rarity:"Legendary", ability:"Bonus Points", description:"Earns a massive point bonus from successful hunts." }
+];
+
+const H1_BEYOND_PETS = [
+  { key:"ember_imp", name:"Ember Imp", icon:"🔥", habitat:"Infernal Rift", rarity:"Rare", ability:"Kindled Hunt", description:"After a failed capture, it can strengthen the next attempt.", image:"ember_imp.png" },
+  { key:"ashbound_familiar", name:"Ashbound Familiar", icon:"🌋", habitat:"Infernal Rift", rarity:"Legendary", ability:"From the Ashes", description:"Can manifest rewards from successful hunts.", image:"ashbound_familiar.png" },
+  { key:"frost_mephit", name:"Frost Mephit", icon:"❄️", habitat:"Shattered Frost", rarity:"Rare", ability:"Frozen Time", description:"Periodically freezes time between hunts.", image:"frost_mephit.png" },
+  { key:"rime_sprite", name:"Rime Sprite", icon:"💎", habitat:"Shattered Frost", rarity:"Legendary", ability:"Second Chance", description:"May hold a fleeing monster in place for another chance.", image:"rime_sprite.png" },
+  { key:"runeclaw_familiar", name:"Runeclaw Familiar", icon:"🔮", habitat:"Sunken Arcane", rarity:"Rare", ability:"Rune Reader", description:"Reads a creature's true pattern and strengthens knowledge.", image:"runeclaw_familiar.png" },
+  { key:"glyph_wisp", name:"Glyph Wisp", icon:"🌀", habitat:"Sunken Arcane", rarity:"Legendary", ability:"Arcane Duplication", description:"May duplicate the magical signature of a newly discovered egg.", image:"glyph_wisp.png" },
+  { key:"bone_familiar", name:"Bone Familiar", icon:"💀", habitat:"Hollow Veil", rarity:"Rare", ability:"Grave Scavenger", description:"Digs useful supplies from places best left undisturbed.", image:"bone_familiar.png" },
+  { key:"veilkin", name:"Veilkin", icon:"👻", habitat:"Hollow Veil", rarity:"Legendary", ability:"Veilwalk", description:"Can keep a fleeing encounter from ending.", image:"veilkin.png" },
+  { key:"star_familiar", name:"Star Familiar", icon:"✨", habitat:"Astral Fracture", rarity:"Rare", ability:"Written in the Stars", description:"Occasionally foresees a fortunate hunt.", image:"star_familiar.png" },
+  { key:"paradox_imp", name:"Paradox Imp", icon:"🌌", habitat:"Astral Fracture", rarity:"Legendary", ability:"Paradox", description:"Sometimes causes one successful capture to have happened twice.", image:"paradox_imp.png" }
+];
+
+const H1_OWNED_KEYS = [
+  "briar_pup","myceling","verdant_sentinel","reef_snapper","leviacub",
+  "crystal_burrower","ember_drake","ice_crawler","living_eye","storm_imp",
+  "bone_gnawer","frost_mephit","rime_sprite","star_familiar","veilkin"
+];
+
+const H1_OWNED_PETS = [...H1_PET_DEX, ...H1_BEYOND_PETS]
+  .filter(p => H1_OWNED_KEYS.includes(p.key))
+  .map((p, index) => ({
+    ...p,
+    id: index + 1,
+    nickname: p.key === "rime_sprite" ? "Rimebit" : null,
+    level: [4,7,12,3,9,5,10,6,2,8,5,8,11,7][index] || 1,
+    xp: [35,82,56,20,77,46,92,61,18,69,43,74,89,58][index] || 0,
+    bond: [2,3,4,2,3,2,4,3,1,3,2,4,5,3][index] || 1
+  }));
+
+const H1_DEV_INVENTORY = [
+  { key:"berry", name:"Hunter Berry", icon:"🍓", qty:5, type:"Capture Item", effect:"+10% capture chance." },
+  { key:"honey", name:"Sticky Honey", icon:"🍯", qty:2, type:"Capture Item", effect:"+20% capture chance." },
+  { key:"net", name:"Enchanted Net", icon:"🕸️", qty:1, type:"Capture Item", effect:"+30% capture chance." },
+  { key:"masterCharm", name:"Master Charm", icon:"🌟", qty:0, type:"Capture Item", effect:"Guaranteed capture." },
+  { key:"rare_bait", name:"Rare Bait", icon:"🟦", qty:3, type:"Bait", effect:"Improves the rarity of the next ordinary encounter." },
+  { key:"epic_bait", name:"Epic Bait", icon:"🟪", qty:1, type:"Bait", effect:"Greatly improves the rarity of the next ordinary encounter." },
+  { key:"legendary_bait", name:"Legendary Bait", icon:"🟨", qty:1, type:"Bait", effect:"Targets the highest rarity tier for the next ordinary encounter." },
+  { key:"fresh_tracks", name:"Fresh Tracks", icon:"🐾", qty:1, type:"Merchant", effect:"Immediately clears the normal hunt cooldown.", image:"fresh_tracks.png" },
+  { key:"golden_lure", name:"Golden Lure", icon:"🟡", qty:1, type:"Merchant", effect:"Next ordinary encounter is guaranteed Legendary.", image:"golden_lure.png" },
+  { key:"mystery_sack", name:"Mystery Sack", icon:"🎒", qty:2, type:"Merchant", effect:"Opens for a random reward.", image:"mystery_sack.png" },
+  { key:"rusted_key", name:"Rusted Key", icon:"🗝️", qty:1, type:"Collectible", effect:"Opens a forgotten hunter cache containing Hunt Tokens.", image:"rusted_key.png" },
+  { key:"monster_whistle", name:"Monster Whistle", icon:"📯", qty:1, type:"Collectible", effect:"Clears hunt cooldown and guarantees Rare or better.", image:"monster_whistle.png" }
+];
+
+const H1_TROPHIES = [
+  { key:"briarjaw_fang", name:"Briarjaw Fang", icon:"🦷", earned:true, source:"Bounty Hunt", description:"Taken from the Briarjaw after a successful bounty." },
+  { key:"loaded_knucklebone", name:"Loaded Knucklebone", icon:"🎲", earned:true, source:"Bounty Hunt", description:"A warped bone die recovered from the Knucklebone Horror." },
+  { key:"crowned_horn", name:"Crowned Horn", icon:"🦌", earned:true, source:"Bounty Hunt", description:"A prestigious trophy from the Crowned Ravager." },
+  { key:"graveglass_eye", name:"Graveglass Eye", icon:"👁️", earned:true, source:"Bounty Hunt", description:"A black crystal eye carrying a ghostly pupil." },
+  { key:"riftmaw_shard", name:"Riftmaw Shard", icon:"💠", earned:false, source:"Bounty Hunt", description:"A dimensional shard from the Riftmaw." }
+];
+
+const H1_TITLES = [
+  { name:"Rift Hunter", unlocked:true },
+  { name:"Shiny Hunter", unlocked:true },
+  { name:"Event Hunter", unlocked:true },
+  { name:"Perfectly Executed", unlocked:true },
+  { name:"Against All Odds", unlocked:false },
+  { name:"The Chosen Mixer", unlocked:false, secret:true }
+];
+
+const H1_COSMETICS = [
+  { key:"forest_cloak", name:"Forest Cloak", slot:"Cloak", unlocked:true, requirement:"Starter cosmetic" },
+  { key:"rift_cloak", name:"Rift Cloak", slot:"Cloak", unlocked:true, requirement:"Reach Level 10" },
+  { key:"frost_cloak", name:"Frost Cloak", slot:"Cloak", unlocked:false, requirement:"Reach Level 15" },
+  { key:"trophy_horns", name:"Trophy Horns", slot:"Headgear", unlocked:false, requirement:"Earn 5 bounty trophies" },
+  { key:"ember_outfit", name:"Ember Hunter Armor", slot:"Outfit", unlocked:false, requirement:"Discover 20 PetDex companions" },
+  { key:"big_game_mantle", name:"Big Game Champion Mantle", slot:"Cloak", unlocked:false, requirement:"Win a Big Game Hunt" }
+];
+
+
+const H1_PHASE_E_EVENTS = {
+  bigGame: {
+    active: true,
+    title: "Big Game Hunt",
+    startedAt: Date.now() - 34 * 60 * 1000,
+    endsAt: Date.now() + 86 * 60 * 1000,
+    huntCooldownMinutes: 30,
+    playerScore: 11,
+    tokenBalance: 18,
+    leaderboard: [
+      { name: "Fiddle", score: 18 },
+      { name: "Card and Book Dragon", score: 14 },
+      { name: "Activity Test Hunter", score: 11 },
+      { name: "daba9494", score: 8 },
+      { name: "Mythicredd", score: 5 }
+    ],
+    tokenRewards: { Common: 1, Rare: 2, Epic: 4, Legendary: 8, Mythic: 15 },
+    placementRewards: [50, 30, 15]
+  },
+
+  bounty: {
+    active: true,
+    id: "bounty-briarjaw-dev",
+    npc: "Aldric",
+    npcIcon: "🧔",
+    targetHidden: true,
+    discoveredName: null,
+    clue: "Deep claw marks score the old trees. The tracks are too broad for a wolf, and thorn-covered fur has been found near the creek.",
+    difficulty: "Dangerous",
+    participants: 6,
+    attempts: 17,
+    postedAt: Date.now() - 9 * 60 * 60 * 1000,
+    durationText: "Until captured",
+    participationReward: "+20 Hunter Points • +5 Hunt Tokens",
+    catcherReward: "Major bounty reward + trophy",
+    trophy: "Briarjaw Fang",
+    possibleTargets: [
+      { name: "The Briarjaw", icon: "🌿", trophy: "Briarjaw Fang" },
+      { name: "The Knucklebone Horror", icon: "🎲", trophy: "Loaded Knucklebone" },
+      { name: "The Crowned Ravager", icon: "🦌", trophy: "Crowned Horn" },
+      { name: "The Graveglass Stalker", icon: "👁️", trophy: "Graveglass Eye" },
+      { name: "The Riftmaw", icon: "💠", trophy: "Riftmaw Shard" }
+    ]
+  },
+
+  distortion: {
+    active: true,
+    key: "frost",
+    name: "The Shattered Frost",
+    icon: "❄️",
+    plane: "Shattered Frost",
+    startedAt: Date.now() - 41 * 60 * 1000,
+    endsAt: Date.now() + 139 * 60 * 1000,
+    huntCooldownMinutes: 30,
+    eventMonsterChance: 60,
+    eggDropChance: 40,
+    egg: "Shardbound Egg",
+    colorClass: "frost",
+    story: "A fracture has opened above the hunting grounds. Frozen ruins can be seen through the breach, and creatures from the Shattered Frost are crossing into our world.",
+    monsters: [
+      { name: "Shardling", rarity: "Common", icon: "❄️", points: 3 },
+      { name: "Frostgaze Watcher", rarity: "Rare", icon: "👁️", points: 5 },
+      { name: "Rimeclaw Horror", rarity: "Rare", icon: "🐺", points: 5 },
+      { name: "Glacial Runegolem", rarity: "Epic", icon: "🧊", points: 8 },
+      { name: "Aurora Wyrm", rarity: "Legendary", icon: "🐉", points: 15 }
+    ],
+    knownPlanes: [
+      { key:"infernal", name:"The Infernal Rift", icon:"🔥", discovered:true },
+      { key:"frost", name:"The Shattered Frost", icon:"❄️", discovered:true },
+      { key:"arcane", name:"The Sunken Arcane", icon:"🌊", discovered:true },
+      { key:"hollow", name:"The Hollow Veil", icon:"👻", discovered:true },
+      { key:"astral", name:"The Astral Fracture", icon:"🌌", discovered:true },
+      { key:"verdant", name:"Unknown Plane", icon:"❔", discovered:false },
+      { key:"dream", name:"Unknown Plane", icon:"❔", discovered:false }
+    ]
+  },
+
+  nextSeason: {
+    focus: ["Big Game Hunts", "Bounty Hunts"],
+    ambientSystem: "Distortions",
+    ultrasEnabled: false
+  }
+};
+
+
+const H1_PHASE_F_HUNTING = {
+  zones: [
+    {
+      key: "wildwood",
+      name: "Wildwood Trail",
+      icon: "🌲",
+      subtitle: "Standard Hunt",
+      description: "A balanced hunting zone with common, rare, epic, and legendary creatures.",
+      backgroundClass: "forest",
+      monsters: [
+        { name:"Mossback Grazer", icon:"🦌", rarity:"Common", baseChance:72, points:1 },
+        { name:"Thornfang Lynx", icon:"🐆", rarity:"Rare", baseChance:52, points:3 },
+        { name:"Gloomwing Owlbear", icon:"🦉", rarity:"Epic", baseChance:31, points:5 },
+        { name:"The Hollow King", icon:"👑", image:"/assets/monsters/the_hollow_king.png", rarity:"Legendary", baseChance:12, points:10 }
+      ]
+    },
+    {
+      key: "biggame",
+      name: "Big Game Grounds",
+      icon: "🎯",
+      subtitle: "Event Hunt",
+      description: "Fast-paced event hunting with Hunt Tokens on every successful capture.",
+      backgroundClass: "biggame",
+      monsters: [
+        { name:"Ironhide Boar", icon:"🐗", rarity:"Common", baseChance:70, points:1, tokens:1 },
+        { name:"Highland Stalker", icon:"🐺", rarity:"Rare", baseChance:50, points:3, tokens:2 },
+        { name:"Crowned Behemoth", icon:"🦬", rarity:"Epic", baseChance:29, points:5, tokens:4 },
+        { name:"Stormhorn Titan", icon:"⚡", rarity:"Legendary", baseChance:12, points:10, tokens:8 }
+      ]
+    },
+    {
+      key: "bounty",
+      name: "Bounty Trail",
+      icon: "📜",
+      subtitle: "Investigation Hunt",
+      description: "Follow clues and attempt to expose the hidden bounty target.",
+      backgroundClass: "bounty",
+      monsters: [
+        { name:"Unknown Trackmaker", icon:"❔", rarity:"Bounty", baseChance:38, points:0, clue:true }
+      ]
+    },
+    {
+      key: "distortion",
+      name: "Shattered Frost",
+      icon: "❄️",
+      subtitle: "Distortion Hunt",
+      description: "Planar monsters bleed through the breach. Special eggs may appear.",
+      backgroundClass: "frost",
+      monsters: [
+        { name:"Shardling", icon:"❄️", rarity:"Common", baseChance:72, points:3 },
+        { name:"Frostgaze Watcher", icon:"👁️", rarity:"Rare", baseChance:48, points:5 },
+        { name:"Glacial Runegolem", icon:"🧊", rarity:"Epic", baseChance:26, points:8 },
+        { name:"Aurora Wyrm", icon:"🐉", rarity:"Legendary", baseChance:10, points:15 }
+      ]
+    }
+  ],
+  lures: [
+    { key:"none", name:"No Lure", icon:"🏹", description:"Use normal encounter odds.", uses:null },
+    { key:"rare", name:"Rare Bait", icon:"🔵", description:"Improves Rare odds on the next normal hunt.", uses:3 },
+    { key:"epic", name:"Epic Bait", icon:"🟣", description:"Improves Epic odds on the next normal hunt.", uses:2 },
+    { key:"legendary", name:"Legendary Bait", icon:"🟠", description:"Improves Legendary odds on the next normal hunt.", uses:1 },
+    { key:"compass", name:"Hunter's Compass", icon:"🧭", description:"Guarantees the next ordinary encounter is Rare or better.", uses:1 },
+    { key:"golden", name:"Golden Lure", icon:"🟡", description:"Guarantees the next ordinary encounter is Legendary.", uses:1 }
+  ],
+  captureTools: [
+    { key:"none", name:"Normal Hunt", icon:"🏹", bonus:0, uses:null },
+    { key:"berry", name:"🍓 Bait", icon:"🍓", bonus:10, uses:5 },
+    { key:"honey", name:"🍯 Bait", icon:"🍯", bonus:20, uses:2 },
+    { key:"net", name:"🕸️ Bait", icon:"🕸️", bonus:30, uses:1 },
+    { key:"master", name:"🌟 Bait", icon:"🌟", bonus:100, uses:1 }
+  ],
+  companion: {
+    name:"Rimebit",
+    icon:"💎",
+    ability:"Second Chance",
+    description:"Once per DEV encounter, Rimebit can freeze a failed capture and allow one reroll."
+  }
+};
+
+
+const H1_PHASE_G_ALIGNMENT = {
+  version: "G",
+  principle: "Activity mirrors Monster Hunt instead of adding a separate ruleset.",
+  huntActions: ["hunt", "bait", "capture-result"],
+  excludedActions: ["approach", "observe", "combat"],
+  baitBonuses: { strawberry:10, honey:20, web:30, star:"guaranteed" },
+  seasonFocus: {
+    primary:["Big Game Hunts","Bounty Hunts"],
+    storySystem:"Random Distortions",
+    ultraHunts:false
+  },
+  notes:[
+    "No Approach action.",
+    "No Observe action.",
+    "No monster combat system.",
+    "No new currencies.",
+    "DEV rewards remain simulated only."
+  ]
+};
+
+
+const H1_PHASE_G5_LEADERBOARDS = {
+  current: [
+    { rank:1, name:"Mythicredd", points:412 },
+    { rank:2, name:"Activity Test Hunter", points:245, self:true },
+    { rank:3, name:"Card and Book Dragon", points:221 },
+    { rank:4, name:"daba9494", points:198 },
+    { rank:5, name:"Fiddle", points:176 }
+  ],
+  weekly: [
+    { rank:1, name:"daba9494", points:86 },
+    { rank:2, name:"Activity Test Hunter", points:74, self:true },
+    { rank:3, name:"Fiddle", points:63 },
+    { rank:4, name:"Mythicredd", points:59 },
+    { rank:5, name:"Card and Book Dragon", points:48 }
+  ]
+};
+
+
+const H1_PHASE_G9_SOCIAL = {
+  eggs: [
+    { key:"common_egg", name:"Common Egg", icon:"🥚", rarity:"Common", count:2, hatchMinutes:30 },
+    { key:"rare_egg", name:"Rare Egg", icon:"🔵", rarity:"Rare", count:1, hatchMinutes:90 },
+    { key:"ancient_egg", name:"Ancient Egg", icon:"🟣", rarity:"Epic", count:1, hatchMinutes:180 },
+    { key:"shardbound_egg", name:"Shardbound Egg", icon:"❄️", rarity:"Distortion", count:1, hatchMinutes:240 }
+  ],
+  recentHunts: [
+    { player:"Mythicredd", icon:"🏹", action:"caught", monster:"The Hollow King", rarity:"Legendary", points:10, pet:"Rimebit", age:"2m" },
+    { player:"daba9494", icon:"✨", action:"discovered a Shiny", monster:"Crypt Fiend", rarity:"Epic", points:5, pet:"Ember Drake", age:"8m" },
+    { player:"Fiddle", icon:"🥚", action:"found", monster:"Rare Egg", rarity:"Rare", points:0, pet:"Star Familiar", age:"14m" },
+    { player:"Card and Book Dragon", icon:"🏹", action:"caught", monster:"Dread Sentinel", rarity:"Epic", points:5, pet:"Veilkin", age:"21m" },
+    { player:"Activity Test Hunter", icon:"🏹", action:"caught", monster:"Grave Whisper", rarity:"Common", points:1, pet:"Veilkin", age:"31m", self:true }
+  ]
+};
+
+function safeFilePath(urlPath) {
+  const cleanPath = decodeURIComponent((urlPath || "/").split("?")[0]);
+  const requested = cleanPath === "/" ? "/index.html" : cleanPath;
+  const resolved = path.normalize(path.join(PUBLIC_DIR, requested));
+  if (!resolved.startsWith(PUBLIC_DIR)) return null;
+  return resolved;
+}
+
+function json(res, payload) {
+  res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  res.end(JSON.stringify(payload));
+}
+
+
+
+// ==================== H.1 DISCORD ACTIVITY AUTH + LIVE GAME BRIDGE ====================
+const activityTokenCache = new Map();
+
+function readRequestJson(req, limit = 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", chunk => {
+      body += chunk;
+      if (body.length > limit) {
+        reject(new Error("Request too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      try { resolve(body ? JSON.parse(body) : {}); }
+      catch { reject(new Error("Invalid JSON")); }
+    });
+    req.on("error", reject);
+  });
+}
+
+async function exchangeDiscordActivityCode(code) {
+  const clientId = process.env.DISCORD_CLIENT_ID || client.user?.id;
+  const clientSecret = process.env.DISCORD_CLIENT_SECRET;
+  if (!clientId) throw new Error("DISCORD_CLIENT_ID is not configured.");
+  if (!clientSecret) throw new Error("DISCORD_CLIENT_SECRET is not configured.");
+
+  const response = await fetch("https://discord.com/api/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "authorization_code",
+      code: String(code || "")
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.access_token) {
+    throw new Error(payload.error_description || payload.error || `Discord token exchange failed (${response.status})`);
+  }
+  return payload;
+}
+
+async function activityDiscordUser(req) {
+  const header = String(req.headers.authorization || "");
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  if (!token) return null;
+
+  const cached = activityTokenCache.get(token);
+  if (cached && cached.expiresAt > Date.now()) return cached.user;
+
+  const response = await fetch("https://discord.com/api/users/@me", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) return null;
+
+  const user = await response.json();
+  activityTokenCache.set(token, { user, expiresAt: Date.now() + 5 * 60 * 1000 });
+  return user;
+}
+
+function ensureActivityProfile(player, user) {
+  if (!player.activityProfile || typeof player.activityProfile !== "object") {
+    player.activityProfile = {
+      hunterLevel: 1,
+      hunterTitle: "Novice Hunter",
+      appearance: {
+        body: "male",
+        skin: "medium",
+        hair: "short",
+        hairColor: "brown",
+        eyes: "blue",
+        outfit: "hunter",
+        weapon: "bow"
+      }
+    };
+  }
+  player.discordUsername = user.username;
+  player.discordDisplayName = user.global_name || user.username;
+  return player.activityProfile;
+}
+
+function activityOwnedPetPayload(player) {
+  return (player.pets || []).map(owned => {
+    const def = getOwnedPetDefinition(owned);
+    if (!def) return null;
+    const level = Number(owned.level || 1);
+    const bond = Number(owned.bondLevel || owned.bond || 1);
+    const rawXp = Number(owned.xp || owned.companionXp || 0);
+    const xpNeeded = Math.max(50, Number(PET_XP_BASE[def.rarity] || 50) + Math.max(0, level - 1) * 25);
+    return {
+      id: owned.id,
+      key: def.key,
+      name: def.name,
+      nickname: owned.nickname || null,
+      icon: def.icon,
+      habitat: def.habitat,
+      rarity: def.rarity,
+      ability: def.signatureName || def.ability,
+      description: def.description,
+      level,
+      bond,
+      xp: Math.min(100, Math.round((rawXp / xpNeeded) * 100)),
+      xpCurrent: rawXp,
+      xpNeeded,
+      image: def.image || null,
+      equipped: String(player.equippedPetId || "") === String(owned.id)
+    };
+  }).filter(Boolean);
+}
+
+function activityPetDexPayload(player, beyond = false) {
+  const discovered = new Set(player.discoveredPetKeys || []);
+  const specialHabitats = new Set(["Infernal Rift","Shattered Frost","Sunken Arcane","Hollow Veil","Astral Fracture","The Unmade"]);
+  return pets
+    .filter(def => beyond ? specialHabitats.has(def.habitat) : !specialHabitats.has(def.habitat))
+    .map(def => ({
+      key: def.key,
+      name: def.name,
+      icon: def.icon,
+      habitat: def.habitat,
+      rarity: def.rarity,
+      ability: def.signatureName || def.ability,
+      description: def.description,
+      image: def.image || null,
+      discovered: discovered.has(def.key),
+      secret: Boolean(def.secret)
+    }));
+}
+
+function activityInventoryPayload(player) {
+  return [
+    { key:"rare_bait", name:"Rare Bait", icon:"🔵", count:Number(player.bait?.rare || 0), category:"Lure", description:"Improves Rare odds on your next normal hunt." },
+    { key:"epic_bait", name:"Epic Bait", icon:"🟣", count:Number(player.bait?.epic || 0), category:"Lure", description:"Improves Epic odds on your next normal hunt." },
+    { key:"legendary_bait", name:"Legendary Bait", icon:"🟠", count:Number(player.bait?.legendary || 0), category:"Lure", description:"Improves Legendary odds on your next normal hunt." },
+    { key:"berry", name:"Hunter Berry", icon:"🍓", count:Number(player.captureItems?.berry || 0), category:"Capture", description:"+10% to one capture attempt." },
+    { key:"honey", name:"Sticky Honey", icon:"🍯", count:Number(player.captureItems?.honey || 0), category:"Capture", description:"+20% to one capture attempt." },
+    { key:"net", name:"Enchanted Net", icon:"🕸️", count:Number(player.captureItems?.net || 0), category:"Capture", description:"+30% to one capture attempt." },
+    { key:"masterCharm", name:"Master Charm", icon:"🌟", count:Number(player.captureItems?.masterCharm || 0), category:"Capture", description:"Guarantees one capture attempt." }
+  ];
+}
+
+function activityEggPayload(player) {
+  return (player.eggs || []).map((egg, index) => {
+    const distortion = egg.distortionKey ? DISTORTION_EGGS[egg.distortionKey] : null;
+    return {
+      id: egg.id || `egg-${index + 1}`,
+      key: egg.distortionKey || String(egg.rarity || "Common").toLowerCase(),
+      name: distortion?.name || `${egg.rarity || "Common"} Egg`,
+      rarity: egg.rarity || (distortion ? "Distortion" : "Common"),
+      icon: distortion?.icon || EGG_TYPES[egg.rarity]?.icon || "🥚",
+      image: distortion?.image || null
+    };
+  });
+}
+
+function activityPlayerPayload(data, user) {
+  const player = getPlayer(data, user.id);
+  const profile = ensureActivityProfile(player, user);
+  const ownedPets = activityOwnedPetPayload(player);
+  const active = ownedPets.find(p => p.equipped) || ownedPets[0] || null;
+  const standardDex = activityPetDexPayload(player, false);
+  return {
+    hunter: {
+      name: user.global_name || user.username,
+      level: Number(profile.hunterLevel || 1),
+      points: Number(player.points || 0),
+      tokens: Number(player.huntTokens || 0),
+      title: player.title || profile.hunterTitle || "Novice Hunter",
+      activePetKey: active?.key || null,
+      activePet: active ? { name: active.nickname || active.name, level: active.level, icon: active.icon, image: active.image } : null,
+      stats: {
+        pets: ownedPets.length,
+        petDex: `${standardDex.filter(p => p.discovered).length}/32`,
+        trophies: Number((player.secretAchievements || []).length)
+      },
+      bait: { ...player.bait },
+      activeBait: player.activeBait || null,
+      captureItems: { ...player.captureItems },
+      huntReadyAt: Number(player.lastHunt || 0) + getPlayerHuntCooldown(player, data, user.id)
+    },
+    phaseD: {
+      ownedPets,
+      petDex: standardDex,
+      beyondPets: activityPetDexPayload(player, true),
+      inventory: activityInventoryPayload(player),
+      trophies: H1_TROPHIES,
+      titles: H1_TITLES,
+      cosmetics: H1_COSMETICS
+    },
+    eggs: activityEggPayload(player)
+  };
+}
+
+async function activityStartNormalHunt(user) {
+  const data = loadData();
+  const player = getPlayer(data, user.id);
+  ensureActivityProfile(player, user);
+
+  const now = Date.now();
+  const huntCooldown = getPlayerHuntCooldown(player, data, user.id);
+  const timeLeft = huntCooldown - (now - Number(player.lastHunt || 0));
+  if (timeLeft > 0) return { ok:false, code:"cooldown", timeLeft, readyAt:Number(player.lastHunt || 0) + huntCooldown };
+
+  const usedBait = player.activeBait;
+  prepareSignatureForHunt(player);
+  let monster = getRandomMonsterForPlayer(player, data, user.id);
+  const merchantEncounter = applyMerchantEncounterEffect(player, monster);
+  monster = merchantEncounter.monster;
+  const encounters = addEncounterKnowledge(player, monster);
+  const chanceInfo = calculateCaptureChance(player, monster, null, data, user.id);
+
+  player.currentMonster = monster;
+  player.activeBait = null;
+  player.lastHunt = now;
+  player.reminderState.channelId = MONSTER_CHANNEL_ID;
+  player.reminderState.huntDueAt = now + huntCooldown;
+  player.reminderState.huntSent = false;
+  player.huntCount++;
+  if (usedBait) player.titleProgress.baitUsed = (player.titleProgress.baitUsed || 0) + 1;
+  updateQuestProgress(player, "hunt");
+  checkTitleUnlocks(player);
+  saveData(data);
+
+  const choices = buildCaptureChoices(player, monster).map(choice => ({
+    number: choice.number,
+    itemKey: choice.itemKey,
+    label: choice.label,
+    chance: choice.chance
+  }));
+
+  const channel = await getTextChannel(MONSTER_CHANNEL_ID);
+  if (channel?.isTextBased()) {
+    await channel.send(
+      buildMonsterEmbed(
+        monster,
+        `🎮 Activity Hunt — ${formatPlayerName(player, user.global_name || user.username)} encountered ${monster.name}!`,
+        `**Rarity:** ${monster.rarity}\n` +
+        `**Habitat:** ${monster.habitat || "Unknown"}\n` +
+        `**Current Catch Chance:** ${chanceInfo.total}%\n` +
+        `${usedBait ? `**Bait Used:** ${String(usedBait).toUpperCase()}\n` : ""}` +
+        `\nThe hunter is choosing a capture method in the Discord Activity.`
+      )
+    ).catch(error => console.error("Activity encounter announcement failed:", error));
+  }
+
+  return {
+    ok:true,
+    monster:{ ...monster, imageUrl:monster.image ? `/assets/monsters/${monster.image}` : null },
+    chance:chanceInfo.total,
+    baseChance:Number(monster.chance || 0),
+    choices,
+    player:activityPlayerPayload(data, user).hunter
+  };
+}
+
+async function activityCapture(user, itemKey = null) {
+  const beforeData = loadData();
+  const beforePlayer = getPlayer(beforeData, user.id);
+  const monster = beforePlayer.currentMonster ? { ...beforePlayer.currentMonster } : null;
+  if (!monster) return { ok:false, message:"No active monster. Start a hunt first." };
+
+  const before = {
+    caught:(beforePlayer.caught || []).length,
+    points:Number(beforePlayer.points || 0),
+    tokens:Number(beforePlayer.huntTokens || 0),
+    eggs:(beforePlayer.eggs || []).length
+  };
+
+  const channel = await getTextChannel(MONSTER_CHANNEL_ID);
+  const sent = [];
+  const fakeMessage = {
+    author:{ id:user.id, username:user.username },
+    channel:channel?.isTextBased() ? channel : { send:async payload => { sent.push(payload); return { reply:async()=>null }; } },
+    reply:async payload => {
+      sent.push(payload);
+      if (channel?.isTextBased()) {
+        const decorated = typeof payload === "string"
+          ? { content:`🎮 **Activity Hunt Result — <@${user.id}>**\n${payload}`, allowedMentions:{users:[user.id]} }
+          : { ...payload, content:`🎮 **Activity Hunt Result — <@${user.id}>**`, allowedMentions:{users:[user.id]} };
+        return channel.send(decorated).catch(() => ({ reply:async()=>null }));
+      }
+      return { reply:async()=>null };
+    }
+  };
+
+  await performCaptureAttempt(fakeMessage, user.id, itemKey || null);
+
+  const afterData = loadData();
+  const afterPlayer = getPlayer(afterData, user.id);
+  const after = {
+    caught:(afterPlayer.caught || []).length,
+    points:Number(afterPlayer.points || 0),
+    tokens:Number(afterPlayer.huntTokens || 0),
+    eggs:(afterPlayer.eggs || []).length
+  };
+
+  let description = "";
+  for (const payload of [...sent].reverse()) {
+    const embed = typeof payload === "object" ? payload?.embeds?.[0] : null;
+    const text = typeof payload === "string" ? payload : (embed?.data?.description || embed?.description || "");
+    if (text) { description = text; break; }
+  }
+  const roll = Number((description.match(/\*\*Roll:\*\*\s*(\d+)/i) || [])[1] || 0) || null;
+  const chance = Number((description.match(/\*\*(?:Final )?Capture Chance:\*\*\s*(\d+)%/i) || [])[1] || 0)
+    || calculateCaptureChance(beforePlayer, monster, itemKey || null, beforeData, user.id).total;
+
+  return {
+    ok:true,
+    caught:after.caught > before.caught,
+    keptEncounter:Boolean(afterPlayer.currentMonster),
+    monster:{ ...monster, imageUrl:monster.image ? `/assets/monsters/${monster.image}` : null },
+    roll,
+    chance,
+    method:itemKey ? CAPTURE_ITEMS[itemKey].name : "Normal Throw",
+    rewards:{
+      points:after.points - before.points,
+      tokens:after.tokens - before.tokens,
+      eggs:after.eggs - before.eggs
+    },
+    player:activityPlayerPayload(afterData, user).hunter
+  };
+}
+
+// ==================== H.1 DISCORD ACTIVITY WEB SERVER ====================
 const ACTIVITY_PUBLIC_DIR = path.join(__dirname, "public");
 const ACTIVITY_PORT = Number(process.env.PORT || 8080);
 
@@ -10641,7 +11317,7 @@ function sqliteStatusPayload() {
   const row = db.prepare("SELECT updated_at, length(payload) AS bytes FROM game_state WHERE id = 1").get();
   const state = loadData();
   return {
-    phase: "H.0.1",
+    phase: "H.1",
     storage: "sqlite-volume",
     databaseFile: DATABASE_FILE,
     volumeDetected: fs.existsSync("/data"),
@@ -10656,8 +11332,107 @@ function sqliteStatusPayload() {
   };
 }
 
-const activityServer = http.createServer((req, res) => {
+const activityServer = http.createServer(async (req, res) => {
   try {
+    const requestUrl = new URL(req.url || "/", "http://activity.local");
+
+    if (req.method === "GET" && requestUrl.pathname === "/api/activity/config") {
+      return activityJson(res, { clientId:process.env.DISCORD_CLIENT_ID || client.user?.id || null, phase:"H.1" });
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/api/activity/token") {
+      try {
+        const body = await readRequestJson(req);
+        const token = await exchangeDiscordActivityCode(body.code);
+        return activityJson(res, { access_token:token.access_token, expires_in:token.expires_in });
+      } catch (error) {
+        return activityJson(res, { error:error.message }, 400);
+      }
+    }
+
+    if (req.method === "GET" && requestUrl.pathname === "/api/phase-e-events") return activityJson(res, H1_PHASE_E_EVENTS);
+    if (req.method === "GET" && requestUrl.pathname === "/api/phase-f-hunting") return activityJson(res, H1_PHASE_F_HUNTING);
+    if (req.method === "GET" && requestUrl.pathname === "/api/phase-g-alignment") return activityJson(res, H1_PHASE_G_ALIGNMENT);
+
+    if (requestUrl.pathname.startsWith("/api/") && !requestUrl.pathname.startsWith("/api/h0/")) {
+      const user = await activityDiscordUser(req);
+      if (!user) return activityJson(res, { error:"Discord Activity authentication required." }, 401);
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/test-hunter") {
+        const data = loadData();
+        const payload = activityPlayerPayload(data, user);
+        saveData(data);
+        return activityJson(res, payload.hunter);
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/phase-d-data") {
+        const data = loadData();
+        const payload = activityPlayerPayload(data, user);
+        saveData(data);
+        return activityJson(res, payload.phaseD);
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/phase-g5-leaderboards") {
+        const data = loadData();
+        const ranked = Object.entries(data.players || {}).map(([id]) => {
+          const p = getPlayer(data, id);
+          return { id, name:p.discordDisplayName || p.discordUsername || `Hunter ${id.slice(-4)}`, points:Number(p.points || 0) };
+        }).sort((a,b) => b.points - a.points).slice(0,10);
+        return activityJson(res, { current:ranked, weekly:ranked, userId:user.id });
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/phase-g9-social") {
+        const data = loadData();
+        const payload = activityPlayerPayload(data, user);
+        const recentHunts = (data.seasonMoments || []).slice(-8).reverse().map(m => ({
+          player:m.playerId ? (data.players?.[m.playerId]?.discordDisplayName || "Hunter") : "Monster Hunt",
+          icon:m.icon || "🏹",
+          action:m.text || "A hunt update was recorded.",
+          age:"recent"
+        }));
+        return activityJson(res, {
+          eggs:payload.eggs.map(egg => ({ ...egg, count:1, hatchMinutes:30 })),
+          recentHunts
+        });
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/me") {
+        const data = loadData();
+        const payload = activityPlayerPayload(data, user);
+        saveData(data);
+        return activityJson(res, payload);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/bait") {
+        const body = await readRequestJson(req);
+        const type = String(body.type || "none").toLowerCase();
+        const data = loadData();
+        const player = getPlayer(data, user.id);
+
+        if (type === "none") {
+          player.activeBait = null;
+        } else {
+          if (!["rare","epic","legendary"].includes(type)) return activityJson(res, { error:"Invalid bait type." }, 400);
+          if (Number(player.bait?.[type] || 0) <= 0) return activityJson(res, { error:`You do not have any ${type} bait.` }, 400);
+          player.bait[type]--;
+          player.activeBait = type;
+        }
+        saveData(data);
+        return activityJson(res, { ok:true, activeBait:player.activeBait, bait:{...player.bait} });
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunt/start") {
+        const result = await activityStartNormalHunt(user);
+        return activityJson(res, result, result.ok ? 200 : (result.code === "cooldown" ? 429 : 400));
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunt/capture") {
+        const body = await readRequestJson(req);
+        const result = await activityCapture(user, body.itemKey == null ? null : String(body.itemKey));
+        return activityJson(res, result, result.ok ? 200 : 400);
+      }
+    }
+
     if (req.method === "GET" && req.url?.startsWith("/api/h0/status")) {
       return activityJson(res, sqliteStatusPayload());
     }
@@ -10702,7 +11477,7 @@ const activityServer = http.createServer((req, res) => {
 });
 
 activityServer.listen(ACTIVITY_PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity H.0.1 listening on port ${ACTIVITY_PORT}`);
+  console.log(`Monster Hunt Activity H.1 listening on port ${ACTIVITY_PORT}`);
 });
 
 // BOT_ENABLED=false lets you deploy/test the new Railway service without
