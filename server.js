@@ -229,7 +229,7 @@ const PHASE_F_HUNTING = {
         { name:"Mossback Grazer", icon:"🦌", rarity:"Common", baseChance:72, points:1 },
         { name:"Thornfang Lynx", icon:"🐆", rarity:"Rare", baseChance:52, points:3 },
         { name:"Gloomwing Owlbear", icon:"🦉", rarity:"Epic", baseChance:31, points:5 },
-        { name:"Ancient Verdant Drake", icon:"🐉", rarity:"Legendary", baseChance:14, points:10 }
+        { name:"The Hollow King", icon:"👑", image:"/assets/monsters/the_hollow_king.png", rarity:"Epic", level:18, baseChance:52, points:15, tokens:7, petXp:220, drops:[{name:"Rift Shard",qty:2,icon:"💎"},{name:"Soul Essence",qty:1,icon:"🧪"},{name:"Ancient Crown Fragment",qty:1,icon:"👑"}] }
       ]
     },
     {
@@ -407,6 +407,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity Phase G.6 DEV running on port ${PORT}`);
+  console.log(`Monster Hunt Activity Phase G.7 DEV running on port ${PORT}`);
   console.log("SAFE MODE: fake test data + local cosmetic/pet selection only.");
 });
