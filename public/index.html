@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-g83.css?v=983" />
+  <link rel="stylesheet" href="/styles-phase-g84.css?v=984" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">DEV BUILD • PHASE G.8.3</p>
+        <p class="eyebrow">DEV BUILD • PHASE G.8.4</p>
         <h1>🏹 Monster Hunt</h1>
       </div>
       <div class="wallet">
@@ -225,6 +225,22 @@
               </section>
 
               <section class="hunt-overview-zones">
+                <div class="lure-select-panel">
+                  <div class="lure-panel-heading">
+                    <div>
+                      <p class="eyebrow">OPTIONAL LURE</p>
+                      <h3>Prepare Your Next Hunt</h3>
+                    </div>
+                    <span class="screen-count">🎣</span>
+                  </div>
+                  <p class="muted">Lures affect which monster you encounter. Capture items are chosen later, after the monster appears.</p>
+                  <div class="lure-grid" id="lureGrid"></div>
+                  <div class="selected-lure-line">
+                    <span>Selected:</span>
+                    <b id="selectedLureName">No Lure</b>
+                  </div>
+                </div>
+
                 <div class="hunt-overview-heading">
                   <p class="eyebrow">AVAILABLE HUNTS</p>
                   <h3>Hunting Grounds</h3>
@@ -651,6 +667,6 @@
     </section>
   </div>
 
-  <script src="/app-phase-g83.js?v=983"></script>
+  <script src="/app-phase-g84.js?v=984"></script>
 </body>
 </html>
