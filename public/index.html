@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-g85.css?v=985" />
+  <link rel="stylesheet" href="/styles-phase-g9.css?v=990" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">DEV BUILD • PHASE G.8.5</p>
+        <p class="eyebrow">DEV BUILD • PHASE G.9</p>
         <h1>🏹 Monster Hunt</h1>
       </div>
       <div class="wallet">
@@ -107,11 +107,23 @@
 
             <div class="leaderboard-list" id="leaderboardList"></div>
             <p class="leaderboard-note">DEV standings for layout testing. Phase H will read the real game standings.</p>
+
+            <div class="recent-hunts-block">
+              <div class="recent-hunts-heading">
+                <div>
+                  <p class="eyebrow">COMMUNITY</p>
+                  <h3>Recent Hunts</h3>
+                </div>
+                <span>👥</span>
+              </div>
+              <div class="recent-hunts-feed" id="recentHuntsFeed"></div>
+            </div>
           </section>
         </section>
 
         <section class="quick-grid" aria-label="Hunter dashboard">
           <button class="tile" data-nav="pets"><span>🐾</span><b>Pets</b><small id="petsCount">— owned</small></button>
+          <button class="tile" data-nav="eggs"><span>🥚</span><b>Eggs</b><small>Incubate & hatch</small></button>
           <button class="tile" data-nav="inventory"><span>🎒</span><b>Inventory</b><small>Supplies & relics</small></button>
           <button class="tile" data-nav="petdex"><span>📖</span><b>PetDex</b><small id="petdexCount">—</small></button>
           <button class="tile" data-nav="collection"><span>🏆</span><b>Collection</b><small id="trophyCount">— trophies</small></button>
@@ -122,6 +134,49 @@
           <h3>Home & Companion Visual Test</h3>
           <p class="muted">Two-panel Home layout, leaderboard preview, expanded starter Hunter options, and real pet-art support. Veilkin is the active DEV companion for this test.</p>
           <div id="status" class="status">✅ Loading Phase G.5…</div>
+        </section>
+      </section>
+
+      <section class="screen" data-screen="eggs">
+        <div class="screen-header">
+          <div>
+            <p class="eyebrow">EGGS & INCUBATION</p>
+            <h2>Incubator</h2>
+          </div>
+          <span class="screen-count">🥚</span>
+        </div>
+
+        <section class="incubator-card">
+          <div class="incubator-art" id="incubatorArt">
+            <div class="incubator-glow"></div>
+            <div class="incubator-egg" id="incubatorEggIcon">🥚</div>
+          </div>
+          <div class="incubator-info">
+            <p class="eyebrow">ACTIVE INCUBATION</p>
+            <h3 id="incubatorEggName">No Egg Incubating</h3>
+            <p class="muted" id="incubatorStatus">Choose an egg below to start a DEV incubation.</p>
+            <div class="incubation-progress">
+              <span id="incubatorProgressFill" style="width:0%"></span>
+            </div>
+            <div class="incubator-meta">
+              <span id="incubatorTimeLeft">—</span>
+              <span id="incubatorPercent">0%</span>
+            </div>
+            <button class="primary full hidden" id="hatchEggBtn">🐣 Hatch Egg</button>
+          </div>
+        </section>
+
+        <div class="screen-header eggs-subhead">
+          <div>
+            <p class="eyebrow">YOUR EGGS</p>
+            <h3>Egg Inventory</h3>
+          </div>
+        </div>
+        <div class="egg-grid" id="eggGrid"></div>
+
+        <section class="panel">
+          <p class="eyebrow">DEV MODE</p>
+          <p class="muted">Incubation is simulated locally in the browser. It does not use or hatch any real eggs yet.</p>
         </section>
       </section>
 
@@ -595,6 +650,7 @@
     <nav class="bottom-nav" aria-label="Main navigation">
       <button class="nav-active" data-nav="home"><span>🏕️</span><small>Home</small></button>
       <button data-nav="pets"><span>🐾</span><small>Pets</small></button>
+      <button data-nav="eggs"><span>🥚</span><small>Eggs</small></button>
       <button data-nav="petdex"><span>📖</span><small>PetDex</small></button>
       <button data-nav="inventory"><span>🎒</span><small>Gear</small></button>
       <button data-nav="collection"><span>🏆</span><small>Collection</small></button>
@@ -667,6 +723,6 @@
     </section>
   </div>
 
-  <script src="/app-phase-g85.js?v=985"></script>
+  <script src="/app-phase-g9.js?v=990"></script>
 </body>
 </html>
