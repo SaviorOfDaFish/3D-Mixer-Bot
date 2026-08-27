@@ -1,0 +1,17 @@
+{
+  "version": "D.5.3",
+  "canvas": {
+    "width": 1024,
+    "height": 1024
+  },
+  "starter_assets": [
+    "body-male.svg",
+    "body-female.svg",
+    "face-default.svg",
+    "hair-short.svg",
+    "outfit-ranger.svg",
+    "cloak-forest.svg",
+    "weapon-bow.svg"
+  ],
+  "note": "Starter art pack. Missing customization assets safely fall back to the working Phase D character renderer."
+}

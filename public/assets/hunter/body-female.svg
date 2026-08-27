@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<defs>
+  <linearGradient id="pants" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2d3541"/><stop offset="1" stop-color="#141a21"/></linearGradient>
+</defs>
+<ellipse cx="512" cy="900" rx="160" ry="32" fill="#00111f" opacity=".25"/>
+<g>
+  <path d="M421 620h80l-18 207H385z" fill="url(#pants)"/>
+  <path d="M523 620h80l29 207h-98z" fill="url(#pants)"/>
+  <path d="M365 816h132v62q-76 30-139 6zM530 816h133l16 68q-67 26-140-6z" fill="#251c18"/>
+  <path d="M405 384h214l-6 274H411z" fill="#3c2d24"/>
+  <path d="M397 410q-68 42-79 199l69 13 68-166z" fill="#5e402d"/>
+  <path d="M627 410q68 42 79 199l-69 13-68-166z" fill="#5e402d"/>
+  <path d="M314 595q32-38 76-3l1 66q-43 48-85 0z" fill="#d59a72" class="skin"/>
+  <path d="M634 592q44-35 76 3l5 63q-42 48-85 0z" fill="#d59a72" class="skin"/>
+  <path d="M456 329h112v86H456z" fill="#d59a72" class="skin"/>
+</g>
+</svg>
