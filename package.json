@@ -1,13 +1,19 @@
 {
-  "name": "monster-hunt-activity-dev",
-  "version": "0.1.0",
+  "name": "mixer-monster-hunt-h0",
+  "version": "2.0.1-h0.1",
   "private": true,
-  "description": "Safe standalone development shell for the Monster Hunt Discord Activity",
-  "main": "server.js",
+  "description": "Monster Hunt Discord bot + Activity + fresh Railway Volume SQLite backend",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node index.js",
+    "check": "node --check index.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.21.0",
+    "dotenv": "^17.2.0",
+    "node-cron": "^4.0.0"
   }
 }

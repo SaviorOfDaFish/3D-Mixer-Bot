@@ -1,55 +1,71 @@
-# Monster Hunt Activity — Phase B
+# Monster Hunt — Phase H.0.1
+## Fresh Season + New Railway Volume + SQLite + Discord Bridge
 
-Phase B adds a mobile-first Hunter appearance editor while staying completely isolated from the live Monster Hunt game.
+This build starts the new Monster Hunt season from zero.
 
-## What works
+There is NO old-season save migration and NO data.json import.
 
-- Discord/Railway-friendly responsive shell
-- Custom Hunter avatar built from layered HTML/CSS
-- Skin tone
-- Hair style
-- Hair color
-- Eye shape
-- Facial hair
-- Outfit
-- Cloak
-- Headgear
-- Live preview
-- Save + refresh persistence using browser `localStorage`
-- Mobile scrolling
-- Desktop customizer layout
+## Storage
 
-## Safety
+Mount the NEW Railway Volume at:
 
-This build still:
+`/data`
 
-- Does NOT import the live Monster Hunt bot
-- Does NOT read Railway `/data/data.json`
-- Does NOT write player points, pets, tokens, inventory, or events
-- Does NOT require the live Discord bot token
-- Saves only cosmetic test settings to the browser/device
-- Uses the fake `/api/test-hunter` endpoint
+The new season is stored in:
 
-## Deploy update
+`/data/monster-hunt.db`
 
-Replace these files in the root of the DEV GitHub repository:
+Both the Discord bot and Discord Activity are served by this same new Railway
+service.
 
-- `server.js`
-- `package.json`
-- `README.md`
-- `public/index.html`
-- `public/app.js`
-- `public/styles.css`
+## Admin checks
 
-Railway should automatically redeploy after the GitHub commit.
+`!volumestatus`
+- verifies the `/data` Volume
+- shows `/data/monster-hunt.db`
+- shows saved player count
+- shows save size and last write
+- confirms Activity writes are still OFF
 
-## Phase B test
+`!activitytest`
+- sends a test update into the configured Monster Hunt Discord channel
+- verifies the new combined service can send Activity/game announcements
 
-1. Launch the Activity in Discord desktop.
-2. Tap **Customize**.
-3. Change several appearance options.
-4. Tap **Save Appearance**.
-5. Confirm the Home screen changes.
-6. Refresh/reopen the Activity.
-7. Confirm the saved appearance remains.
-8. Repeat on mobile.
+## Setup
+
+1. Upload this ZIP's contents to the NEW GitHub repository.
+2. Deploy that repository in the NEW Railway project.
+3. Add a Railway Volume and mount it at `/data`.
+4. Add your existing Discord bot token as `DISCORD_TOKEN`.
+5. Set `BOT_ENABLED=false` at first.
+6. Deploy.
+7. Open the Activity and confirm `PHASE H.0.1 • FRESH SEASON`.
+8. Stop the OLD Railway bot.
+9. Change the NEW service to `BOT_ENABLED=true`.
+10. Redeploy.
+11. In Discord run `!volumestatus`.
+12. Run `!activitytest`.
+
+Do not run the old and new Railway deployments with the same Discord bot token
+at the same time.
+
+## What H.0.1 does NOT do yet
+
+The Activity is still read-only and most G.9 screens still use DEV player data.
+H.0.1 is the infrastructure cutover.
+
+## Next: H.1
+
+H.1 will replace DEV data with real new-season SQLite data:
+- Discord player identity
+- real profile / points / tokens
+- real pets and equipped companion
+- real eggs and incubators
+- real PetDex
+- real inventory
+- real leaderboards
+- real active events
+- real Recent Hunts
+- real monster / pet / egg image mapping
+
+H.2 will enable Activity gameplay writes and real Discord hunt updates.
