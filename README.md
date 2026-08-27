@@ -1,86 +1,52 @@
-# Monster Hunt — Phase H.1
+# Monster Hunt — Phase H.1.1
+## Discord Activity Proxy Fix
 
-## Live player + live hunting
+H.1 loaded the Activity shell but did not complete the live Discord-user/API
+connection. The screenshots showed the exact symptoms:
+- Home stuck on `Loading...`
+- Hunt still showing `Activity Test Hunter`
+- no live `Begin Hunt` button
 
-H.1 connects the Discord Activity to the actual Discord user with the official
-Embedded App SDK and the `identify` OAuth scope.
+H.1.1 fixes the Activity API routing to use Discord's official embedded-app
+proxy path:
 
-Both the Discord chat commands and the Activity use the same:
+`/.proxy/api/...`
 
-`/data/monster-hunt.db`
+This includes authentication, profile loading, leaderboards, player data, hunt
+start, capture resolution, and all other Activity API calls.
 
-### Railway variables required
+## Upload
 
-Keep:
+Replace the H.1 files in the SAME new GitHub repo with this build.
 
-`DISCORD_TOKEN`
-`BOT_ENABLED=true`
+Keep the existing Railway Volume mounted at:
 
-Add:
+`/data`
 
-`DISCORD_CLIENT_ID=<your Discord Application ID>`
-`DISCORD_CLIENT_SECRET=<OAuth2 Client Secret from the same Discord Application>`
+Keep the Railway variables:
+- `DISCORD_TOKEN`
+- `BOT_ENABLED`
+- `DISCORD_CLIENT_ID`
+- `DISCORD_CLIENT_SECRET`
 
-Do not put the Client Secret in GitHub.
+## Test
 
-### Discord Developer Portal
+After Railway deploys, the logs should say:
 
-Use the SAME Discord Application/Bot you already have.
+`Monster Hunt Activity H.1.1 listening on port 8080`
 
-Under OAuth2, make sure there is at least one Redirect URI. For an Activity-only
-OAuth flow, Discord's own guide allows a placeholder such as:
+Then open the Activity in Discord.
 
-`https://127.0.0.1`
+Expected:
+1. Home changes from `Loading...` to your Discord display name.
+2. Hunt no longer says `Activity Test Hunter`.
+3. Hunt displays `Begin Hunt`.
+4. Opening the Activity creates/loads your real SQLite player.
+5. `!volumestatus` should show the saved-player count.
 
-The Embedded App SDK handles the Activity authorization flow.
+If it still fails, send the Railway logs immediately after opening the Activity.
 
-### Chat commands still work
+## Chat commands
 
-YES.
-
-Players who cannot access the Discord Activity can continue using the existing
-chat commands because the original command handler is still included.
-
-Examples:
-- `!hunt`
-- `!usebait rare`
-- `!captureitems`
-- `!eggs`
-- `!incubate`
-- `!hatch`
-- `!pets`
-- `!petdex`
-- `!leaderboard`
-- `!daily`
-- merchant, Big Game, Ultra Hunt, and all other existing commands
-
-The Activity and commands share the same SQLite save.
-
-### H.1 test
-
-1. Upload this build to the new GitHub repo.
-2. Add `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` in Railway.
-3. Deploy.
-4. Open the Activity.
-5. Your real Discord display name should replace `Activity Test Hunter`.
-6. Run `!volumestatus`; opening the Activity should have created your real player.
-7. Open Hunt.
-8. Your hunter should appear.
-9. Press `Begin Hunt`.
-10. A real monster encounter is generated using the same normal-hunt logic as the bot.
-11. The Monster Hunt Discord channel receives an Activity encounter update.
-12. Choose Hunt Normally or one of your real owned capture items.
-13. Roll to Catch.
-14. The actual game result is saved to SQLite and posted to Discord.
-
-### Art
-
-Real monster definitions use their existing image filenames.
-
-Add art under:
-
-`public/assets/monsters/`
-`public/assets/pets/`
-`public/assets/eggs/`
-
-Missing assets will fall back until the full art library is uploaded.
+All existing `!commands` still work. Activity support is additive; players who
+cannot use Activities can continue playing entirely through Discord chat.

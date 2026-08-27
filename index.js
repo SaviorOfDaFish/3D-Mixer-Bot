@@ -11281,7 +11281,7 @@ async function activityCapture(user, itemKey = null) {
   };
 }
 
-// ==================== H.1 DISCORD ACTIVITY WEB SERVER ====================
+// ==================== H.1.1 DISCORD ACTIVITY WEB SERVER ====================
 const ACTIVITY_PUBLIC_DIR = path.join(__dirname, "public");
 const ACTIVITY_PORT = Number(process.env.PORT || 8080);
 
@@ -11306,7 +11306,8 @@ function activityJson(res, value, status = 200) {
 }
 
 function activitySafeFilePath(urlPath) {
-  const clean = decodeURIComponent(String(urlPath || "/").split("?")[0]);
+  let clean = decodeURIComponent(String(urlPath || "/").split("?")[0]);
+  if (clean.startsWith("/.proxy/")) clean = clean.slice("/.proxy".length);
   const requested = clean === "/" ? "/index.html" : clean;
   const target = path.resolve(ACTIVITY_PUBLIC_DIR, "." + requested);
   if (!target.startsWith(path.resolve(ACTIVITY_PUBLIC_DIR))) return null;
@@ -11317,7 +11318,7 @@ function sqliteStatusPayload() {
   const row = db.prepare("SELECT updated_at, length(payload) AS bytes FROM game_state WHERE id = 1").get();
   const state = loadData();
   return {
-    phase: "H.1",
+    phase: "H.1.1",
     storage: "sqlite-volume",
     databaseFile: DATABASE_FILE,
     volumeDetected: fs.existsSync("/data"),
@@ -11334,7 +11335,11 @@ function sqliteStatusPayload() {
 
 const activityServer = http.createServer(async (req, res) => {
   try {
-    const requestUrl = new URL(req.url || "/", "http://activity.local");
+    const rawRequestUrl = String(req.url || "/");
+    const normalizedRequestUrl = rawRequestUrl.startsWith("/.proxy/")
+      ? rawRequestUrl.slice("/.proxy".length)
+      : rawRequestUrl;
+    const requestUrl = new URL(normalizedRequestUrl || "/", "http://activity.local");
 
     if (req.method === "GET" && requestUrl.pathname === "/api/activity/config") {
       return activityJson(res, { clientId:process.env.DISCORD_CLIENT_ID || client.user?.id || null, phase:"H.1" });
@@ -11477,7 +11482,7 @@ const activityServer = http.createServer(async (req, res) => {
 });
 
 activityServer.listen(ACTIVITY_PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity H.1 listening on port ${ACTIVITY_PORT}`);
+  console.log(`Monster Hunt Activity H.1.1 listening on port ${ACTIVITY_PORT}`);
 });
 
 // BOT_ENABLED=false lets you deploy/test the new Railway service without
