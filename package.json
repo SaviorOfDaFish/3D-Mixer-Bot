@@ -1,8 +1,8 @@
 {
   "name": "mixer-monster-hunt-h0",
-  "version": "2.2.1-h2a1",
+  "version": "2.2.2-h2a2",
   "private": true,
-  "description": "Monster Hunt H.2A.1 - fresh season reset + admin testing bypass",
+  "description": "Monster Hunt H.2A.2 - live Activity action and Discord/Volume sync fix",
   "main": "index.js",
   "scripts": {
     "start": "npm run build:activity && node index.js",

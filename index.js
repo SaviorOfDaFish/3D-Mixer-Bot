@@ -11771,7 +11771,7 @@ async function activityCapture(user, itemKey = null) {
   };
 }
 
-// ==================== H.2A.1 DISCORD ACTIVITY WEB SERVER ====================
+// ==================== H.2A.2 DISCORD ACTIVITY WEB SERVER ====================
 const ACTIVITY_PUBLIC_DIR = path.join(__dirname, "public");
 const ACTIVITY_PORT = Number(process.env.PORT || 8080);
 
@@ -11808,7 +11808,7 @@ function sqliteStatusPayload() {
   const row = db.prepare("SELECT updated_at, length(payload) AS bytes FROM game_state WHERE id = 1").get();
   const state = loadData();
   return {
-    phase: "H.2A.1",
+    phase: "H.2A.2",
     storage: "sqlite-volume",
     databaseFile: DATABASE_FILE,
     volumeDetected: fs.existsSync("/data"),
@@ -11819,7 +11819,7 @@ function sqliteStatusPayload() {
     botUser: client.user ? { id: client.user.id, username: client.user.username } : null,
     monsterChannelId: MONSTER_CHANNEL_ID,
     eggsPetsChannelId: EGGS_PETS_CHANNEL_ID,
-    activityWritesEnabled: false
+    activityWritesEnabled: true
   };
 }
 
@@ -11885,9 +11885,35 @@ const activityServer = http.createServer(async (req, res) => {
 
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/me") {
         const data = loadData();
+        const player = getPlayer(data, user.id);
+        ensureActivityProfile(player, user);
+        player.discordUsername = user.username || player.discordUsername || null;
+        player.discordDisplayName = user.global_name || user.username || player.discordDisplayName || null;
         const payload = activityPlayerPayload(data, user);
         saveData(data);
         return activityJson(res, payload);
+      }
+
+      // H.2A.2: single live-state refresh used after Discord chat commands.
+      // This makes newly granted eggs/items visible without relying on stale DEV data.
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/sync") {
+        const data = loadData();
+        const player = getPlayer(data, user.id);
+        ensureActivityProfile(player, user);
+        player.discordUsername = user.username || player.discordUsername || null;
+        player.discordDisplayName = user.global_name || user.username || player.discordDisplayName || null;
+        const payload = activityPlayerPayload(data, user);
+        saveData(data);
+        return activityJson(res, {
+          ok:true,
+          hunter:payload.hunter,
+          phaseD:payload.phaseD,
+          eggs:payload.eggs,
+          incubators:payload.incubators,
+          recentHunts:activityRecentHuntsPayload(data),
+          activityWritesEnabled:true,
+          botReady:Boolean(client.user)
+        });
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/bait") {
@@ -11943,9 +11969,14 @@ const activityServer = http.createServer(async (req, res) => {
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunt/capture") {
-        const body = await readRequestJson(req);
-        const result = await activityCapture(user, body.itemKey == null ? null : String(body.itemKey));
-        return activityJson(res, result, result.ok ? 200 : 400);
+        try {
+          const body = await readRequestJson(req);
+          const result = await activityCapture(user, body.itemKey == null ? null : String(body.itemKey));
+          return activityJson(res, result, result.ok ? 200 : 400);
+        } catch (error) {
+          console.error("Activity capture failed:", error);
+          return activityJson(res, { ok:false, error:error?.message || "The capture attempt failed on the server." }, 500);
+        }
       }
     }
 
@@ -11993,7 +12024,7 @@ const activityServer = http.createServer(async (req, res) => {
 });
 
 activityServer.listen(ACTIVITY_PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity H.2A.1 listening on port ${ACTIVITY_PORT}`);
+  console.log(`Monster Hunt Activity H.2A.2 listening on port ${ACTIVITY_PORT}`);
 });
 
 // BOT_ENABLED=false lets you deploy/test the new Railway service without
