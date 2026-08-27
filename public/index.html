@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-d6.css?v=60" />
+  <link rel="stylesheet" href="/styles-phase-e.css?v=70" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">DEV BUILD • PHASE D.6</p>
+        <p class="eyebrow">DEV BUILD • PHASE E</p>
         <h1>🏹 Monster Hunt</h1>
       </div>
       <div class="wallet">
@@ -97,7 +97,7 @@
 
         <section class="panel">
           <p class="eyebrow">PHASE D</p>
-          <h3>Simplified Character System</h3>
+          <h3>Hunts & Events</h3>
           <p class="muted">Pets, PetDex, inventory, trophies, titles, cosmetics, and detailed Hunter customization now live in one mobile-first Activity shell. Still sandboxed from the live game.</p>
           <div id="status" class="status">✅ Loading Phase D…</div>
         </section>
@@ -157,6 +157,190 @@
         </section>
       </section>
 
+      <section class="screen" data-screen="events">
+        <div class="screen-header">
+          <div>
+            <p class="eyebrow">SEASON EVENTS</p>
+            <h2>Hunting Grounds</h2>
+          </div>
+          <span class="screen-count">⚔️</span>
+        </div>
+
+        <div class="event-tabs" id="eventTabs">
+          <button class="event-tab active" data-event-view="overview">Overview</button>
+          <button class="event-tab" data-event-view="biggame">Big Game</button>
+          <button class="event-tab" data-event-view="bounty">Bounty</button>
+          <button class="event-tab" data-event-view="distortion">Distortion</button>
+        </div>
+
+        <div class="event-view active" data-event-view-panel="overview">
+          <section class="season-focus-card">
+            <p class="eyebrow">NEXT-SEASON FORMAT</p>
+            <h3>Two Main Event Systems</h3>
+            <div class="focus-pills">
+              <span>🎯 Big Game Hunts</span>
+              <span>📜 Bounty Hunts</span>
+              <span>🌀 Random Distortions</span>
+            </div>
+            <p class="muted">Ultra Hunts are vaulted in this DEV concept. Distortions remain as random world events that continue the planar story.</p>
+          </section>
+
+          <div class="event-overview-grid">
+            <button class="event-summary big-game-summary" data-open-event="biggame">
+              <div class="event-summary-art">🎯</div>
+              <div>
+                <span class="live-dot">LIVE</span>
+                <h3>Big Game Hunt</h3>
+                <p id="overviewBigGameTime">Loading…</p>
+                <small>30-minute hunts • Hunt Tokens • Top 3 prizes</small>
+              </div>
+            </button>
+
+            <button class="event-summary bounty-summary" data-open-event="bounty">
+              <div class="event-summary-art">📜</div>
+              <div>
+                <span class="live-dot bounty-live">ACTIVE</span>
+                <h3>Bounty Posted</h3>
+                <p>Aldric needs hunters.</p>
+                <small>Target identity hidden • Remains until caught</small>
+              </div>
+            </button>
+
+            <button class="event-summary distortion-summary" data-open-event="distortion">
+              <div class="event-summary-art">❄️</div>
+              <div>
+                <span class="live-dot distortion-live">DISTORTION</span>
+                <h3>The Shattered Frost</h3>
+                <p id="overviewDistortionTime">Loading…</p>
+                <small>Planar monsters • Special egg chance</small>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div class="event-view" data-event-view-panel="biggame">
+          <section class="event-hero big-game-hero">
+            <div class="event-hero-icon">🎯</div>
+            <div>
+              <p class="eyebrow">LIVE EVENT</p>
+              <h2>Big Game Hunt</h2>
+              <p class="event-timer" id="bigGameTimer">--:--:--</p>
+            </div>
+          </section>
+
+          <section class="event-stat-strip">
+            <div><small>Hunt Cooldown</small><b>30 min</b></div>
+            <div><small>Your Score</small><b id="bigGameScore">— 🪙</b></div>
+            <div><small>Token Wallet</small><b id="bigGameWallet">— 🪙</b></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-title-row">
+              <div><p class="eyebrow">LIVE STANDINGS</p><h3>Leaderboard</h3></div>
+              <span>🏆</span>
+            </div>
+            <div class="event-leaderboard" id="bigGameLeaderboard"></div>
+          </section>
+
+          <section class="panel">
+            <p class="eyebrow">HUNT TOKEN VALUES</p>
+            <h3>Successful Catch Rewards</h3>
+            <div class="reward-grid" id="bigGameTokenRewards"></div>
+            <div class="placement-row">
+              <span>🥇 +50 points</span><span>🥈 +30</span><span>🥉 +15</span>
+            </div>
+          </section>
+
+          <button class="primary full event-action" id="devBigGameHunt">🏹 DEV Hunt Now</button>
+          <p class="sandbox-warning">🧪 Simulation only. This cannot perform a live hunt or change player data.</p>
+        </div>
+
+        <div class="event-view" data-event-view-panel="bounty">
+          <section class="event-hero bounty-hero">
+            <div class="event-hero-icon">📜</div>
+            <div>
+              <p class="eyebrow">BOUNTY BOARD</p>
+              <h2>Unknown Target</h2>
+              <p>Posted by <b id="bountyNpc">Aldric</b></p>
+            </div>
+          </section>
+
+          <section class="mystery-target">
+            <div class="mystery-silhouette">?</div>
+            <div>
+              <span class="danger-pill">DANGEROUS</span>
+              <h3>Identity Unknown</h3>
+              <p class="muted">The bounty target remains hidden until enough evidence is found—or somebody captures it.</p>
+            </div>
+          </section>
+
+          <section class="panel clue-panel">
+            <p class="eyebrow">CURRENT CLUE</p>
+            <h3>🔎 Tracks Found</h3>
+            <p id="bountyClue" class="clue-copy"></p>
+          </section>
+
+          <section class="event-stat-strip bounty-stats">
+            <div><small>Hunters</small><b id="bountyParticipants">—</b></div>
+            <div><small>Attempts</small><b id="bountyAttempts">—</b></div>
+            <div><small>Duration</small><b>Until Caught</b></div>
+          </section>
+
+          <section class="panel">
+            <p class="eyebrow">REWARDS</p>
+            <h3>Community Bounty</h3>
+            <div class="bounty-reward">
+              <span>👥 Participants</span><b>+20 Points • +5 Tokens</b>
+            </div>
+            <div class="bounty-reward">
+              <span>🏹 Capturing Hunter</span><b>Major Reward + Trophy</b>
+            </div>
+          </section>
+
+          <button class="primary full event-action" id="devBountyHunt">🔍 DEV Investigate / Hunt</button>
+          <p class="sandbox-warning">🧪 The DEV button only increases a local fake attempt counter.</p>
+        </div>
+
+        <div class="event-view" data-event-view-panel="distortion">
+          <section class="event-hero distortion-hero">
+            <div class="distortion-vortex">❄️</div>
+            <div>
+              <p class="eyebrow">PLANAR BREACH</p>
+              <h2 id="distortionName">The Shattered Frost</h2>
+              <p class="event-timer" id="distortionTimer">--:--:--</p>
+            </div>
+          </section>
+
+          <p class="distortion-story" id="distortionStory"></p>
+
+          <section class="event-stat-strip">
+            <div><small>Hunt Cooldown</small><b>30 min</b></div>
+            <div><small>Planar Encounter</small><b>60%</b></div>
+            <div><small>Special Egg</small><b>40%</b></div>
+          </section>
+
+          <section class="panel">
+            <p class="eyebrow">CREATURES THROUGH THE BREACH</p>
+            <h3>Distortion Encounters</h3>
+            <div class="distortion-monsters" id="distortionMonsters"></div>
+          </section>
+
+          <section class="panel egg-callout">
+            <div class="egg-icon">❄️🥚</div>
+            <div><p class="eyebrow">SPECIAL DROP</p><h3>Shardbound Egg</h3><p class="muted">Distortion hunts can uncover eggs containing companions native to this plane.</p></div>
+          </section>
+
+          <section class="panel">
+            <p class="eyebrow">WORLD MAP</p>
+            <h3>Known Planar Fractures</h3>
+            <div class="plane-grid" id="planeGrid"></div>
+          </section>
+
+          <button class="primary full event-action" id="devDistortionHunt">🌀 DEV Enter Distortion</button>
+          <p class="sandbox-warning">🧪 Visual simulation only; no live encounters are generated.</p>
+        </div>
+      </section>
+
     </main>
 
     <nav class="bottom-nav" aria-label="Main navigation">
@@ -165,6 +349,7 @@
       <button data-nav="petdex"><span>📖</span><small>PetDex</small></button>
       <button data-nav="inventory"><span>🎒</span><small>Gear</small></button>
       <button data-nav="collection"><span>🏆</span><small>Collection</small></button>
+      <button data-nav="events"><span>🌀</span><small>Events</small></button>
     </nav>
   </div>
 
@@ -210,6 +395,6 @@
     </section>
   </div>
 
-  <script src="/app-phase-d6.js?v=60"></script>
+  <script src="/app-phase-e.js?v=70"></script>
 </body>
 </html>
