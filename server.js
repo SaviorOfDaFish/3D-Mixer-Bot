@@ -130,6 +130,91 @@ const COSMETICS = [
   { key:"big_game_mantle", name:"Big Game Champion Mantle", slot:"Cloak", unlocked:false, requirement:"Win a Big Game Hunt" }
 ];
 
+
+const PHASE_E_EVENTS = {
+  bigGame: {
+    active: true,
+    title: "Big Game Hunt",
+    startedAt: Date.now() - 34 * 60 * 1000,
+    endsAt: Date.now() + 86 * 60 * 1000,
+    huntCooldownMinutes: 30,
+    playerScore: 11,
+    tokenBalance: 18,
+    leaderboard: [
+      { name: "Fiddle", score: 18 },
+      { name: "Card and Book Dragon", score: 14 },
+      { name: "Activity Test Hunter", score: 11 },
+      { name: "daba9494", score: 8 },
+      { name: "Mythicredd", score: 5 }
+    ],
+    tokenRewards: { Common: 1, Rare: 2, Epic: 4, Legendary: 8, Mythic: 15 },
+    placementRewards: [50, 30, 15]
+  },
+
+  bounty: {
+    active: true,
+    id: "bounty-briarjaw-dev",
+    npc: "Aldric",
+    npcIcon: "🧔",
+    targetHidden: true,
+    discoveredName: null,
+    clue: "Deep claw marks score the old trees. The tracks are too broad for a wolf, and thorn-covered fur has been found near the creek.",
+    difficulty: "Dangerous",
+    participants: 6,
+    attempts: 17,
+    postedAt: Date.now() - 9 * 60 * 60 * 1000,
+    durationText: "Until captured",
+    participationReward: "+20 Hunter Points • +5 Hunt Tokens",
+    catcherReward: "Major bounty reward + trophy",
+    trophy: "Briarjaw Fang",
+    possibleTargets: [
+      { name: "The Briarjaw", icon: "🌿", trophy: "Briarjaw Fang" },
+      { name: "The Knucklebone Horror", icon: "🎲", trophy: "Loaded Knucklebone" },
+      { name: "The Crowned Ravager", icon: "🦌", trophy: "Crowned Horn" },
+      { name: "The Graveglass Stalker", icon: "👁️", trophy: "Graveglass Eye" },
+      { name: "The Riftmaw", icon: "💠", trophy: "Riftmaw Shard" }
+    ]
+  },
+
+  distortion: {
+    active: true,
+    key: "frost",
+    name: "The Shattered Frost",
+    icon: "❄️",
+    plane: "Shattered Frost",
+    startedAt: Date.now() - 41 * 60 * 1000,
+    endsAt: Date.now() + 139 * 60 * 1000,
+    huntCooldownMinutes: 30,
+    eventMonsterChance: 60,
+    eggDropChance: 40,
+    egg: "Shardbound Egg",
+    colorClass: "frost",
+    story: "A fracture has opened above the hunting grounds. Frozen ruins can be seen through the breach, and creatures from the Shattered Frost are crossing into our world.",
+    monsters: [
+      { name: "Shardling", rarity: "Common", icon: "❄️", points: 3 },
+      { name: "Frostgaze Watcher", rarity: "Rare", icon: "👁️", points: 5 },
+      { name: "Rimeclaw Horror", rarity: "Rare", icon: "🐺", points: 5 },
+      { name: "Glacial Runegolem", rarity: "Epic", icon: "🧊", points: 8 },
+      { name: "Aurora Wyrm", rarity: "Legendary", icon: "🐉", points: 15 }
+    ],
+    knownPlanes: [
+      { key:"infernal", name:"The Infernal Rift", icon:"🔥", discovered:true },
+      { key:"frost", name:"The Shattered Frost", icon:"❄️", discovered:true },
+      { key:"arcane", name:"The Sunken Arcane", icon:"🌊", discovered:true },
+      { key:"hollow", name:"The Hollow Veil", icon:"👻", discovered:true },
+      { key:"astral", name:"The Astral Fracture", icon:"🌌", discovered:true },
+      { key:"verdant", name:"Unknown Plane", icon:"❔", discovered:false },
+      { key:"dream", name:"Unknown Plane", icon:"❔", discovered:false }
+    ]
+  },
+
+  nextSeason: {
+    focus: ["Big Game Hunts", "Bounty Hunts"],
+    ambientSystem: "Distortions",
+    ultrasEnabled: false
+  }
+};
+
 function safeFilePath(urlPath) {
   const cleanPath = decodeURIComponent((urlPath || "/").split("?")[0]);
   const requested = cleanPath === "/" ? "/index.html" : cleanPath;
@@ -173,6 +258,10 @@ const server = http.createServer((req, res) => {
     });
   }
 
+  if (req.url === "/api/phase-e-events") {
+    return json(res, PHASE_E_EVENTS);
+  }
+
   const filePath = safeFilePath(req.url);
   if (!filePath) {
     res.writeHead(403);
@@ -195,6 +284,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity Phase D DEV running on port ${PORT}`);
+  console.log(`Monster Hunt Activity Phase E DEV running on port ${PORT}`);
   console.log("SAFE MODE: fake test data + local cosmetic/pet selection only.");
 });
