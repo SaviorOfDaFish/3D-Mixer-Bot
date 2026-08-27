@@ -215,6 +215,78 @@ const PHASE_E_EVENTS = {
   }
 };
 
+
+const PHASE_F_HUNTING = {
+  zones: [
+    {
+      key: "wildwood",
+      name: "Wildwood Trail",
+      icon: "🌲",
+      subtitle: "Standard Hunt",
+      description: "A balanced hunting zone with common, rare, epic, and legendary creatures.",
+      backgroundClass: "forest",
+      monsters: [
+        { name:"Mossback Grazer", icon:"🦌", rarity:"Common", baseChance:72, points:1 },
+        { name:"Thornfang Lynx", icon:"🐆", rarity:"Rare", baseChance:52, points:3 },
+        { name:"Gloomwing Owlbear", icon:"🦉", rarity:"Epic", baseChance:31, points:5 },
+        { name:"Ancient Verdant Drake", icon:"🐉", rarity:"Legendary", baseChance:14, points:10 }
+      ]
+    },
+    {
+      key: "biggame",
+      name: "Big Game Grounds",
+      icon: "🎯",
+      subtitle: "Event Hunt",
+      description: "Fast-paced event hunting with Hunt Tokens on every successful capture.",
+      backgroundClass: "biggame",
+      monsters: [
+        { name:"Ironhide Boar", icon:"🐗", rarity:"Common", baseChance:70, points:1, tokens:1 },
+        { name:"Highland Stalker", icon:"🐺", rarity:"Rare", baseChance:50, points:3, tokens:2 },
+        { name:"Crowned Behemoth", icon:"🦬", rarity:"Epic", baseChance:29, points:5, tokens:4 },
+        { name:"Stormhorn Titan", icon:"⚡", rarity:"Legendary", baseChance:12, points:10, tokens:8 }
+      ]
+    },
+    {
+      key: "bounty",
+      name: "Bounty Trail",
+      icon: "📜",
+      subtitle: "Investigation Hunt",
+      description: "Follow clues and attempt to expose the hidden bounty target.",
+      backgroundClass: "bounty",
+      monsters: [
+        { name:"Unknown Trackmaker", icon:"❔", rarity:"Bounty", baseChance:38, points:0, clue:true }
+      ]
+    },
+    {
+      key: "distortion",
+      name: "Shattered Frost",
+      icon: "❄️",
+      subtitle: "Distortion Hunt",
+      description: "Planar monsters bleed through the breach. Special eggs may appear.",
+      backgroundClass: "frost",
+      monsters: [
+        { name:"Shardling", icon:"❄️", rarity:"Common", baseChance:72, points:3 },
+        { name:"Frostgaze Watcher", icon:"👁️", rarity:"Rare", baseChance:48, points:5 },
+        { name:"Glacial Runegolem", icon:"🧊", rarity:"Epic", baseChance:26, points:8 },
+        { name:"Aurora Wyrm", icon:"🐉", rarity:"Legendary", baseChance:10, points:15 }
+      ]
+    }
+  ],
+  captureTools: [
+    { key:"none", name:"Standard Attempt", icon:"🏹", bonus:0, uses:null },
+    { key:"berry", name:"Hunter Berry", icon:"🍓", bonus:10, uses:5 },
+    { key:"honey", name:"Sticky Honey", icon:"🍯", bonus:20, uses:2 },
+    { key:"net", name:"Enchanted Net", icon:"🕸️", bonus:30, uses:1 },
+    { key:"master", name:"Master Charm", icon:"🌟", bonus:100, uses:1 }
+  ],
+  companion: {
+    name:"Rimebit",
+    icon:"💎",
+    ability:"Second Chance",
+    description:"Once per DEV encounter, Rimebit can freeze a failed capture and allow one reroll."
+  }
+};
+
 function safeFilePath(urlPath) {
   const cleanPath = decodeURIComponent((urlPath || "/").split("?")[0]);
   const requested = cleanPath === "/" ? "/index.html" : cleanPath;
@@ -262,6 +334,10 @@ const server = http.createServer((req, res) => {
     return json(res, PHASE_E_EVENTS);
   }
 
+  if (req.url === "/api/phase-f-hunting") {
+    return json(res, PHASE_F_HUNTING);
+  }
+
   const filePath = safeFilePath(req.url);
   if (!filePath) {
     res.writeHead(403);
@@ -284,6 +360,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity Phase E DEV running on port ${PORT}`);
+  console.log(`Monster Hunt Activity Phase F DEV running on port ${PORT}`);
   console.log("SAFE MODE: fake test data + local cosmetic/pet selection only.");
 });
