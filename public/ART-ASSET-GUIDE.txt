@@ -1,0 +1,35 @@
+MONSTER HUNT D.5.2 — FINAL HUNTER ART LAYERS
+
+D.5.2 changes the CODE PIPELINE, not the art quality by pretending CSS shapes are finished art.
+
+FINAL ASSET RULE:
+Every layer is a transparent 1024x1024 WebP with the Hunter in exactly the same
+position. This allows the Activity to stack artwork without changing the UI.
+
+Naming:
+body-male.webp
+body-female.webp
+face-default.webp
+hair-short.webp
+hair-long.webp
+hair-mohawk.webp
+hair-braid.webp
+outfit-ranger.webp
+outfit-leather.webp
+outfit-rift.webp
+outfit-frost.webp
+outfit-ember.webp
+cloak-forest.webp
+cloak-rift.webp
+cloak-ember.webp
+cloak-frost.webp
+headgear-cap.webp
+headgear-hood.webp
+headgear-horns.webp
+weapon-bow.webp
+weapon-staff.webp
+
+IMPORTANT:
+The renderer only activates after it detects a body-*.webp asset.
+Until then the proven Phase D character remains visible, so missing art can never
+make the Activity disappear again.
