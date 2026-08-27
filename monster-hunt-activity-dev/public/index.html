@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <title>Monster Hunt Activity — DEV</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">DEV BUILD • SAFE MODE</p>
+        <h1>🏹 Monster Hunt</h1>
+      </div>
+      <div class="wallet">
+        <span>⭐ <b id="points">—</b></span>
+        <span>🪙 <b id="tokens">—</b></span>
+      </div>
+    </header>
+
+    <main class="page-scroll">
+      <section class="hero-card">
+        <div class="scene">
+          <div class="moon"></div>
+          <div class="mountains"></div>
+          <div class="hunter" aria-label="Test hunter avatar">
+            <div class="hunter-head">🙂</div>
+            <div class="hunter-body">🧥</div>
+          </div>
+          <div class="pet" id="petIcon" aria-label="Active pet">🐲</div>
+        </div>
+
+        <div class="identity">
+          <div>
+            <p class="eyebrow">YOUR HUNTER</p>
+            <h2 id="hunterName">Loading…</h2>
+            <p><span id="hunterTitle">—</span> • Level <span id="level">—</span></p>
+          </div>
+          <button class="secondary" type="button" data-demo="customize">Customize</button>
+        </div>
+      </section>
+
+      <section class="quick-grid" aria-label="Hunter dashboard">
+        <button class="tile" data-demo="pets"><span>🐾</span><b>Pets</b><small id="petsCount">— owned</small></button>
+        <button class="tile" data-demo="inventory"><span>🎒</span><b>Inventory</b><small>View supplies</small></button>
+        <button class="tile" data-demo="petdex"><span>📖</span><b>PetDex</b><small id="petdexCount">—</small></button>
+        <button class="tile" data-demo="trophies"><span>🏆</span><b>Trophies</b><small id="trophyCount">— earned</small></button>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">ACTIVE COMPANION</p>
+            <h3 id="petName">—</h3>
+          </div>
+          <span class="level-pill">Lv. <span id="petLevel">—</span></span>
+        </div>
+        <p class="muted">This is fake development data. Nothing on this screen can change the live Monster Hunt game.</p>
+        <button class="primary full" type="button" data-demo="change-pet">Change Active Pet</button>
+      </section>
+
+      <section class="panel">
+        <p class="eyebrow">PHASE A CHECK</p>
+        <h3>Mobile-first Activity Shell</h3>
+        <p class="muted">Scroll this page, rotate your phone, and tap every button. The shell is intentionally disconnected from the live bot.</p>
+        <div id="status" class="status">✅ Activity shell loaded.</div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Main navigation">
+      <button class="nav-active" data-demo="home"><span>🏕️</span><small>Home</small></button>
+      <button data-demo="pets"><span>🐾</span><small>Pets</small></button>
+      <button data-demo="hunt"><span>🏹</span><small>Hunt</small></button>
+      <button data-demo="events"><span>🌀</span><small>Events</small></button>
+    </nav>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

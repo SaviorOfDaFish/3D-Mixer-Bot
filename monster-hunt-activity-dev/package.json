@@ -1,0 +1,13 @@
+{
+  "name": "monster-hunt-activity-dev",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Safe standalone development shell for the Monster Hunt Discord Activity",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
