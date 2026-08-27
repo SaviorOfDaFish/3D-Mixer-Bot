@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-d.css?v=4" />
+  <link rel="stylesheet" href="/styles-phase-d5.css?v=5" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">DEV BUILD • PHASE D</p>
+        <p class="eyebrow">DEV BUILD • PHASE D.5</p>
         <h1>🏹 Monster Hunt</h1>
       </div>
       <div class="wallet">
@@ -30,37 +30,107 @@
             <div class="ambient ambient-one"></div>
             <div class="ambient ambient-two"></div>
 
-            <div class="avatar-wrap" id="avatarPreview" aria-label="Hunter avatar preview">
-              <div class="avatar-shadow"></div>
-              <div class="avatar">
-                <div class="cloak-layer"></div>
-                <div class="weapon-back"></div>
-                <div class="head">
-                  <div class="hair hair-back"></div>
-                  <div class="ears"></div>
-                  <div class="face">
-                    <div class="eyes"><i></i><i></i></div>
-                    <div class="brows"></div>
-                    <div class="nose"></div>
-                    <div class="mouth"></div>
-                    <div class="beard"></div>
-                  </div>
-                  <div class="hair hair-front"></div>
-                  <div class="headgear"></div>
-                </div>
-                <div class="neck"></div>
-                <div class="torso"><div class="chest-detail"></div><div class="belt"></div></div>
-                <div class="arm arm-left"><span class="bracer"></span><span class="hand"></span></div>
-                <div class="arm arm-right"><span class="bracer"></span><span class="hand"></span></div>
-                <div class="legs"><div class="leg"></div><div class="leg"></div></div>
-                <div class="boots"><div class="boot"></div><div class="boot"></div></div>
-              </div>
+            <div class="hunter-art-wrap" id="avatarPreview" aria-label="Hunter avatar preview">
+              <div class="hunter-glow"></div>
+              <svg class="hunter-svg" id="hunterSvg" viewBox="0 0 420 640" role="img" aria-label="Customizable fantasy hunter">
+                <defs>
+                  <linearGradient id="armorLeather" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#7a4f31"/>
+                    <stop offset=".55" stop-color="#4a2d23"/>
+                    <stop offset="1" stop-color="#261a18"/>
+                  </linearGradient>
+                  <linearGradient id="armorRift" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#4f46e5"/>
+                    <stop offset=".6" stop-color="#312e81"/>
+                    <stop offset="1" stop-color="#17154d"/>
+                  </linearGradient>
+                  <linearGradient id="armorFrost" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#a7e7ff"/>
+                    <stop offset=".6" stop-color="#4f8098"/>
+                    <stop offset="1" stop-color="#294454"/>
+                  </linearGradient>
+                  <linearGradient id="armorEmber" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stop-color="#ef7b39"/>
+                    <stop offset=".6" stop-color="#8d2e24"/>
+                    <stop offset="1" stop-color="#3e1714"/>
+                  </linearGradient>
+                  <filter id="riftGlow"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+                </defs>
+
+                <ellipse cx="210" cy="610" rx="110" ry="22" fill="#00111f" opacity=".35"/>
+
+                <g id="weaponLayer" class="weapon-layer">
+                  <path class="weapon-staff" d="M97 520L141 164" stroke="#5a3824" stroke-width="18" stroke-linecap="round"/>
+                  <path class="weapon-staff" d="M140 166l24-50 35 34-31 40z" fill="#7c3aed" stroke="#c4b5fd" stroke-width="5" filter="url(#riftGlow)"/>
+                  <path class="weapon-bow" d="M109 515C63 401 69 261 126 171" fill="none" stroke="#9a653f" stroke-width="12" stroke-linecap="round"/>
+                  <path class="weapon-bow" d="M109 515L126 171" fill="none" stroke="#f1e7d4" stroke-width="3"/>
+                </g>
+
+                <g id="cloakLayerSvg">
+                  <path class="cloak-shape" d="M124 265Q210 211 296 265L335 548Q273 581 210 566Q147 581 85 548z" fill="#31523c" opacity=".95"/>
+                  <path d="M128 276Q210 232 292 276" fill="none" stroke="#d8d2b4" stroke-width="13" stroke-linecap="round"/>
+                </g>
+
+                <g id="bodyLayerSvg">
+                  <path class="leg left-leg" d="M159 441h49l-11 121h-53z" fill="#232932"/>
+                  <path class="leg right-leg" d="M212 441h49l15 121h-53z" fill="#232932"/>
+                  <path d="M137 548h66v42q-37 20-72 3zM217 548h66l6 45q-35 18-72-3z" fill="#241b19"/>
+                  <path id="torsoShape" d="M135 259Q210 222 285 259L304 438Q210 470 116 438z" fill="url(#armorLeather)" stroke="#251713" stroke-width="7"/>
+                  <path d="M164 283h92v112h-92z" fill="#2d3f49" opacity=".45"/>
+                  <path d="M137 393h146" stroke="#201716" stroke-width="20"/>
+                  <rect x="195" y="382" width="31" height="29" rx="4" fill="#d7a833" stroke="#4d3714" stroke-width="5"/>
+                  <path class="left-arm" d="M133 282Q103 300 94 397L128 410 166 314z" fill="#6f412d" stroke="#281916" stroke-width="6"/>
+                  <path class="right-arm" d="M287 282Q317 300 326 397L292 410 254 314z" fill="#6f412d" stroke="#281916" stroke-width="6"/>
+                  <path d="M92 394q16-18 38 0l2 39q-21 26-42 0zM290 394q16-18 38 0l2 39q-21 26-42 0z" class="skin-fill" fill="#d59a72"/>
+                  <path d="M96 370h34v30H96zM290 370h34v30h-34z" fill="#2a211f"/>
+                  <path d="M172 236h76v55h-76z" class="skin-fill" fill="#d59a72"/>
+                </g>
+
+                <g id="headLayerSvg">
+                  <path id="earLeft" d="M142 159q-26 0-24 32t29 20z" class="skin-fill" fill="#d59a72"/>
+                  <path id="earRight" d="M278 159q26 0 24 32t-29 20z" class="skin-fill" fill="#d59a72"/>
+                  <path id="faceShape" d="M149 100Q210 62 271 100L278 185Q270 230 210 245Q150 230 142 185z" class="skin-fill" fill="#d59a72" stroke="#6c4435" stroke-width="5"/>
+                  <ellipse cx="181" cy="162" rx="18" ry="13" fill="#fff"/>
+                  <ellipse cx="239" cy="162" rx="18" ry="13" fill="#fff"/>
+                  <circle id="eyeLeft" cx="181" cy="163" r="7" fill="#4a6d84"/>
+                  <circle id="eyeRight" cx="239" cy="163" r="7" fill="#4a6d84"/>
+                  <circle cx="184" cy="159" r="2.5" fill="#fff"/><circle cx="242" cy="159" r="2.5" fill="#fff"/>
+                  <path d="M170 140q12-8 26-2M224 138q15-6 27 2" class="hair-stroke" stroke="#3f2a22" stroke-width="8" stroke-linecap="round" fill="none"/>
+                  <path d="M210 166l-8 26 16 1" fill="none" stroke="#8a5944" stroke-width="5" stroke-linecap="round"/>
+                  <path d="M185 207q25 18 50 0" fill="none" stroke="#7d3e42" stroke-width="5" stroke-linecap="round"/>
+                </g>
+
+                <g id="hairLayerSvg" class="hair-layer">
+                  <path class="hair-short" d="M143 125Q150 62 210 58Q274 61 279 125L259 109Q230 91 192 98Q164 102 143 125z" fill="#3f2a22"/>
+                  <path class="hair-long" d="M138 127Q150 58 210 56Q279 61 282 131L297 228 258 214 258 114Q221 85 163 111L161 220 127 232z" fill="#3f2a22"/>
+                  <path class="hair-mohawk" d="M198 102L208 23 227 61 223 106z" fill="#3f2a22"/>
+                  <path class="hair-braid" d="M141 126Q154 59 210 58Q267 60 281 126L262 116Q216 85 157 115zM274 121q32 78-5 172l-22-15q26-71 4-146z" fill="#3f2a22"/>
+                </g>
+
+                <g id="beardLayerSvg" class="beard-layer">
+                  <path class="beard-stubble" d="M158 192q52 63 104 0-10 64-52 69-42-5-52-69z" fill="#3f2a22" opacity=".45"/>
+                  <path class="beard-mustache" d="M188 198q22-13 44 0-8 23-22 11-14 12-22-11z" fill="#3f2a22"/>
+                  <path class="beard-full" d="M160 187q50 72 100 0l-7 58-43 36-43-36z" fill="#3f2a22"/>
+                </g>
+
+                <g id="headgearLayerSvg" class="headgear-layer">
+                  <path class="headgear-cap" d="M145 118Q210 73 275 118L265 137H151zM257 125l49 9-42 12z" fill="#5a3b2a"/>
+                  <path class="headgear-hood" d="M126 135Q136 53 210 45Q286 53 296 135L268 145Q258 96 210 87Q161 96 151 145z" fill="#312e81" opacity=".96"/>
+                  <path class="headgear-horns" d="M153 107q-42-57-22-90 42 29 48 73zM267 107q42-57 22-90-42 29-48 73z" fill="#dbc18b" stroke="#66502e" stroke-width="5"/>
+                </g>
+
+                <g id="armorDetailLayer">
+                  <path d="M150 274l60 63 60-63" fill="none" stroke="#c9b083" stroke-width="10" stroke-linecap="round"/>
+                  <circle cx="210" cy="337" r="17" fill="#7963ff" stroke="#c4b5fd" stroke-width="4" filter="url(#riftGlow)"/>
+                </g>
+              </svg>
             </div>
 
-            <div class="active-pet-portrait" id="activePetPortrait">
+            <div class="active-pet-portrait d5-pet" id="activePetPortrait">
               <div class="pet-aura"></div>
-              <div class="pet-art" id="petIcon">💎</div>
-            </div>
+              <img id="petImage" src="/assets/pets/rimebit.svg" alt="Rimebit companion art" />
+              <div class="pet-fallback hidden" id="petIcon">💎</div>
+            </div></div>
           </div>
 
           <div class="identity">
@@ -97,7 +167,7 @@
 
         <section class="panel">
           <p class="eyebrow">PHASE D</p>
-          <h3>Complete Visual Game UI</h3>
+          <h3>Final Art System</h3>
           <p class="muted">Pets, PetDex, inventory, trophies, titles, cosmetics, and detailed Hunter customization now live in one mobile-first Activity shell. Still sandboxed from the live game.</p>
           <div id="status" class="status">✅ Loading Phase D…</div>
         </section>
@@ -210,6 +280,6 @@
     </section>
   </div>
 
-  <script src="/app-phase-d.js?v=4"></script>
+  <script src="/app-phase-d5.js?v=5"></script>
 </body>
 </html>
