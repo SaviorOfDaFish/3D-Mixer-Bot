@@ -334,6 +334,23 @@ const PHASE_G5_LEADERBOARDS = {
   ]
 };
 
+
+const PHASE_G9_SOCIAL = {
+  eggs: [
+    { key:"common_egg", name:"Common Egg", icon:"🥚", rarity:"Common", count:2, hatchMinutes:30 },
+    { key:"rare_egg", name:"Rare Egg", icon:"🔵", rarity:"Rare", count:1, hatchMinutes:90 },
+    { key:"ancient_egg", name:"Ancient Egg", icon:"🟣", rarity:"Epic", count:1, hatchMinutes:180 },
+    { key:"shardbound_egg", name:"Shardbound Egg", icon:"❄️", rarity:"Distortion", count:1, hatchMinutes:240 }
+  ],
+  recentHunts: [
+    { player:"Mythicredd", icon:"🏹", action:"caught", monster:"The Hollow King", rarity:"Legendary", points:10, pet:"Rimebit", age:"2m" },
+    { player:"daba9494", icon:"✨", action:"discovered a Shiny", monster:"Crypt Fiend", rarity:"Epic", points:5, pet:"Ember Drake", age:"8m" },
+    { player:"Fiddle", icon:"🥚", action:"found", monster:"Rare Egg", rarity:"Rare", points:0, pet:"Star Familiar", age:"14m" },
+    { player:"Card and Book Dragon", icon:"🏹", action:"caught", monster:"Dread Sentinel", rarity:"Epic", points:5, pet:"Veilkin", age:"21m" },
+    { player:"Activity Test Hunter", icon:"🏹", action:"caught", monster:"Grave Whisper", rarity:"Common", points:1, pet:"Veilkin", age:"31m", self:true }
+  ]
+};
+
 function safeFilePath(urlPath) {
   const cleanPath = decodeURIComponent((urlPath || "/").split("?")[0]);
   const requested = cleanPath === "/" ? "/index.html" : cleanPath;
@@ -393,6 +410,10 @@ const server = http.createServer((req, res) => {
     return json(res, PHASE_G5_LEADERBOARDS);
   }
 
+  if (req.url === "/api/phase-g9-social") {
+    return json(res, PHASE_G9_SOCIAL);
+  }
+
   const filePath = safeFilePath(req.url);
   if (!filePath) {
     res.writeHead(403);
@@ -415,6 +436,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity Phase G.8.5 DEV running on port ${PORT}`);
+  console.log(`Monster Hunt Activity Phase G.9 DEV running on port ${PORT}`);
   console.log("SAFE MODE: fake test data + local cosmetic/pet selection only.");
 });
