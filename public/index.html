@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-g7.css?v=97" />
+  <link rel="stylesheet" href="/styles-phase-g8.css?v=98" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">DEV BUILD • PHASE G.7</p>
+        <p class="eyebrow">DEV BUILD • PHASE G.8</p>
         <h1>🏹 Monster Hunt</h1>
       </div>
       <div class="wallet">
@@ -181,95 +181,213 @@
 
 
       <section class="screen" data-screen="hunt">
-        <div class="screen-header">
-          <div>
-            <p class="eyebrow">INTERACTIVE HUNTING</p>
-            <h2>Choose Hunting Ground</h2>
-          </div>
-          <span class="screen-count">🏹</span>
-        </div>
+        <div class="hunt-flow-shell">
 
-        <div class="alignment-banner">
-          <b>PHASE G RULE:</b>
-          <span>This Activity uses the Monster Hunt loop: Hunt → optional bait → catch result. No Approach, Observe, or combat actions.</span>
-        </div>
-
-        <div class="hunt-zone-grid" id="huntZoneGrid"></div>
-
-        <section class="hunt-arena hidden" id="huntArena">
-          <div class="arena-topbar">
-            <button class="secondary" id="leaveHuntBtn">← Leave</button>
-            <div>
-              <p class="eyebrow" id="arenaZoneType">HUNT</p>
-              <h3 id="arenaZoneName">Wildwood Trail</h3>
-            </div>
-            <span class="level-pill" id="arenaAttempts">Attempt 1</span>
-          </div>
-
-          <div class="encounter-stage forest" id="encounterStage">
-            <div class="encounter-sky-glow"></div>
-            <div class="hunter-side">
-              <div class="mini-hunter">
-                <div class="mini-head"></div>
-                <div class="mini-body"></div>
-                <div class="mini-legs"></div>
-                <div class="mini-bow">🏹</div>
-              </div>
-              <div class="mini-companion">
-                <span>💎</span>
-                <small>Rimebit</small>
-              </div>
-            </div>
-
-            <div class="encounter-center">
-              <div class="encounter-effect hidden" id="encounterEffect"></div>
-              <div class="monster-shadow"></div>
-              <div class="monster-visual" id="monsterVisual">❔</div>
-              <div class="monster-rarity" id="monsterRarity">Unknown</div>
-              <h2 id="monsterName">Searching…</h2>
-              <div class="monster-level hidden" id="monsterLevel">Level —</div>
-            </div>
-          </div>
-
-          <section class="encounter-info-card">
-            <div class="capture-chance-row">
-              <span>Catch Chance</span>
-              <b id="captureChance">—%</b>
-            </div>
-            <div class="chance-meter"><span id="chanceMeterFill" style="width:0%"></span></div>
-            <p class="muted" id="encounterFlavor">Start the hunt to roll an encounter.</p>
-          </section>
-
-          <div class="hunt-actions" id="huntActions">
-            <button class="primary action-large" id="searchEncounterBtn">🏹 Hunt</button>
-          </div>
-
-          <section class="capture-tools hidden" id="captureTools">
-            <p class="eyebrow">CHOOSE HUNT / BAIT</p>
-            <div class="tool-grid" id="captureToolGrid"></div>
-          </section>
-
-          <section class="panel hidden" id="huntResultPanel">
-            <p class="eyebrow">RESULT</p>
-            <h3 id="huntResultTitle">Result</h3>
-            <p id="huntResultText" class="result-copy"></p>
-            <div class="result-rewards" id="huntResultRewards"></div>
-            <button class="primary full" id="huntAgainBtn">Hunt Again</button>
-          </section>
-
-          <section class="panel companion-power-card">
-            <div class="panel-heading">
+          <!-- STEP 1: HUNT OVERVIEW -->
+          <section class="hunt-flow-page active" data-hunt-step="overview">
+            <div class="screen-header">
               <div>
-                <p class="eyebrow">ACTIVE COMPANION</p>
-                <h3>💎 Rimebit</h3>
+                <p class="eyebrow">THE HUNT</p>
+                <h2>Choose Your Hunting Ground</h2>
               </div>
-              <span class="level-pill">Second Chance</span>
+              <span class="screen-count">🏹</span>
             </div>
-            <p class="muted">If a DEV capture fails, Rimebit may freeze the encounter and offer one reroll.</p>
+
+            <div class="hunt-overview-layout">
+              <section class="hunt-overview-player">
+                <div class="overview-world-card">
+                  <div class="overview-copy">
+                    <p class="eyebrow">YOUR HUNTER</p>
+                    <h2 id="huntOverviewHunterName">Activity Test Hunter</h2>
+                    <p><span id="huntOverviewTitle">Rift Hunter</span> • Level <span id="huntOverviewLevel">12</span></p>
+                  </div>
+
+                  <div class="overview-character-stage">
+                    <div class="overview-avatar-host" id="huntOverviewAvatarHost"></div>
+                    <div class="overview-pet-wrap">
+                      <img id="huntOverviewPetImage" class="overview-pet-image hidden" alt="Active companion art" />
+                      <div id="huntOverviewPetFallback" class="overview-pet-fallback">👻</div>
+                    </div>
+                  </div>
+
+                  <div class="overview-pet-meta">
+                    <div>
+                      <p class="eyebrow">ACTIVE COMPANION</p>
+                      <h3 id="huntOverviewPetName">Veilkin</h3>
+                      <p>✨ <span id="huntOverviewPetAbility">Veilwalk</span></p>
+                    </div>
+                    <div class="overview-pet-stats">
+                      <span>Lv. <b id="huntOverviewPetLevel">7</b></span>
+                      <span>💞 <b id="huntOverviewPetBond">3</b>/5</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="hunt-overview-zones">
+                <div class="hunt-overview-heading">
+                  <p class="eyebrow">AVAILABLE HUNTS</p>
+                  <h3>Hunting Grounds</h3>
+                  <p class="muted">DEV shows every hunting ground. Live mode will only show hunts/events that are actually active.</p>
+                </div>
+                <div class="hunt-zone-grid hunt-zone-grid-overview" id="huntZoneGrid"></div>
+              </section>
+            </div>
           </section>
 
-          <p class="sandbox-warning">🧪 Phase F hunts are local simulations only. They cannot spend real items, award real points, or change the live Monster Hunt save.</p>
-        </section>
+          <!-- STEP 2: ENCOUNTER -->
+          <section class="hunt-flow-page" data-hunt-step="encounter">
+            <div class="hunt-page-topbar">
+              <button class="secondary" id="encounterBackBtn">← Back</button>
+              <div>
+                <p class="eyebrow" id="encounterZoneType">HUNT</p>
+                <h3 id="encounterZoneName">Wildwood Trail</h3>
+              </div>
+              <span class="level-pill" id="encounterAttemptNumber">Attempt 1</span>
+            </div>
+
+            <div class="full-art-encounter" id="fullArtEncounter">
+              <img id="encounterMonsterImage" class="full-monster-art hidden" alt="Monster art" />
+              <div id="encounterMonsterFallback" class="full-monster-fallback">❔</div>
+              <div class="art-vignette"></div>
+
+              <div class="encounter-title-overlay">
+                <p class="eyebrow">ENCOUNTER</p>
+                <h1 id="encounterMonsterName">Searching…</h1>
+                <div class="monster-tags">
+                  <span id="encounterMonsterRarity">Unknown</span>
+                  <span id="encounterMonsterLevel" class="hidden">Level —</span>
+                </div>
+              </div>
+
+              <div class="encounter-info-overlay left">
+                <h4>Encounter Info</h4>
+                <div class="overlay-stat"><span>Catch Chance</span><b id="encounterCatchChance">—%</b></div>
+                <div class="overlay-stat"><span>Habitat</span><b id="encounterHabitat">—</b></div>
+                <div class="overlay-stat"><span>Difficulty</span><b id="encounterDifficulty">—</b></div>
+                <div class="overlay-stat"><span>Active Pet</span><b id="encounterPetName">—</b></div>
+              </div>
+
+              <div class="encounter-info-overlay right">
+                <h4>Possible Rewards</h4>
+                <div id="possibleRewards"></div>
+              </div>
+
+              <div class="encounter-bottom-overlay">
+                <p id="encounterDescription">A creature has appeared.</p>
+                <div class="encounter-choice-grid">
+                  <button class="primary encounter-choice" id="normalHuntChoice">
+                    <span>🏹</span><b>Hunt Normally</b><small>Use your normal catch chance</small>
+                  </button>
+                  <button class="secondary encounter-choice" id="baitHuntChoice">
+                    <span>🧪</span><b>Use Bait</b><small>Increase your catch chance</small>
+                  </button>
+                  <button class="secondary encounter-choice" id="encounterLeaveBtn">
+                    <span>←</span><b>Back</b><small>Return to hunting grounds</small>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <section class="bait-picker hidden" id="baitPicker">
+              <p class="eyebrow">CHOOSE BAIT</p>
+              <div class="tool-grid" id="captureToolGrid"></div>
+            </section>
+          </section>
+
+          <!-- STEP 3: ATTEMPT -->
+          <section class="hunt-flow-page" data-hunt-step="attempt">
+            <div class="hunt-page-topbar">
+              <button class="secondary" id="attemptBackBtn">← Back</button>
+              <div>
+                <p class="eyebrow">CAPTURE ATTEMPT</p>
+                <h3 id="attemptZoneName">Wildwood Trail</h3>
+              </div>
+              <span class="level-pill" id="attemptChancePill">—%</span>
+            </div>
+
+            <div class="attempt-art-stage">
+              <img id="attemptMonsterImage" class="attempt-monster-art hidden" alt="Monster art" />
+              <div id="attemptMonsterFallback" class="attempt-monster-fallback">❔</div>
+              <div class="art-vignette"></div>
+
+              <div class="attempt-title-overlay">
+                <p class="eyebrow">TARGET</p>
+                <h1 id="attemptMonsterName">—</h1>
+                <div class="monster-tags">
+                  <span id="attemptMonsterRarity">—</span>
+                  <span id="attemptMonsterLevel" class="hidden">Level —</span>
+                </div>
+              </div>
+
+              <div class="attempt-info-overlay left">
+                <h4>Your Stats</h4>
+                <div class="overlay-stat"><span>Catch Chance</span><b id="attemptCatchChance">—%</b></div>
+                <div class="overlay-stat"><span>Hunter Level</span><b id="attemptHunterLevel">—</b></div>
+                <div class="overlay-stat"><span>Active Pet</span><b id="attemptPetName">—</b></div>
+                <div class="overlay-stat"><span>Method</span><b id="attemptMethodName">—</b></div>
+              </div>
+
+              <div class="attempt-info-overlay right">
+                <h4>Target Info</h4>
+                <div class="overlay-stat"><span>Rarity</span><b id="attemptRarityInfo">—</b></div>
+                <div class="overlay-stat"><span>Level</span><b id="attemptLevelInfo">—</b></div>
+                <div class="overlay-stat"><span>Possible Points</span><b id="attemptPointsInfo">—</b></div>
+                <div class="overlay-stat"><span>Possible Tokens</span><b id="attemptTokensInfo">—</b></div>
+              </div>
+
+              <div class="attempt-bottom-panel">
+                <p id="attemptFlavor">You steady yourself and prepare for the hunt…</p>
+                <div class="roll-meter">
+                  <div class="roll-meter-label"><span>Catch Roll</span><b id="rollTargetLabel">Need ≤ —</b></div>
+                  <div class="roll-meter-track"><span id="rollMeterFill" style="width:0%"></span></div>
+                </div>
+                <button class="primary full roll-button" id="performCaptureBtn">🎲 Roll to Catch</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- STEP 4: RESULT -->
+          <section class="hunt-flow-page" data-hunt-step="result">
+            <div class="hunt-page-topbar">
+              <button class="secondary" id="resultBackBtn">← Hunt Again</button>
+              <div>
+                <p class="eyebrow">HUNT RESULT</p>
+                <h3 id="resultZoneName">Wildwood Trail</h3>
+              </div>
+              <span class="screen-count" id="resultStatusIcon">🏆</span>
+            </div>
+
+            <div class="result-art-stage">
+              <img id="resultMonsterImage" class="result-monster-art hidden" alt="Monster art" />
+              <div id="resultMonsterFallback" class="result-monster-fallback">❔</div>
+              <div class="result-dark-overlay"></div>
+
+              <div class="result-title-block">
+                <p class="eyebrow">RESULT</p>
+                <h1 id="huntResultTitle">Result</h1>
+                <p id="huntResultText">—</p>
+              </div>
+
+              <section class="result-overlay-panel rewards">
+                <p class="eyebrow">REWARDS EARNED</p>
+                <div id="huntResultRewards" class="result-reward-list"></div>
+              </section>
+
+              <section class="result-overlay-panel details">
+                <p class="eyebrow">HUNT DETAILS</p>
+                <div id="huntResultDetails" class="result-detail-list"></div>
+              </section>
+
+              <div class="result-actions">
+                <button class="primary" id="huntAgainBtn">🏹 Hunt Again</button>
+                <button class="secondary" id="resultOverviewBtn">⌾ Hunting Grounds</button>
+                <button class="secondary" id="resultPetBtn" data-nav="pets">🐾 View Pet</button>
+              </div>
+            </div>
+          </section>
+
+        </div>
       </section>
 
       <section class="screen" data-screen="events">
@@ -533,6 +651,6 @@
     </section>
   </div>
 
-  <script src="/app-phase-g7.js?v=97"></script>
+  <script src="/app-phase-g8.js?v=98"></script>
 </body>
 </html>
