@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900">
+<defs>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#09111f"/>
+    <stop offset=".5" stop-color="#19335a"/>
+    <stop offset="1" stop-color="#10261f"/>
+  </linearGradient>
+  <radialGradient id="moon"><stop stop-color="#e6edf7"/><stop offset="1" stop-color="#aebbd0"/></radialGradient>
+  <filter id="glow"><feGaussianBlur stdDeviation="24"/></filter>
+</defs>
+<rect width="1600" height="900" fill="url(#sky)"/>
+<circle cx="1240" cy="145" r="94" fill="#cbd7e7" opacity=".18" filter="url(#glow)"/>
+<circle cx="1240" cy="145" r="62" fill="url(#moon)"/>
+<path d="M0 590L190 390l120 105 170-210 200 210 160-145 165 210 190-120 185 150v310H0z" fill="#0b1627"/>
+<path d="M0 660l185-120 160 90 190-140 190 140 150-115 190 145 190-105 210 155v190H0z" fill="#0e2531"/>
+<path d="M0 735l180-70 170 38 190-75 230 90 190-60 250 85 190-58 200 70v145H0z" fill="#173b2d"/>
+<g fill="#08131f" opacity=".96">
+  <path d="M1140 350h150v280h-150z"/><path d="M1165 300h24v330h-24z"/><path d="M1230 280h28v350h-28z"/>
+  <path d="M1110 385h210l-34-58h-142z"/>
+</g>
+<g fill="#0a1a24">
+  <path d="M140 690l35-125 35 125z"/><path d="M245 690l38-150 38 150z"/>
+  <path d="M1360 690l42-165 42 165z"/><path d="M1470 690l34-140 34 140z"/>
+</g>
+</svg>
