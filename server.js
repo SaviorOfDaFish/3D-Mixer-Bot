@@ -273,11 +273,11 @@ const PHASE_F_HUNTING = {
     }
   ],
   captureTools: [
-    { key:"none", name:"Standard Attempt", icon:"🏹", bonus:0, uses:null },
-    { key:"berry", name:"Hunter Berry", icon:"🍓", bonus:10, uses:5 },
-    { key:"honey", name:"Sticky Honey", icon:"🍯", bonus:20, uses:2 },
-    { key:"net", name:"Enchanted Net", icon:"🕸️", bonus:30, uses:1 },
-    { key:"master", name:"Master Charm", icon:"🌟", bonus:100, uses:1 }
+    { key:"none", name:"Normal Hunt", icon:"🏹", bonus:0, uses:null },
+    { key:"berry", name:"🍓 Bait", icon:"🍓", bonus:10, uses:5 },
+    { key:"honey", name:"🍯 Bait", icon:"🍯", bonus:20, uses:2 },
+    { key:"net", name:"🕸️ Bait", icon:"🕸️", bonus:30, uses:1 },
+    { key:"master", name:"🌟 Bait", icon:"🌟", bonus:100, uses:1 }
   ],
   companion: {
     name:"Rimebit",
@@ -285,6 +285,27 @@ const PHASE_F_HUNTING = {
     ability:"Second Chance",
     description:"Once per DEV encounter, Rimebit can freeze a failed capture and allow one reroll."
   }
+};
+
+
+const PHASE_G_ALIGNMENT = {
+  version: "G",
+  principle: "Activity mirrors Monster Hunt instead of adding a separate ruleset.",
+  huntActions: ["hunt", "bait", "capture-result"],
+  excludedActions: ["approach", "observe", "combat"],
+  baitBonuses: { strawberry:10, honey:20, web:30, star:"guaranteed" },
+  seasonFocus: {
+    primary:["Big Game Hunts","Bounty Hunts"],
+    storySystem:"Random Distortions",
+    ultraHunts:false
+  },
+  notes:[
+    "No Approach action.",
+    "No Observe action.",
+    "No monster combat system.",
+    "No new currencies.",
+    "DEV rewards remain simulated only."
+  ]
 };
 
 function safeFilePath(urlPath) {
@@ -338,6 +359,10 @@ const server = http.createServer((req, res) => {
     return json(res, PHASE_F_HUNTING);
   }
 
+  if (req.url === "/api/phase-g-alignment") {
+    return json(res, PHASE_G_ALIGNMENT);
+  }
+
   const filePath = safeFilePath(req.url);
   if (!filePath) {
     res.writeHead(403);
@@ -360,6 +385,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity Phase F DEV running on port ${PORT}`);
+  console.log(`Monster Hunt Activity Phase G DEV running on port ${PORT}`);
   console.log("SAFE MODE: fake test data + local cosmetic/pet selection only.");
 });
