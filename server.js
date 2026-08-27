@@ -407,6 +407,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Monster Hunt Activity Phase G.8.2 DEV running on port ${PORT}`);
+  console.log(`Monster Hunt Activity Phase G.8.3 DEV running on port ${PORT}`);
   console.log("SAFE MODE: fake test data + local cosmetic/pet selection only.");
 });
