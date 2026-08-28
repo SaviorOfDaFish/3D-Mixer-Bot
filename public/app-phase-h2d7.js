@@ -384,7 +384,7 @@ function rarityOrder(r) {
 }
 
 function renderPetFilters() {
-  const filters = ["All","Forest","Ocean","Mountain","Volcano","Arctic","Void","Sky","Undead","Distortion"];
+  const filters = ["All","Moonfen","Glasswaste","Gloamwood","Stormreach","Emberdeep","Frostgrave","Sporewilds","Starfall Basin","Special"];
   const row = document.getElementById("petFilters");
   row.innerHTML = "";
   filters.forEach(name => {
@@ -400,7 +400,7 @@ function renderPets() {
   if (!gameData) return;
   const grid = document.getElementById("petGrid");
   let pets = [...gameData.ownedPets].sort((a,b) => rarityOrder(b.rarity)-rarityOrder(a.rarity) || b.level-a.level);
-  if (currentPetFilter === "Distortion") pets = pets.filter(p => !["Forest","Ocean","Mountain","Volcano","Arctic","Void","Sky","Undead"].includes(p.habitat));
+  if (currentPetFilter === "Special") pets = pets.filter(p => !["Moonfen","Glasswaste","Gloamwood","Stormreach","Emberdeep","Frostgrave","Sporewilds","Starfall Basin"].includes(p.habitat));
   else if (currentPetFilter !== "All") pets = pets.filter(p => p.habitat === currentPetFilter);
 
   grid.innerHTML = pets.map(p => `
@@ -444,7 +444,12 @@ function showPetDetail(key) {
       <div class="detail-stat"><small>Level</small><b>${owned ? p.level : "—"}</b></div>
       <div class="detail-stat"><small>Bond</small><b>${owned ? `${p.bond}/5` : "—"}</b></div>
     </div>
-    <p class="detail-copy"><b>${p.ability}</b><br>${p.description}</p>
+    <div class="pet-ability-panel">
+      <small>COMPANION ABILITY</small>
+      <strong>${p.ability || "Companion Ability"}</strong>
+      <p>${p.abilityEffect || p.description || "This companion helps you during Monster Hunt."}</p>
+    </div>
+    ${p.description ? `<p class="detail-copy"><b>About this companion</b><br>${p.description}</p>` : ""}
     ${owned ? `
       <p class="detail-copy">Companion XP: <b>${p.xp}%</b> toward the next level.</p>
       <div class="detail-actions">
@@ -901,14 +906,47 @@ async function showHatchReveal(payload){
 
 async function hatchActivityEgg(slot){
   const response=await activityFetch("/api/activity/egg/hatch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:Number(slot)})});
-  const payload=await response.json();
+  let payload={};
+  try { payload=await response.json(); } catch(error) {
+    document.getElementById("status").textContent="❌ The hatch response could not be read.";
+    return null;
+  }
   if(!response.ok){document.getElementById("status").textContent=`❌ ${payload.error||"Could not hatch egg."}`;return null;}
+
   document.getElementById("status").textContent=`🐣 ${payload.pet.name} hatched! +${payload.pointsAwarded} Hunter Points`;
-  const syncRes=await activityFetch("/api/activity/sync");
-  const sync=await syncRes.json();
-  if(syncRes.ok&&sync.ok){hunter=sync.hunter;gameData=sync.phaseD;phaseG9Social={...(phaseG9Social||{}),eggs:Array.isArray(sync.eggs)?sync.eggs:[],incubatorSlots:Number(sync.incubators?.slots||1),incubations:Array.isArray(sync.incubators?.incubations)?sync.incubators.incubations:[],recentHunts:Array.isArray(sync.recentHunts)?sync.recentHunts:[]};}
-  applyLocalPetNames();renderHome();renderPets();renderDex();renderEggs();
+
+  // Show the reward immediately. A follow-up sync should never be able to
+  // prevent the hatch reveal from appearing.
   await showHatchReveal(payload);
+
+  // Optimistically place the new pet into the current Activity state so the
+  // Pets tab updates instantly, even if the live-state refresh is delayed.
+  if(payload.pet){
+    gameData=gameData||{};
+    gameData.ownedPets=Array.isArray(gameData.ownedPets)?gameData.ownedPets:[];
+    if(!gameData.ownedPets.some(p=>String(p.id)===String(payload.pet.id))){
+      gameData.ownedPets.push({...payload.pet,equipped:false,xp:Number(payload.pet.xp||0)});
+    }
+    currentPetFilter="All";
+  }
+  renderPets();
+  renderDex();
+  renderEggs();
+
+  try {
+    const syncRes=await activityFetch("/api/activity/sync");
+    const sync=await syncRes.json();
+    if(syncRes.ok&&sync.ok){
+      hunter=sync.hunter;
+      gameData=sync.phaseD;
+      phaseG9Social={...(phaseG9Social||{}),eggs:Array.isArray(sync.eggs)?sync.eggs:[],incubatorSlots:Number(sync.incubators?.slots||1),incubations:Array.isArray(sync.incubators?.incubations)?sync.incubators.incubations:[],recentHunts:Array.isArray(sync.recentHunts)?sync.recentHunts:[]};
+      applyLocalPetNames();
+      currentPetFilter="All";
+      renderHome(); renderPets(); renderDex(); renderEggs(); renderPetFilters();
+    }
+  } catch(error) {
+    console.error("Post-hatch live sync failed:",error);
+  }
   return payload;
 }
 

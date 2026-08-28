@@ -2795,3 +2795,10 @@ body { background:#050a14; }
 .hatch-reveal-rewards{font-weight:800;color:#fde68a;margin:10px 0 18px}
 .hatch-reveal-actions{display:flex;gap:10px}.hatch-reveal-actions button{flex:1;min-height:48px}
 @media(max-width:520px){.hatch-reveal-actions{flex-direction:column-reverse}.hatch-reveal-art{height:250px}}
+
+
+/* H.2E.3 hatch/pet ability clarity */
+.pet-ability-panel{margin:16px 0;padding:14px 16px;border:1px solid rgba(124,106,255,.38);border-radius:14px;background:linear-gradient(135deg,rgba(87,67,218,.16),rgba(17,28,48,.75));}
+.pet-ability-panel small{display:block;margin-bottom:5px;font-size:11px;font-weight:900;letter-spacing:.12em;color:#9eb2ff;}
+.pet-ability-panel strong{display:block;font-size:18px;color:#fff;}
+.pet-ability-panel p{margin:7px 0 0;color:#cbd5e1;line-height:1.45;}
