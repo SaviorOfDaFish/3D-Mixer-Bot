@@ -12131,7 +12131,10 @@ function activityOwnedPetPayload(player) {
       icon: def.icon,
       habitat: def.habitat,
       rarity: def.rarity,
-      ability: def.signatureName || def.ability,
+      ability: def.signatureName || abilityDisplayName(def.ability),
+      abilityEffect: def.signatureAbility
+        ? (signatureAbilityText(owned) || def.description)
+        : formatAbilityEffect({ ability:def.ability, baseBonus:def.baseBonus, level }),
       description: def.description,
       level,
       bond,
@@ -12155,7 +12158,10 @@ function activityPetDexPayload(player, beyond = false) {
       icon: def.icon,
       habitat: def.habitat,
       rarity: def.rarity,
-      ability: def.signatureName || def.ability,
+      ability: def.signatureName || abilityDisplayName(def.ability),
+      abilityEffect: def.signatureAbility
+        ? def.description
+        : formatAbilityEffect({ ability:def.ability, baseBonus:def.baseBonus, level:1 }),
       description: def.description,
       image: def.image || null,
       discovered: discovered.has(def.key),
