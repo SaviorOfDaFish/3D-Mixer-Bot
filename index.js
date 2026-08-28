@@ -8522,6 +8522,12 @@ ${captureChoicesText(choices)}
     return message.reply("Unknown sandbox option. Use `!testhunt help`.");
   }
 
+  if(command==="!bounty"||command==="!bountystatus"){const b=ensureBountyData(data);if(!b.active)return message.reply(b.status==="cooldown"&&b.nextAt>Date.now()?`📜 No bounty is active. The next bounty is expected <t:${Math.floor(b.nextAt/1000)}:R>.`:"📜 No bounty is currently posted.");const ready=bountyReadyAt(data,message.author.id),captured=b.status==="awaiting_turnin";return message.reply(`📜 **ACTIVE BOUNTY**\n\n🧙 Posted by: **${bountyNpc(data)?.name||"Unknown Hunter"}**\n🎯 Target: **${captured?bountyTarget(data)?.name:"UNKNOWN"}**\n🔎 ${bountyClue(data)}\n👥 Participants: **${bountyCount(data)}**\n🏹 Attempts: **${b.attempts}**\n\n${captured?(b.trophyHolderId===message.author.id?"🏆 Use `!turninbounty` to return the trophy.":"🏆 Waiting for the catcher to return the trophy."):(Date.now()>=ready?"✅ Use `!bountyhunt` now.":`⏱️ Ready <t:${Math.floor(ready/1000)}:R>.`)}`)}
+  if(command==="!bountyhunt"){const r=await performBountyHunt(data,message.author.id,message.channel);if(!r.ok)return message.reply(r.code==="cooldown"?`⏱️ Your next Bounty Hunt is ready <t:${Math.floor(r.readyAt/1000)}:R>.`:`📜 ${r.error}`);if(r.result==="clue")return message.reply(`🔎 **BOUNTY TRAIL**\n\nThe target stayed hidden.\n**${r.clue}**\n\n👥 ${r.participants} participating • 🏹 ${r.attempts} attempts`);if(r.result==="escaped")return message.reply(`⚠️ **CLOSE ENCOUNTER!**\n\nYou nearly cornered the target, but it escaped.\n🔎 **New clue:** ${r.clue}`);return}
+  if(command==="!turninbounty"){const r=await turnInBounty(data,message.author.id,message.channel);if(!r.ok)return message.reply(`📜 ${r.error}`);return}
+  if(command.startsWith("!startbounty")){if(!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))return message.reply("Only admins can start a bounty.");if(ensureBountyData(data).active)return message.reply("A bounty is already active.");const raw=content.slice(12).trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");const forced=BOUNTY_TARGETS.find(t=>t.key===raw||t.name.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"")===raw)?.key||null;startBounty(data,forced);saveData(data);await announceBountyStart(message.channel,data);return}
+  if(command==="!endbounty"){if(!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))return message.reply("Only admins can end a bounty.");const b=ensureBountyData(data);b.active=false;b.status="idle";b.nextAt=0;b.catcherId=null;b.trophyHolderId=null;saveData(data);return message.reply("📜 Active bounty ended. No rewards awarded.")}
+
   if (command === "!hunt") {
     if (message.channel.id === EGGS_PETS_CHANNEL_ID) {
       return message.reply(
@@ -11247,6 +11253,65 @@ function activityRecentHuntsPayload(data) {
   }));
 }
 
+
+// ==================== H.2D LIVE BOUNTY HUNTS ====================
+const BOUNTY_HUNT_COOLDOWN=60*60*1000, BOUNTY_NEXT_DELAY=24*60*60*1000;
+const BOUNTY_TARGETS=[
+ {key:"briarjaw",name:"The Briarjaw",trophy:"Briarjaw Fang",image:"the_briarjaw.png",trophyImage:"briarjaw_fang.png",clues:["Whole trees have been bitten through near the old trail.","Hunters found thorn-covered tracks wider than a shield.","A deep growl has been heard beneath the roots after sunset."]},
+ {key:"knucklebone_horror",name:"The Knucklebone Horror",trophy:"Loaded Knucklebone",image:"knucklebone_horror.png",trophyImage:"loaded_knucklebone.png",clues:["Small piles of polished bone have appeared beside fresh tracks.","Something has been clicking through the dark like dice in a cup.","The target leaves cracked knucklebones arranged in deliberate patterns."]},
+ {key:"crowned_ravager",name:"The Crowned Ravager",trophy:"Crowned Horn",image:"crowned_ravager.png",trophyImage:"crowned_horn.png",clues:["Trees have been split high above a hunter's head.","A massive horned silhouette was seen crossing a ridge at dawn.","Black horn fragments were recovered from a shattered stone wall."]},
+ {key:"graveglass_stalker",name:"The Graveglass Stalker",trophy:"Graveglass Eye",image:"graveglass_stalker.png",trophyImage:"graveglass_eye.png",clues:["Black glass splinters appear where tracks suddenly vanish.","Something has been watching hunters from inside their reflections.","A pale eye has been seen moving beneath translucent black crystal."]},
+ {key:"riftmaw",name:"The Riftmaw",trophy:"Riftmaw Shard",image:"riftmaw.png",trophyImage:"riftmaw_shard.png",clues:["Tracks end beside thin violet fractures in the air.","Loose stones float for seconds at a time along the trail.","Something enormous is moving between places without crossing the ground."]},
+ {key:"hollow_antler",name:"The Hollow Antler",trophy:"Hollow Antler",image:"hollow_antler.png",trophyImage:"hollow_antler_trophy.png",clues:["Bark has been scraped away in long branching patterns.","Hunters hear hoofbeats with no creature in sight.","A hollow antler-shaped shadow appears between the trees before dawn."]}
+];
+const BOUNTY_NPCS=["aldric","gribble","beastkeeper","pale_collector","riftwalker","nameless"];
+function ensureBountyData(data){
+ if(!data.bounty||typeof data.bounty!=="object")data.bounty={};
+ const b=data.bounty;
+ if(typeof b.active!=="boolean")b.active=false;if(!b.status)b.status="idle";
+ b.participants=(b.participants&&typeof b.participants==="object")?b.participants:{};
+ b.lastAttempts=(b.lastAttempts&&typeof b.lastAttempts==="object")?b.lastAttempts:{};
+ b.history=Array.isArray(b.history)?b.history:[]; b.attempts=Number(b.attempts||0);b.clueLevel=Number(b.clueLevel||0);b.nextAt=Number(b.nextAt||0);
+ return b;
+}
+function bountyTarget(data){const b=ensureBountyData(data);return BOUNTY_TARGETS.find(x=>x.key===b.targetKey)||null}
+function bountyNpc(data){return MERCHANT_TYPE_DEFINITIONS[ensureBountyData(data).npcKey]||null}
+function bountyClue(data){const b=ensureBountyData(data),t=bountyTarget(data);return t?t.clues[Math.min(t.clues.length-1,Math.max(0,b.clueLevel||0))]:"No active trail."}
+function bountyReadyAt(data,id){return Number(ensureBountyData(data).lastAttempts[id]||0)+BOUNTY_HUNT_COOLDOWN}
+function bountyCount(data){return Object.keys(ensureBountyData(data).participants).length}
+function startBounty(data,forced=null){
+ const old=ensureBountyData(data), pool=BOUNTY_TARGETS.filter(x=>x.key!==old.lastTargetKey);
+ const t=BOUNTY_TARGETS.find(x=>x.key===forced)||pool[Math.floor(Math.random()*pool.length)]||BOUNTY_TARGETS[0];
+ const npc=BOUNTY_NPCS[Math.floor(Math.random()*BOUNTY_NPCS.length)];
+ data.bounty={...old,active:true,status:"hunting",targetKey:t.key,npcKey:npc,startedAt:Date.now(),nextAt:0,participants:{},lastAttempts:{},attempts:0,clueLevel:0,catcherId:null,trophyHolderId:null};
+ return data.bounty;
+}
+async function announceBountyStart(ch,data){
+ const n=bountyNpc(data);return sendRoleImageAnnouncement(ch,`<@&${MONSTER_NOTIFY_ROLE}>\n\n📜 **A NEW BOUNTY HAS BEEN POSTED**\n\n**${n?.name||"A traveling hunter"}** needs help tracking a dangerous creature.\n\n🎯 **Target: UNKNOWN**\n🔎 ${bountyClue(data)}\n\nUse \`!bountyhunt\` once every **60 minutes**.`,n?.image||null,true);
+}
+async function performBountyHunt(data,id,ch=null){
+ const b=ensureBountyData(data);if(!b.active||b.status!=="hunting")return{ok:false,code:"inactive",error:"There is no active bounty hunt."};
+ const now=Date.now(),ready=bountyReadyAt(data,id);if(now<ready)return{ok:false,code:"cooldown",readyAt:ready,error:"Your Bounty Hunt is still on cooldown."};
+ const p=getPlayer(data,id),t=bountyTarget(data);b.lastAttempts[id]=now;b.participants[id]=true;b.attempts++;
+ if(Math.random()>=.35){if(b.attempts%2===0)b.clueLevel=Math.min(t.clues.length-1,b.clueLevel+1);saveData(data);return{ok:true,result:"clue",clue:bountyClue(data),participants:bountyCount(data),attempts:b.attempts,readyAt:now+BOUNTY_HUNT_COOLDOWN}}
+ if(Math.random()>=.35){b.clueLevel=Math.min(t.clues.length-1,b.clueLevel+1);saveData(data);return{ok:true,result:"escaped",clue:bountyClue(data),participants:bountyCount(data),attempts:b.attempts,readyAt:now+BOUNTY_HUNT_COOLDOWN}}
+ b.status="awaiting_turnin";b.catcherId=id;b.trophyHolderId=id;p.bountyTrophies||={};p.bountyTrophies[t.key]=Number(p.bountyTrophies[t.key]||0)+1;saveData(data);
+ if(ch?.isTextBased())await sendRoleImageAnnouncement(ch,`🏹 **BOUNTY TARGET CAPTURED!**\n\n<@${id}> brought down **${t.name}**!\n🏆 Trophy: **${t.trophy}**\n\nThe catcher must return it with \`!turninbounty\`.`,t.image,false);
+ return{ok:true,result:"caught",targetName:t.name,trophy:t.trophy,participants:bountyCount(data),attempts:b.attempts,readyAt:now+BOUNTY_HUNT_COOLDOWN};
+}
+async function turnInBounty(data,id,ch=null){
+ const b=ensureBountyData(data),t=bountyTarget(data),n=bountyNpc(data);if(!b.active||b.status!=="awaiting_turnin"||!t)return{ok:false,error:"No captured bounty is waiting for turn-in."};
+ if(b.trophyHolderId!==id)return{ok:false,error:"Only the hunter carrying the trophy can turn it in."};const c=getPlayer(data,id);c.bountyTrophies||={};if(Number(c.bountyTrophies[t.key]||0)<1)return{ok:false,error:`You are not carrying the ${t.trophy}.`};c.bountyTrophies[t.key]--;
+ const ids=Object.keys(b.participants);for(const uid of ids){const p=getPlayer(data,uid);p.points=Number(p.points||0)+20;p.huntTokens=Number(p.huntTokens||0)+5;p.lifetimeTokens=Number(p.lifetimeTokens||0)+5}
+ c.points=Number(c.points||0)+50;c.huntTokens=Number(c.huntTokens||0)+20;c.lifetimeTokens=Number(c.lifetimeTokens||0)+20;
+ const done=Date.now();b.history.push({targetKey:t.key,npcKey:b.npcKey,catcherId:id,participants:ids.length,attempts:b.attempts,startedAt:b.startedAt,completedAt:done});b.lastTargetKey=t.key;b.active=false;b.status="cooldown";b.nextAt=done+BOUNTY_NEXT_DELAY;b.trophyHolderId=null;saveData(data);
+ if(ch?.isTextBased())await sendRoleImageAnnouncement(ch,`📜 **BOUNTY COMPLETE — ${t.name.toUpperCase()}**\n\n<@${id}> returned the **${t.trophy}** to **${n?.name||"the bounty giver"}**.\n\n👥 Participants: **+20 Hunter Points +5 Hunt Tokens**\n🏆 Catcher bonus: **+50 Hunter Points +20 Hunt Tokens**\n\nAnother bounty will be posted in **24 hours**.`,t.trophyImage||t.image,true);
+ return{ok:true,targetName:t.name,nextAt:b.nextAt,participantCount:ids.length};
+}
+let bountyMonitorBusy=false;
+async function bountyMonitor(){if(bountyMonitorBusy)return;bountyMonitorBusy=true;try{const d=loadData(),b=ensureBountyData(d);if(!b.active&&b.status==="cooldown"&&b.nextAt&&Date.now()>=b.nextAt){startBounty(d);saveData(d);const ch=client.channels.cache.get(MONSTER_CHANNEL_ID);if(ch?.isTextBased())await announceBountyStart(ch,d)}}catch(e){console.error("Bounty monitor failed:",e)}finally{bountyMonitorBusy=false}}
+setInterval(()=>bountyMonitor().catch(console.error),60*1000);
+
 function activityLiveEventsPayload(data, userId) {
   const now = Date.now();
   const daily = getActiveEvent();
@@ -11310,6 +11375,10 @@ function activityLiveEventsPayload(data, userId) {
     });
   }
 
+  const bountyState=ensureBountyData(data);
+  const bountyActive=Boolean(bountyState.active&&["hunting","awaiting_turnin"].includes(bountyState.status));
+  if(bountyActive)active.push({key:"bounty",icon:"📜",name:"Active Bounty",description:bountyState.status==="awaiting_turnin"?"Target captured — trophy return pending.":"A hidden server bounty is being hunted.",endsAt:0,type:"Bounty"});
+
   // Build compatible detailed objects only when those systems are active.
   const bigActive = isBigGameActive(data, now);
   const rankedBigGame = getBigGameRanking(data);
@@ -11345,7 +11414,7 @@ function activityLiveEventsPayload(data, userId) {
       tokenRewards:{...BIG_GAME_TOKEN_REWARDS},
       placementRewards:[...BIG_GAME_PLACEMENT_REWARDS]
     },
-    bounty:{ active:false, npc:"", clue:"", participants:0, attempts:0 },
+    bounty:{active:bountyActive,status:bountyState.status,npc:bountyNpc(data)?.name||"",clue:bountyActive?bountyClue(data):"",participants:bountyCount(data),attempts:Number(bountyState.attempts||0),huntReadyAt:bountyReadyAt(data,userId),cooldownMs:BOUNTY_HUNT_COOLDOWN,isCatcher:bountyState.catcherId===userId,canTurnIn:bountyState.status==="awaiting_turnin"&&bountyState.trophyHolderId===userId,targetName:bountyState.status==="awaiting_turnin"?(bountyTarget(data)?.name||""):"",trophy:bountyState.status==="awaiting_turnin"?(bountyTarget(data)?.trophy||""):"",nextAt:Number(bountyState.nextAt||0)},
     distortion:{
       active:Boolean(distortionDef),
       name:distortionDef?.name || "No Distortion Active",
@@ -12200,6 +12269,9 @@ const activityServer = http.createServer(async (req, res) => {
         const result=activityRenamePet(user,body.petId,body.nickname);
         return activityJson(res,result,result.ok?200:400);
       }
+
+      if(req.method==="POST"&&requestUrl.pathname==="/api/activity/bounty/hunt"){const d=loadData(),ch=client.channels.cache.get(MONSTER_CHANNEL_ID),result=await performBountyHunt(d,user.id,ch);return activityJson(res,result,result.ok?200:(result.code==="cooldown"?429:400));}
+      if(req.method==="POST"&&requestUrl.pathname==="/api/activity/bounty/turnin"){const d=loadData(),ch=client.channels.cache.get(MONSTER_CHANNEL_ID),result=await turnInBounty(d,user.id,ch);return activityJson(res,result,result.ok?200:400);}
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunt/start") {
         const result = await activityStartNormalHunt(user);
