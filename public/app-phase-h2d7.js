@@ -161,12 +161,23 @@ function savePetNicknames() {
 }
 
 function petArtPath(pet) {
-  if (!pet) return null;
-  const map = {
-    veilkin: "/assets/pets/veilkin.png"
-  };
-  return map[pet.key] || null;
+  if (!pet || !pet.image) return null;
+  return `/assets/pets/${pet.image}`;
 }
+
+function assetImage(src, fallback, className="asset-icon") {
+  if (!src) return `<span class="${className}-fallback">${fallback || "✨"}</span>`;
+  return `<img class="${className}" src="${src}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"/><span class="${className}-fallback" style="display:none">${fallback || "✨"}</span>`;
+}
+
+function inventoryArtPath(item) {
+  if (!item?.image) return null;
+  return item.type === "Capture Item" || item.type === "Bait"
+    ? `/assets/items/${item.image}`
+    : `/assets/merchant-items/${item.image}`;
+}
+
+function merchantArtPath(image) { return image ? `/assets/merchants/${image}` : null; }
 
 function applyLocalPetNames() {
   if (!gameData?.ownedPets) return;
@@ -595,13 +606,13 @@ async function refreshH2BMerchant() {
     const m=payload.merchant;
     host.innerHTML=`
       <section class="panel merchant-live-header">
-        <div class="merchant-live-title"><span>${m.icon||"🛒"}</span><div><p class="eyebrow">NOW VISITING</p><h3>${m.name}</h3></div></div>
+        <div class="merchant-live-title"><span class="merchant-avatar">${assetImage(merchantArtPath(m.image),m.icon||"🛒","merchant-npc-image")}</span><div><p class="eyebrow">NOW VISITING</p><h3>${m.name}</h3></div></div>
         <p>${m.clearance?"🔥 Clearance prices are active!":"The merchant is currently accepting Hunt Tokens and configured barter trades."}</p>
         <small>Leaves in ${formatCountdown(Math.max(0,Number(m.departureAt)-Date.now()))}</small>
       </section>
       <div class="merchant-live-grid">${(payload.offers||[]).map(o=>`
         <article class="inventory-card merchant-offer ${o.soldOut?"zero":""}">
-          <div class="inventory-top"><span class="inventory-icon">${o.icon||"🎒"}</span><span class="qty-badge">${o.stock===null?"∞":`${o.stock} left`}</span></div>
+          <div class="inventory-top"><span class="inventory-icon">${assetImage(o.image?`/assets/merchant-items/${o.image}`:null,o.icon||"🎒","inventory-item-image")}</span><span class="qty-badge">${o.stock===null?"∞":`${o.stock} left`}</span></div>
           <div class="inventory-body">
             <h3>${o.name}</h3>
             <p class="card-meta">${o.barter?o.barter:`🪙 ${o.price} Hunt Tokens`}</p>
@@ -671,7 +682,7 @@ function renderInventory() {
   const grid=document.getElementById("inventoryGrid");
   grid.innerHTML = items.map(i => `
     <article class="inventory-card">
-      <div class="inventory-top"><span class="inventory-icon">${i.icon}</span><span class="qty-badge">×${i.qty}</span></div>
+      <div class="inventory-top"><span class="inventory-icon">${assetImage(inventoryArtPath(i),i.icon,"inventory-item-image")}</span><span class="qty-badge">×${i.qty}</span></div>
       <div class="inventory-body">
         <h3>${i.name}</h3><p class="card-meta">${i.type}</p><p class="card-ability">${i.effect}</p>
         ${i.usable ? `<button class="primary-button" data-use-item="${i.key}">Use Item</button>` : ""}
@@ -901,7 +912,7 @@ function renderEggs() {
 
   const first=incubations[0];
   document.getElementById("incubatorEggName").textContent=first?first.name:"No Egg Incubating";
-  document.getElementById("incubatorEggIcon").textContent=first?first.icon:"🥚";
+  document.getElementById("incubatorEggIcon").innerHTML=first?assetImage(first.image?`/assets/eggs/${first.image}`:null,first.icon||"🥚","incubator-egg-image"):"🥚";
   document.getElementById("incubatorStatus").textContent=first
     ? `${incubations.length}/${slots} incubator slot${slots===1?"":"s"} in use`
     : `${incubations.length}/${slots} incubator slots in use`;

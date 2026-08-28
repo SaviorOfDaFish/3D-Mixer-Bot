@@ -2714,3 +2714,14 @@ body { background:#050a14; }
   .biggame-hunt-status{align-items:stretch;flex-direction:column}
   .biggame-hunt-status .event-action{width:100%;min-width:0}
 }
+
+/* H.2E asset artwork integration */
+.inventory-item-image{width:64px;height:64px;object-fit:contain;display:block;filter:drop-shadow(0 5px 10px rgba(0,0,0,.35))}
+.inventory-icon{min-height:70px;display:flex;align-items:center;justify-content:flex-start}
+.inventory-item-image-fallback{font-size:34px;align-items:center;justify-content:center}
+.merchant-avatar{width:72px;height:72px;display:flex;align-items:center;justify-content:center;flex:0 0 72px}
+.merchant-npc-image{width:72px;height:72px;object-fit:cover;border-radius:14px;display:block}
+.merchant-npc-image-fallback{font-size:38px;align-items:center;justify-content:center}
+.egg-live-image{width:100%;height:100%;max-width:132px;max-height:112px;object-fit:contain;filter:drop-shadow(0 8px 14px rgba(0,0,0,.35))}
+.incubator-egg-image{width:54px;height:54px;object-fit:contain;display:block}
+.incubator-egg-image-fallback{font-size:32px;align-items:center;justify-content:center}
