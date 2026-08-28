@@ -1615,7 +1615,7 @@ function renderPhaseEEvents() {
     document.getElementById("bigGameLeaderboard").innerHTML=rows.length?rows.map((entry,i)=>`
       <div class="leaderboard-row">
         <div class="rank-medal">${["🥇","🥈","🥉"][i]||`#${i+1}`}</div>
-        <div><b>${entry.name}</b>${entry.id===h1User?.id?`<small class="you-tag">YOU</small>`:""}</div>
+        <div><b>${entry.name}</b>${entry.id===String(activityUser?.id||"")?`<small class="you-tag">YOU</small>`:""}</div>
         <div class="leader-score">${entry.score} 🪙</div>
       </div>`).join("")
       :`<div class="empty-state">No successful catches yet. The board is wide open.</div>`;
@@ -1965,13 +1965,146 @@ async function livePerformCapture() {
 boot();
 
 
-// ==================== H.2D LIVE BOUNTY UI ====================
+
+// ==================== H.2D.2 BOUNTY UI FORCE FIX ====================
 let h2dBusy=false;
-function h2dWait(ms){const s=Math.max(0,Math.ceil(ms/1000)),m=Math.floor(s/60),x=s%60;return `${m}:${String(x).padStart(2,"0")}`}
-function h2dCard(){const b=h2aLiveEvents?.bounty;if(!b?.active)return"";const captured=b.status==="awaiting_turnin",left=Math.max(0,Number(b.huntReadyAt||0)-Date.now()),ready=left<=0;const action=captured?(b.canTurnIn?`<button class="primary-btn" id="h2dTurn">Return Trophy</button>`:`<button class="primary-btn" disabled>Awaiting Trophy Return</button>`):(ready?`<button class="primary-btn" id="h2dHunt">Bounty Hunt</button>`:`<button class="primary-btn" disabled>Ready in ${h2dWait(left)}</button>`);return `<article class="hunt-zone-card live-bounty-hunt-card" id="liveBountyHuntCard"><div class="eyebrow">📜 ACTIVE BOUNTY</div><h3>${captured?(b.targetName||"Target Captured"):"Target: UNKNOWN"}</h3><p><strong>Posted by:</strong> ${b.npc||"Unknown Hunter"}</p><p>🔎 ${b.clue||"The trail is cold."}</p><p>👥 ${b.participants||0} participating • 🏹 ${b.attempts||0} attempts</p>${captured&&b.trophy?`<p>🏆 <strong>${b.trophy}</strong></p>`:"<p>⏱️ Separate 60-minute Bounty cooldown.</p>"}${action}</article>`}
-const h2dOldHunt=renderPhaseFHunting;
-renderPhaseFHunting=function(){h2dOldHunt();const host=document.querySelector("#huntScreen .hunt-zone-grid")||document.querySelector("#huntScreen .content-grid")||document.querySelector("#huntScreen");if(!host||!h2aLiveEvents?.bounty?.active||document.getElementById("liveBountyHuntCard"))return;host.insertAdjacentHTML("afterbegin",h2dCard());document.getElementById("h2dHunt")?.addEventListener("click",h2dHunt);document.getElementById("h2dTurn")?.addEventListener("click",h2dTurn)}
-async function h2dHunt(){if(h2dBusy)return;h2dBusy=true;try{const r=await activityFetch("/api/activity/bounty/hunt",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}),p=await r.json();if(!r.ok)throw new Error(p.error||"Bounty Hunt failed.");const msg=p.result==="caught"?`🏆 You captured ${p.targetName}! Return the ${p.trophy}.`:p.result==="escaped"?`⚠️ The target escaped! ${p.clue}`:`🔎 ${p.clue}`;if(typeof showToast==="function")showToast(msg);else alert(msg);await refreshH2CLiveEvents(false);renderPhaseFHunting()}catch(e){if(typeof showToast==="function")showToast(e.message);else alert(e.message)}finally{h2dBusy=false}}
-async function h2dTurn(){if(h2dBusy)return;h2dBusy=true;try{const r=await activityFetch("/api/activity/bounty/turnin",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}),p=await r.json();if(!r.ok)throw new Error(p.error||"Turn-in failed.");if(typeof showToast==="function")showToast(`📜 ${p.targetName} bounty complete! Next bounty in 24 hours.`);else alert("Bounty complete!");await refreshH2CLiveEvents(false);renderPhaseFHunting()}catch(e){if(typeof showToast==="function")showToast(e.message);else alert(e.message)}finally{h2dBusy=false}}
-const h2dOldEvents=renderPhaseEEvents;
-renderPhaseEEvents=function(){h2dOldEvents();const b=h2aLiveEvents?.bounty,host=document.querySelector("#eventsScreen .events-grid")||document.querySelector("#eventsScreen .content-grid")||document.querySelector("#eventsScreen");if(!b?.active||!host||document.getElementById("h2dEventBounty"))return;host.insertAdjacentHTML("afterbegin",`<article class="event-card" id="h2dEventBounty"><div class="eyebrow">📜 SERVER BOUNTY</div><h3>${b.status==="awaiting_turnin"?(b.targetName||"Target Captured"):"Target: UNKNOWN"}</h3><p><strong>${b.npc||"A hunter"}</strong> posted this contract.</p><p>🔎 ${b.clue||""}</p><p>👥 ${b.participants||0} hunters • 🏹 ${b.attempts||0} attempts</p><button class="secondary-btn" id="h2dGo">Go to Hunting Grounds</button></article>`);document.getElementById("h2dGo")?.addEventListener("click",()=>navTo("hunt"))}
+
+function h2dWait(ms){
+  const total=Math.max(0,Math.ceil(Number(ms||0)/1000));
+  const h=Math.floor(total/3600);
+  const m=Math.floor((total%3600)/60);
+  const s=total%60;
+  return h ? `${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}` : `${m}:${String(s).padStart(2,"0")}`;
+}
+
+function h2dBountyMarkup(){
+  const b=h2aLiveEvents?.bounty;
+  if(!b?.active) return "";
+  const captured=b.status==="awaiting_turnin";
+  const left=Math.max(0,Number(b.huntReadyAt||0)-Date.now());
+  const ready=left<=0;
+
+  const button=captured
+    ? (b.canTurnIn
+        ? `<button type="button" class="primary" id="h2dTurn">🏆 Return Trophy</button>`
+        : `<button type="button" class="primary" disabled>🏆 Awaiting Trophy Return</button>`)
+    : (ready
+        ? `<button type="button" class="primary" id="h2dHunt">📜 Bounty Hunt</button>`
+        : `<button type="button" class="primary" disabled>⏱️ Ready in ${h2dWait(left)}</button>`);
+
+  return `
+    <article class="hunt-zone-card" id="liveBountyHuntCard">
+      <div class="hunt-zone-art">📜</div>
+      <div class="hunt-zone-body">
+        <p class="eyebrow">ACTIVE BOUNTY</p>
+        <h3>${captured ? (b.targetName || "Target Captured") : "Target: UNKNOWN"}</h3>
+        <p><strong>Posted by:</strong> ${b.npc || "Unknown Hunter"}</p>
+        <p>🔎 ${b.clue || "The trail is still cold."}</p>
+        <p>👥 ${Number(b.participants||0)} participating • 🏹 ${Number(b.attempts||0)} attempts</p>
+        ${captured && b.trophy ? `<p>🏆 Trophy: <strong>${b.trophy}</strong></p>` : `<p>⏱️ Separate 60-minute Bounty cooldown.</p>`}
+        ${button}
+      </div>
+    </article>`;
+}
+
+function h2dMountBountyCard(){
+  const grid=document.getElementById("huntZoneGrid");
+  const b=h2aLiveEvents?.bounty;
+  if(!grid || !b?.active) return;
+
+  document.getElementById("liveBountyHuntCard")?.remove();
+  grid.insertAdjacentHTML("afterbegin",h2dBountyMarkup());
+
+  document.getElementById("h2dHunt")?.addEventListener("click",h2dDoHunt);
+  document.getElementById("h2dTurn")?.addEventListener("click",h2dDoTurnIn);
+}
+
+const h2dBaseRenderHunt=renderPhaseFHunting;
+renderPhaseFHunting=function(){
+  h2dBaseRenderHunt();
+  h2dMountBountyCard();
+};
+
+async function h2dDoHunt(){
+  if(h2dBusy) return;
+  h2dBusy=true;
+  try{
+    const response=await activityFetch("/api/activity/bounty/hunt",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:"{}"
+    });
+    const payload=await response.json();
+    if(!response.ok) throw new Error(payload.error||"Bounty Hunt failed.");
+
+    const title=payload.result==="caught" ? "Bounty Target Captured"
+      : payload.result==="escaped" ? "Close Encounter"
+      : "Bounty Trail";
+    const icon=payload.result==="caught" ? "🏆" : payload.result==="escaped" ? "⚠️" : "🔎";
+    const message=payload.result==="caught"
+      ? `You captured ${payload.targetName}! Return the ${payload.trophy}.`
+      : payload.result==="escaped"
+        ? `The target escaped. ${payload.clue}`
+        : payload.clue;
+
+    showActivityResult(icon,title,message);
+    await refreshH2CLiveEvents(false);
+    renderPhaseFHunting();
+  }catch(error){
+    showActivityResult("❌","Bounty Hunt Failed",error.message);
+  }finally{
+    h2dBusy=false;
+  }
+}
+
+async function h2dDoTurnIn(){
+  if(h2dBusy) return;
+  h2dBusy=true;
+  try{
+    const response=await activityFetch("/api/activity/bounty/turnin",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:"{}"
+    });
+    const payload=await response.json();
+    if(!response.ok) throw new Error(payload.error||"Bounty turn-in failed.");
+
+    showActivityResult("📜","Bounty Complete",
+      `${payload.targetName} has been turned in. The next bounty arrives in 24 hours.`);
+    await refreshH2CLiveEvents(false);
+    renderPhaseFHunting();
+  }catch(error){
+    showActivityResult("❌","Turn-in Failed",error.message);
+  }finally{
+    h2dBusy=false;
+  }
+}
+
+const h2dBaseRenderEvents=renderPhaseEEvents;
+renderPhaseEEvents=function(){
+  h2dBaseRenderEvents();
+
+  const b=h2aLiveEvents?.bounty;
+  const overview=document.querySelector(".event-overview-grid");
+  if(!b?.active || !overview) return;
+
+  document.getElementById("h2dEventBountyDetail")?.remove();
+  overview.insertAdjacentHTML("beforeend",`
+    <button class="event-summary bounty-summary" id="h2dEventBountyDetail">
+      <div class="event-summary-art">📜</div>
+      <div>
+        <span class="live-dot">ACTIVE</span>
+        <h3>${b.status==="awaiting_turnin" ? (b.targetName||"Target Captured") : "Active Bounty"}</h3>
+        <p>${b.status==="awaiting_turnin" ? "Trophy return pending" : "60-minute independent hunts"}</p>
+        <small>🔎 ${b.clue||""}</small>
+      </div>
+    </button>`);
+  document.getElementById("h2dEventBountyDetail")?.addEventListener("click",()=>navTo("hunt"));
+};
+
+// Keep the bounty cooldown button fresh without requiring a full event reload.
+setInterval(()=>{
+  if(currentScreen==="hunt" && h2aLiveEvents?.bounty?.active){
+    h2dMountBountyCard();
+  }
+},1000);
