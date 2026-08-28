@@ -83,7 +83,7 @@ const PERFECT_CATCH_TITLE = "Perfectly Executed";
 const CRITICAL_CATCH_TITLE = "Against All Odds";
 const CRITICAL_CATCH_BONUS_POINTS = 10;
 const PET_COMBINE_XP = { Common: 50, Rare: 75, Epic: 125, Legendary: 200 };
-const PET_INHERIT_CHANCE = { Common: 15, Rare: 20, Epic: 25, Legendary: 30 };
+const PET_INHERIT_CHANCE = { Common: 85, Rare: 70, Epic: 55, Legendary: 40, Special: 0 };
 const PET_XP_BASE = { Common: 50, Rare: 65, Epic: 80, Legendary: 100 };
 const PET_ABILITY_COMBINE_XP = { Common: 25, Rare: 40, Epic: 65, Legendary: 100 };
 const HATCH_SACRIFICE_WINDOW = 5 * 60 * 1000;
@@ -285,7 +285,7 @@ const DISTORTIONS = {
 };
 
 const MAX_INCUBATORS = 5;
-const POINTS_PER_INCUBATOR = 100;
+const HUNTER_POINTS_PER_LEVEL = 100;
 const HATCH_POINT_REWARDS = {
   Common: 2,
   Rare: 5,
@@ -348,6 +348,114 @@ const pets = [
   { key: "mimicling", name: "Mimicling", icon: "🪨", habitat: "The Unmade", rarity: "Rare", ability: "itemFinder", baseBonus: 8, signatureAbility: "borrowed_talent", signatureName: "Borrowed Talent", description: "A shapeshifting dungeon familiar that sometimes steals another companion’s natural talent for a single hunt.", image: "mimicling.png", secret: true },
   { key: "the_unwritten", name: "The Unwritten", icon: "✒️", habitat: "The Unmade", rarity: "Legendary", ability: "capture", baseBonus: 5, signatureAbility: "this_wasnt_supposed_to_happen", signatureName: "THIS WASN’T SUPPOSED TO HAPPEN", description: "An unfinished planar familiar that can rewrite a successful hunt and create an encounter that was never supposed to exist.", image: "the_unwritten.png", secret: true }
 ];
+
+
+// ==================== H.3 PET ABILITY BIBLE ====================
+// Hunter level controls BOTH inheritance slots and incubator pods.
+// Level 1-2 = 1, 3-4 = 2, 5-6 = 3, 7-8 = 4, 9+ = 5 (hard cap).
+const H3_MAX_INHERITED_ABILITIES = 5;
+const H3_ABILITY_XP_TO_NEXT = { 1:100, 2:150, 3:250, 4:400, 5:0 };
+const H3_ABILITY_ROMAN = ["0","I","II","III","IV","V"];
+const H3_GLOBAL_CAPS = {
+  capture:20, points:20, eggFinder:20, itemFinder:20, shiny:5,
+  cooldownMinutes:60, companionTrainer:50, incubator:30,
+  baitSaver:30, trapMaster:30, rareTracker:15, tokenBonus:5,
+  rewardDouble:15, persistence:15
+};
+const H3_ABILITY_DEFS = {
+  capture:{name:"Capture",icon:"🎯",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:"%",description:"Increases normal capture chance.",capText:"Pet capture bonuses can never exceed +20% total."},
+  cooldown:{name:"Swift Hunter",icon:"⏱️",tier:"Rare",inheritable:true,values:[0,5,10,15,20,25],unit:" min",description:"Reduces the normal hunt cooldown.",capText:"Pet effects can never push a normal hunt below 1 hour."},
+  points:{name:"Hunter's Spirit",icon:"⭐",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:" points",description:"Awards bonus Hunter Points after successful catches.",capText:"Pet-derived Hunter Point bonuses cap at +20 per catch."},
+  tokenFinder:{name:"Token Finder",icon:"🪙",tier:"Common",inheritable:true,values:[0,10,15,20,25,30],unit:"% proc",description:"Chance to find bonus Hunt Tokens after a successful catch.",capText:"No pet combination can award more than +5 bonus Hunt Tokens from one catch."},
+  eggFinder:{name:"Egg Finder",icon:"🥚",tier:"Common",inheritable:true,values:[0,2,4,6,8,10],unit:"%",description:"Improves egg discovery chance.",capText:"Pet-derived Egg Find caps at +20%."},
+  itemFinder:{name:"Treasure Finder",icon:"🎒",tier:"Common",inheritable:true,values:[0,2,4,6,8,10],unit:"%",description:"Improves companion item-find chance.",capText:"Pet-derived Item Find caps at +20%."},
+  shiny:{name:"Shiny Hunter",icon:"✨",tier:"Legendary",inheritable:true,values:[0,.5,1,1.5,2,2.5],unit:"%",description:"Improves the chance that an eligible monster is Shiny.",capText:"Pet-derived Shiny bonus caps at +5 percentage points."},
+  rareTracker:{name:"Rare Tracker",icon:"🌟",tier:"Epic",inheritable:true,values:[0,3,5,8,11,15],unit:"%",description:"Shifts eligible encounter weighting toward Rare+ monsters.",capText:"Rare Tracker weighting caps at +15%."},
+  companionTrainer:{name:"Companion Trainer",icon:"🧬",tier:"Common",inheritable:true,values:[0,10,20,30,40,50],unit:"% XP",description:"Increases Companion XP earned by the equipped pet.",capText:"Companion XP bonuses cap at +50%."},
+  incubator:{name:"Incubator",icon:"🪺",tier:"Rare",inheritable:true,values:[0,5,10,15,20,25],unit:"% faster",description:"Reduces egg incubation duration while this pet is equipped.",capText:"Pet incubation reduction caps at 30%."},
+  luckyHunter:{name:"Lucky Hunter",icon:"🎲",tier:"Epic",inheritable:true,values:[0,3,5,8,11,15],unit:"%",description:"Chance to double ordinary hunt rewards. Unique trophies and restricted rewards never duplicate.",capText:"Reward doubling caps at 15%."},
+  baitSaver:{name:"Bait Saver",icon:"🧲",tier:"Rare",inheritable:true,values:[0,8,14,20,26,30],unit:"%",description:"Chance to preserve eligible bait after it is used.",capText:"Bait saving caps at 30%."},
+  trapMaster:{name:"Trap Master",icon:"🪤",tier:"Rare",inheritable:true,values:[0,8,14,20,26,30],unit:"%",description:"Chance to preserve an eligible capture item after a failed capture.",capText:"Capture-item saving caps at 30%."},
+  bloodhound:{name:"Bloodhound",icon:"🐾",tier:"Common",inheritable:true,values:[0,3,5,7,9,10],unit:"%",description:"After prey escapes, improves the next eligible attempt against that species.",capText:"Still obeys the +20% companion capture ceiling."},
+  trailSniffer:{name:"Trail Sniffer",icon:"👣",tier:"Common",inheritable:true,values:[0,5,6,7,8,10],unit:"%",description:"Successful hunting builds toward a boosted Rare+ encounter.",capText:"Temporary encounter boosts still respect rarity safety caps."},
+  tokenHoarder:{name:"Token Hoarder",icon:"💰",tier:"Common",inheritable:true,values:[0,10,9,8,7,6],unit:" catches",description:"A predictable streak counter that awards bonus Hunt Tokens after enough successful catches.",capText:"Bonus-token payout still obeys the +5 per-catch ceiling."},
+  treasureNose:{name:"Treasure Nose",icon:"🎁",tier:"Rare",inheritable:true,values:[0,15,13,11,9,8],unit:" catches",description:"After enough successful catches, guarantees an eligible item drop.",capText:"The counter resets after triggering."},
+  hotStreak:{name:"Hot Streak",icon:"🔥",tier:"Rare",inheritable:true,values:[0,3,4,5,6,7],unit:"% max",description:"Consecutive catches build a temporary capture streak; failure resets it.",capText:"Still obeys the +20% companion capture ceiling."},
+  secondChance:{name:"Second Chance",icon:"🛡️",tier:"Rare",inheritable:true,values:[0,12,10,8,7,6],unit:" failures",description:"After enough eligible failed captures, guarantees a capture item is preserved.",capText:"Only one save can trigger per failed attempt."},
+  firstLight:{name:"First Light",icon:"🌕",tier:"Epic",inheritable:true,values:[0,5,7,9,12,15],unit:"%",description:"The first eligible hunt after the daily reset gains improved Rare+ weighting.",capText:"Activates once per day."},
+  trophyHunter:{name:"Trophy Hunter",icon:"👑",tier:"Epic",inheritable:true,values:[0,3,5,7,9,10],unit:"%",description:"Improves capture chance during eligible Big Game Hunts.",capText:"Big Game-specific bonus caps at +10%."},
+  eventborn:{name:"Eventborn",icon:"⚡",tier:"Epic",inheritable:true,values:[0,2,3,4,5,5],unit:"%",description:"Gains temporary hunting bonuses while an eligible server-wide event is active.",capText:"Each affected stat still obeys its normal global cap."},
+  packHunter:{name:"Pack Hunter",icon:"🤝",tier:"Rare",inheritable:true,values:[0,2,3,4,5,6],unit:"%",description:"Gains a temporary capture bonus when another hunter has caught prey recently.",capText:"Nearby community activity does not stack repeatedly."},
+  persistence:{name:"Persistence",icon:"👻",tier:"Legendary",inheritable:true,values:[0,4,7,10,13,15],unit:"%",description:"Chance for escaped prey to linger for one immediate second capture attempt.",capText:"Maximum one Persistence retry per encounter."},
+  nestGuardian:{name:"Nest Guardian",icon:"🥚",tier:"Legendary",inheritable:true,values:[0,2,4,6,8,10],unit:"%",description:"Chance for an eligible discovered egg to upgrade by one rarity tier.",capText:"Legendary eggs cannot upgrade further."},
+  cosmicFortune:{name:"Cosmic Fortune",icon:"🌌",tier:"Special",inheritable:false,values:[0,1,2,3,4,5],unit:"",description:"Astræl's signature all-rounder: small Capture, Egg, Item and Shiny bonuses.",capText:"Exclusive to Astræl; each component obeys its own global cap."},
+  mixedResults:{name:"Mixed Results",icon:"🎲",tier:"Special",inheritable:false,values:[0,1,2,3,4,5],unit:"",description:"Mixlet rolls one temporary hunting bonus each hunt. Rank V can rarely activate two different bonuses.",capText:"Exclusive to Mixlet and can never be inherited."}
+};
+
+const H3_STANDARD_NATURAL_ABILITIES = {
+  puddlewyrm:"bloodhound", mosscap:"eggFinder", fen_gricklet:"itemFinder", lunarch_whelp:"firstLight",
+  shardhopper:"trailSniffer", glassback:"eggFinder", dune_gnawer:"baitSaver", prismwing:"shiny",
+  tumblebud:"companionTrainer", wispwing:"cooldown", knotmaw:"hotStreak", twilight_cervid:"rareTracker",
+  puffle:"packHunter", zephyr_beak:"cooldown", voltgrin:"tokenFinder", stormcrown:"capture",
+  cinderpip:"tokenHoarder", glowgill:"itemFinder", clinker:"luckyHunter", pyremane:"eventborn",
+  snowpod:"incubator", shiverquill:"trapMaster", coffinrawl:"persistence", auroralynx:"shiny",
+  buttoncap:"eggFinder", lumenslug:"treasureNose", sporemaw:"capture", bloomwarden:"nestGuardian",
+  orblet:"rareTracker", shardtail:"secondChance", gazeling:"firstLight", astrael:"cosmicFortune",
+  mixlet:"mixedResults"
+};
+for (const pet of pets) {
+  const h3Ability = H3_STANDARD_NATURAL_ABILITIES[pet.key];
+  if (h3Ability) {
+    pet.ability = h3Ability;
+    pet.baseBonus = 1;
+    pet.h3Ability = true;
+    const def = H3_ABILITY_DEFS[h3Ability];
+    if (def) pet.description = `${def.name}: ${def.description}`;
+  }
+}
+
+function h3HunterLevel(player) {
+  return Math.max(1, 1 + Math.floor(Math.max(0, Number(player?.points || 0)) / HUNTER_POINTS_PER_LEVEL));
+}
+function h3InheritedSlotLimit(player) {
+  return Math.min(H3_MAX_INHERITED_ABILITIES, 1 + Math.floor((h3HunterLevel(player) - 1) / 2));
+}
+function h3AbilityDef(key) {
+  return H3_ABILITY_DEFS[key] || {name:abilityDisplayName(key),icon:"✨",tier:"Common",inheritable:true,values:[0,1,2,3,4,5],unit:"",description:"Companion ability.",capText:""};
+}
+function h3RankRoman(rank) { return H3_ABILITY_ROMAN[Math.max(1,Math.min(5,Number(rank)||1))] || "I"; }
+function h3XpToNext(rank) { return H3_ABILITY_XP_TO_NEXT[Math.max(1,Math.min(5,Number(rank)||1))] || 0; }
+function h3AbilityValue(key, rank) {
+  const def=h3AbilityDef(key); const r=Math.max(1,Math.min(5,Number(rank)||1));
+  return Number(def.values?.[r] ?? r);
+}
+function h3AbilityEffectText(key, rank) {
+  const def=h3AbilityDef(key), value=h3AbilityValue(key,rank);
+  const special={
+    tokenFinder:`${value}% chance to find bonus Hunt Tokens after a successful catch`,
+    tokenHoarder:`bonus Hunt Tokens after every ${value} successful catches`,
+    treasureNose:`guaranteed eligible item drop after ${value} successful catches`,
+    secondChance:`guaranteed eligible item save after ${value} failed captures`,
+    cosmicFortune:`+${value}% Capture, Egg Find and Item Find, plus +${(value/10).toFixed(1)}% Shiny`,
+    mixedResults:`Rank ${h3RankRoman(rank)} random hunt bonus${rank>=5?' with a small two-bonus Jackpot chance':''}`
+  };
+  if (special[key]) return special[key];
+  if (key === "cooldown") return `${value} minute normal hunt cooldown reduction`;
+  if (key === "points") return `+${value} Hunter Points on successful catches`;
+  if (key === "companionTrainer") return `+${value}% Companion XP`;
+  if (key === "incubator") return `${value}% shorter egg incubation`;
+  return `${value >= 0 ? "+" : ""}${value}${def.unit || ""} — ${def.description}`;
+}
+function h3AbilityInheritanceChance(targetOwned, donorOwned, abilityKey) {
+  const targetDef=getOwnedPetDefinition(targetOwned), donorDef=getOwnedPetDefinition(donorOwned), def=h3AbilityDef(abilityKey);
+  if (!def.inheritable || def.tier === "Special") return {base:0,bondBonus:0,habitatBonus:0,total:0,label:"Locked"};
+  const base=Number(PET_INHERIT_CHANCE[def.tier] ?? 40);
+  const bond=getPetBondLevel(targetOwned);
+  const bondBonus=({1:0,2:3,3:6,4:9,5:12})[bond] || 0;
+  const habitatBonus=targetDef?.habitat && donorDef?.habitat && targetDef.habitat===donorDef.habitat ? 5 : 0;
+  const total=Math.min(95,base+bondBonus+habitatBonus);
+  return {base,bondBonus,habitatBonus,total,label:total>=80?"Excellent":total>=60?"Good":total>=40?"Uncertain":"Risky"};
+}
 
 const PET_COLLECTIONS = {
   Moonfen: { icon: "🌙", achievement: "Moonfen Companion Collection", title: "Moonfen Keeper" },
@@ -1314,10 +1422,7 @@ function getPlayer(data, userId) {
   }
 
   if (!Number.isInteger(player.lastIncubatorSlots) || player.lastIncubatorSlots < 1) {
-    player.lastIncubatorSlots = Math.min(
-      MAX_INCUBATORS,
-      1 + Math.floor((player.points || 0) / POINTS_PER_INCUBATOR)
-    );
+    player.lastIncubatorSlots = getIncubatorSlots(player);
   }
 
   if (!Array.isArray(player.pets)) player.pets = [];
@@ -1365,10 +1470,16 @@ function getPlayer(data, userId) {
     if (!ownedPet.personality) ownedPet.personality = "Curious";
     if (ownedPet.nickname === undefined) ownedPet.nickname = null;
     if (ownedPet.nickname !== null && typeof ownedPet.nickname !== "string") ownedPet.nickname = null;
+    if (!Number.isFinite(ownedPet.naturalAbilityXp)) ownedPet.naturalAbilityXp = 0;
+    if (!Number.isInteger(ownedPet.naturalAbilityRank) || ownedPet.naturalAbilityRank < 1) ownedPet.naturalAbilityRank = 1;
+    ownedPet.naturalAbilityRank = Math.min(5, ownedPet.naturalAbilityRank);
     if (!Array.isArray(ownedPet.inheritedAbilities)) ownedPet.inheritedAbilities = [];
     for (const inherited of ownedPet.inheritedAbilities) {
       if (!Number.isFinite(inherited.xp)) inherited.xp = 0;
+      if (!Number.isInteger(inherited.rank) || inherited.rank < 1) inherited.rank = 1;
+      inherited.rank = Math.min(5, inherited.rank);
       if (!inherited.sourceRarity) inherited.sourceRarity = "Common";
+      if (!inherited.sourceName && inherited.sourcePetKey) inherited.sourceName = getPetDefinition(inherited.sourcePetKey)?.name || inherited.sourcePetKey;
     }
     if (!ownedPet.progressionV2) {
       const legacy = getLegacyCompanionLevelInfo(ownedPet.companionXp || 0);
@@ -1534,83 +1645,64 @@ function companionXpBar(ownedPet, length = 10) {
 }
 
 function abilityXpRequiredForLevel(level, rarity = "Common") {
-  return (PET_XP_BASE[rarity] || PET_XP_BASE.Common) + Math.max(0, level - 1) * 10;
+  return h3XpToNext(level);
+}
+
+function getNaturalAbilityLevelInfo(ownedPet) {
+  return {
+    level:Math.max(1,Math.min(5,Number(ownedPet?.naturalAbilityRank || 1))),
+    xpIntoLevel:Math.max(0,Number(ownedPet?.naturalAbilityXp || 0)),
+    xpNeeded:h3XpToNext(ownedPet?.naturalAbilityRank || 1)
+  };
 }
 
 function getInheritedAbilityLevelInfo(inherited) {
-  let level = 1;
-  let xpIntoLevel = Math.max(0, Number(inherited?.xp || 0));
-  const rarity = inherited?.sourceRarity || "Common";
-  while (level < MAX_COMPANION_LEVEL) {
-    const needed = abilityXpRequiredForLevel(level, rarity);
-    if (xpIntoLevel < needed) break;
-    xpIntoLevel -= needed;
-    level++;
-  }
-  return { level, xpIntoLevel, xpNeeded: level >= MAX_COMPANION_LEVEL ? 0 : abilityXpRequiredForLevel(level, rarity) };
+  return {
+    level:Math.max(1,Math.min(5,Number(inherited?.rank || 1))),
+    xpIntoLevel:Math.max(0,Number(inherited?.xp || 0)),
+    xpNeeded:h3XpToNext(inherited?.rank || 1)
+  };
 }
 
-function awardInheritedAbilityXp(ownedPet, amount) {
-  if (!ownedPet || !Array.isArray(ownedPet.inheritedAbilities) || amount <= 0) return [];
-  const leveled = [];
-  for (const inherited of ownedPet.inheritedAbilities) {
-    const before = getInheritedAbilityLevelInfo(inherited).level;
-    inherited.xp = Math.max(0, Number(inherited.xp || 0)) + amount;
-    const after = getInheritedAbilityLevelInfo(inherited).level;
-    if (after > before) leveled.push(`${abilityDisplayName(inherited.ability)} reached Ability Level ${after}`);
-  }
-  return leveled;
+function h3ApplyAbilityXp(holder, amount, natural=false) {
+  let rank=Math.max(1,Math.min(5,Number(natural ? holder.naturalAbilityRank : holder.rank) || 1));
+  let xp=Math.max(0,Number(natural ? holder.naturalAbilityXp : holder.xp) || 0) + Math.max(0,Math.floor(amount));
+  const before=rank;
+  while(rank<5){ const need=h3XpToNext(rank); if(xp<need) break; xp-=need; rank++; }
+  if(rank>=5) xp=0;
+  if(natural){ holder.naturalAbilityRank=rank; holder.naturalAbilityXp=xp; }
+  else { holder.rank=rank; holder.xp=xp; }
+  return {before,after:rank,xp,xpNeeded:h3XpToNext(rank)};
+}
+
+function h3TrainableAbilityRefs(ownedPet) {
+  const def=getOwnedPetDefinition(ownedPet); if(!ownedPet||!def) return [];
+  const refs=[];
+  if((ownedPet.naturalAbilityRank||1)<5) refs.push({ability:def.ability,natural:true,holder:ownedPet});
+  for(const inherited of ownedPet.inheritedAbilities||[]) if((inherited.rank||1)<5) refs.push({ability:inherited.ability,natural:false,holder:inherited});
+  return refs;
+}
+
+function previewPetXpDistribution(ownedPet,totalXp){
+  const amount=Math.max(0,Math.floor(Number(totalXp||0))), refs=h3TrainableAbilityRefs(ownedPet);
+  if(!amount||!refs.length) return {totalXp:amount,abilityCount:refs.length,allocations:[],maxed:!refs.length};
+  const base=Math.floor(amount/refs.length); let rem=amount%refs.length;
+  return {totalXp:amount,abilityCount:refs.length,maxed:false,allocations:refs.map(ref=>({ability:ref.ability,natural:ref.natural,amount:base+(rem-->0?1:0)}))};
 }
 
 function distributePetXpAcrossAbilities(ownedPet, totalXp) {
-  const definition = getOwnedPetDefinition(ownedPet);
-  const amount = Math.max(0, Math.floor(Number(totalXp || 0)));
-  if (!ownedPet || !definition || amount <= 0) {
-    return { totalXp: 0, abilityCount: 0, allocations: [], levelUps: [] };
+  const preview=previewPetXpDistribution(ownedPet,totalXp), levelUps=[];
+  for(const allocation of preview.allocations){
+    const ref=h3TrainableAbilityRefs(ownedPet).find(r=>r.ability===allocation.ability&&r.natural===allocation.natural);
+    if(!ref) continue;
+    const result=h3ApplyAbilityXp(ref.holder,allocation.amount,ref.natural);
+    if(result.after>result.before) levelUps.push(`${abilityDisplayName(allocation.ability)} reached Rank ${h3RankRoman(result.after)}`);
   }
+  return {...preview,levelUps};
+}
 
-  const inheritedAbilities = Array.isArray(ownedPet.inheritedAbilities)
-    ? ownedPet.inheritedAbilities
-    : [];
-  const abilityCount = 1 + inheritedAbilities.length;
-  const baseShare = Math.floor(amount / abilityCount);
-  let remainder = amount % abilityCount;
-  const allocations = [];
-  const levelUps = [];
-
-  // The natural passive is powered by Companion XP.
-  const naturalBefore = getCompanionLevelInfo(ownedPet).level;
-  const naturalShare = baseShare + (remainder > 0 ? 1 : 0);
-  if (remainder > 0) remainder--;
-  ownedPet.companionXp = Math.max(0, Number(ownedPet.companionXp || 0)) + naturalShare;
-  const naturalAfter = getCompanionLevelInfo(ownedPet).level;
-  allocations.push({
-    ability: definition.ability,
-    natural: true,
-    amount: naturalShare
-  });
-  if (naturalAfter > naturalBefore) {
-    levelUps.push(`${abilityDisplayName(definition.ability)} reached Ability Level ${naturalAfter}`);
-  }
-
-  // Every inherited ability receives an equal share of the same XP pool.
-  for (const inherited of inheritedAbilities) {
-    const share = baseShare + (remainder > 0 ? 1 : 0);
-    if (remainder > 0) remainder--;
-    const before = getInheritedAbilityLevelInfo(inherited).level;
-    inherited.xp = Math.max(0, Number(inherited.xp || 0)) + share;
-    const after = getInheritedAbilityLevelInfo(inherited).level;
-    allocations.push({
-      ability: inherited.ability,
-      natural: false,
-      amount: share
-    });
-    if (after > before) {
-      levelUps.push(`${abilityDisplayName(inherited.ability)} reached Ability Level ${after}`);
-    }
-  }
-
-  return { totalXp: amount, abilityCount, allocations, levelUps };
+function awardInheritedAbilityXp(ownedPet, amount) {
+  return distributePetXpAcrossAbilities(ownedPet,amount).levelUps;
 }
 
 function formatDistributedPetXp(distribution) {
@@ -1621,126 +1713,68 @@ function formatDistributedPetXp(distribution) {
 }
 
 function formatAllPetAbilityProgress(ownedPet) {
-  const definition = getOwnedPetDefinition(ownedPet);
-  if (!ownedPet || !definition) return "";
-
-  const naturalInfo = getCompanionLevelInfo(ownedPet);
-  const naturalXp = naturalInfo.level >= MAX_COMPANION_LEVEL
-    ? "MAX"
-    : `${naturalInfo.xpIntoLevel}/${naturalInfo.xpNeeded} XP`;
-
-  const lines = [
-    `✨ **${abilityDisplayName(definition.ability)}** — Ability Lv. **${naturalInfo.level}** | **${naturalXp}**`
-  ];
-
-  for (const inherited of ownedPet.inheritedAbilities || []) {
-    const info = getInheritedAbilityLevelInfo(inherited);
-    const xp = info.level >= MAX_COMPANION_LEVEL
-      ? "MAX"
-      : `${info.xpIntoLevel}/${info.xpNeeded} XP`;
-
-    lines.push(
-      `🧬 **${abilityDisplayName(inherited.ability)}** — Ability Lv. **${info.level}** | **${xp}**`
-    );
-  }
-
+  const definition=getOwnedPetDefinition(ownedPet); if(!ownedPet||!definition) return "";
+  const natural=getNaturalAbilityLevelInfo(ownedPet);
+  const lines=[`✨ **${abilityDisplayName(definition.ability)}** — Rank **${h3RankRoman(natural.level)}** | **${natural.level>=5?"MAX":`${natural.xpIntoLevel}/${natural.xpNeeded} XP`}**`];
+  for(const inherited of ownedPet.inheritedAbilities||[]){ const info=getInheritedAbilityLevelInfo(inherited); lines.push(`🧬 **${abilityDisplayName(inherited.ability)}** — Rank **${h3RankRoman(info.level)}** | **${info.level>=5?"MAX":`${info.xpIntoLevel}/${info.xpNeeded} XP`}**`); }
   return lines.join("\n");
 }
 
 function awardCompanionXp(player, amount, reason = "Companion XP") {
-  const ownedPet = getEquippedPet(player);
-  const definition = getOwnedPetDefinition(ownedPet);
-  if (!ownedPet || !definition || amount <= 0) return "";
-
-  const before = getCompanionLevelInfo(ownedPet).level;
-  ownedPet.companionXp = Math.max(0, Number(ownedPet.companionXp || 0)) + amount;
-  const after = getCompanionLevelInfo(ownedPet).level;
-
-  const inheritedXpAmount = reason.includes("Fetch") ? ABILITY_XP_PER_FETCH : ABILITY_XP_PER_HUNT;
-  const abilityLevels = awardInheritedAbilityXp(ownedPet, inheritedXpAmount);
-
-  const displayName = getOwnedPetName(ownedPet);
-  return `${getPetDisplayIcon(definition)} **${displayName} gained ${amount} Companion XP!** (${reason})\n` +
-    `${companionXpBar(ownedPet)}\n\n` +
-    `**Ability Progress**\n${formatAllPetAbilityProgress(ownedPet)}` +
-    `${after > before ? `\n🎉 **LEVEL UP! ${displayName} reached Level ${after}!**\n${definition.signatureAbility ? `❖ Its **${definition.signatureName}** signature ability grew stronger.` : `✨ Its natural ${abilityDisplayName(definition.ability)} ability grew stronger.`}` : ""}` +
-    `${abilityLevels.length ? `\n🧬 **ABILITY LEVEL UP!** ${abilityLevels.join("\n🧬 **ABILITY LEVEL UP!** ")}` : ""}`;
+  const ownedPet=getEquippedPet(player), definition=getOwnedPetDefinition(ownedPet); if(!ownedPet||!definition||amount<=0) return "";
+  const trainer=Math.min(H3_GLOBAL_CAPS.companionTrainer,getPetBonus(player,"companionTrainer"));
+  const adjusted=Math.max(1,Math.round(amount*(1+trainer/100)));
+  const before=getCompanionLevelInfo(ownedPet).level;
+  ownedPet.companionXp=Math.max(0,Number(ownedPet.companionXp||0))+adjusted;
+  const after=getCompanionLevelInfo(ownedPet).level;
+  const abilityPool=reason.includes("Fetch")?ABILITY_XP_PER_FETCH:ABILITY_XP_PER_HUNT;
+  const abilityDistribution=distributePetXpAcrossAbilities(ownedPet,abilityPool);
+  const displayName=getOwnedPetName(ownedPet);
+  return `${getPetDisplayIcon(definition)} **${displayName} gained ${adjusted} Companion XP!** (${reason})\n${companionXpBar(ownedPet)}\n\n**Ability Progress**\n${formatAllPetAbilityProgress(ownedPet)}`+
+    `${after>before?`\n🎉 **LEVEL UP! ${displayName} reached Level ${after}!**`:""}`+
+    `${abilityDistribution.levelUps.length?`\n🧬 **ABILITY RANK UP!** ${abilityDistribution.levelUps.join("\n🧬 **ABILITY RANK UP!** ")}`:""}`;
 }
 
 function abilityDisplayName(ability) {
-  return ({ eggFinder: "Egg Finder", shiny: "Shiny Finder", capture: "Capture", cooldown: "Cooldown", points: "Bonus Points", itemFinder: "Item Finder" })[ability] || ability;
+  return H3_ABILITY_DEFS?.[ability]?.name || ({ eggFinder:"Egg Finder",shiny:"Shiny Hunter",capture:"Capture",cooldown:"Swift Hunter",points:"Hunter's Spirit",itemFinder:"Treasure Finder" })[ability] || ability;
 }
 
 function abilityBonusAtLevel(ability, baseBonus, level) {
-  const extraLevels = Math.max(0, level - 1);
-  if (ability === "shiny") return +(baseBonus + extraLevels * 0.25).toFixed(2);
-  if (ability === "eggFinder") return +(baseBonus + extraLevels * 0.5).toFixed(2);
-  if (ability === "cooldown") return +(baseBonus + Math.floor(extraLevels / 2)).toFixed(2);
-  return +(baseBonus + extraLevels).toFixed(2);
+  if(H3_ABILITY_DEFS?.[ability]) return h3AbilityValue(ability,Math.min(5,Number(level)||1));
+  const extra=Math.max(0,(Number(level)||1)-1);
+  return +(Number(baseBonus||1)+extra).toFixed(2);
 }
 
 function getPetAbilityEntries(ownedPet) {
-  const definition = getOwnedPetDefinition(ownedPet);
-  if (!ownedPet || !definition) return [];
-  const naturalLevel = getCompanionLevelInfo(ownedPet).level;
-  const entries = [{ ability: definition.ability, level: naturalLevel, baseBonus: definition.baseBonus, natural: true, rarity: definition.rarity }];
-  for (const inherited of ownedPet.inheritedAbilities || []) {
-    entries.push({ ability: inherited.ability, level: getInheritedAbilityLevelInfo(inherited).level, baseBonus: inherited.baseBonus || 1, natural: false, rarity: inherited.sourceRarity || "Common", inherited });
-  }
+  const definition=getOwnedPetDefinition(ownedPet); if(!ownedPet||!definition) return [];
+  const natural=getNaturalAbilityLevelInfo(ownedPet);
+  const entries=[{ability:definition.ability,level:natural.level,baseBonus:definition.baseBonus,natural:true,rarity:definition.rarity,xp:natural.xpIntoLevel,xpNeeded:natural.xpNeeded,sourcePetKey:definition.key,sourceName:definition.name}];
+  for(const inherited of ownedPet.inheritedAbilities||[]){ const info=getInheritedAbilityLevelInfo(inherited); entries.push({ability:inherited.ability,level:info.level,baseBonus:inherited.baseBonus||1,natural:false,rarity:inherited.sourceRarity||"Common",xp:info.xpIntoLevel,xpNeeded:info.xpNeeded,sourcePetKey:inherited.sourcePetKey,sourceName:inherited.sourceName,inherited}); }
   return entries;
 }
 
 function getKnownPetAbility(ownedPet, ability) {
-  const definition = getOwnedPetDefinition(ownedPet);
-  if (!ownedPet || !definition) return null;
-
-  if (definition.ability === ability) {
-    return {
-      natural: true,
-      ability,
-      definition
-    };
-  }
-
-  const inherited = (ownedPet.inheritedAbilities || []).find(entry => entry.ability === ability);
-  if (inherited) {
-    return {
-      natural: false,
-      ability,
-      inherited
-    };
-  }
-
-  return null;
+  const definition=getOwnedPetDefinition(ownedPet); if(!ownedPet||!definition) return null;
+  if(definition.ability===ability) return {natural:true,ability,definition};
+  const inherited=(ownedPet.inheritedAbilities||[]).find(entry=>entry.ability===ability);
+  return inherited?{natural:false,ability,inherited}:null;
 }
 
 function addSameAbilityCombineXp(ownedPet, ability, sacrificeRarity) {
-  const known = getKnownPetAbility(ownedPet, ability);
-  if (!known) return null;
-
-  const amount = PET_ABILITY_COMBINE_XP[sacrificeRarity] || PET_ABILITY_COMBINE_XP.Common;
-  const distribution = distributePetXpAcrossAbilities(ownedPet, amount);
-
-  return {
-    type: "distributed",
-    amount,
-    distribution,
-    text:
-      `🧬 **ABILITY TRAINING!**\n` +
-      `This companion already knows **${abilityDisplayName(ability)}**.\n` +
-      `The sacrificed pet became **${amount} XP**, evenly distributed across all **${distribution.abilityCount}** abilities this companion owns.\n\n` +
-      `${formatDistributedPetXp(distribution)}\n\n` +
-      `**Ability Progress**\n${formatAllPetAbilityProgress(ownedPet)}` +
-      `${distribution.levelUps.length ? `\n🎉 **ABILITY LEVEL UP!** ${distribution.levelUps.join("\n🎉 **ABILITY LEVEL UP!** ")}` : ""}`
-  };
+  const known=getKnownPetAbility(ownedPet,ability); if(!known) return null;
+  const amount=PET_ABILITY_COMBINE_XP[sacrificeRarity]||PET_ABILITY_COMBINE_XP.Common;
+  const distribution=distributePetXpAcrossAbilities(ownedPet,amount);
+  return {type:"distributed",amount,distribution,text:`🧬 **ABILITY TRAINING!**\nThe sacrificed pet became **${amount} Ability XP**, evenly distributed across every non-maxed ability.\n\n${formatDistributedPetXp(distribution)}\n\n**Ability Progress**\n${formatAllPetAbilityProgress(ownedPet)}`};
 }
 
 function getPetBonus(player, ability) {
-  const ownedPet = getEquippedPet(player);
-  const definition = getOwnedPetDefinition(ownedPet);
-  const entries = getPetAbilityEntries(ownedPet).filter(entry => entry.ability === ability && !(entry.natural && definition?.signatureAbility));
-  const normal = entries.reduce((sum, entry) => sum + abilityBonusAtLevel(entry.ability, entry.baseBonus, entry.level), 0);
-  return normal + copiedPetBonus(player, ability);
+  const ownedPet=getEquippedPet(player); if(!ownedPet) return 0;
+  const definition=getOwnedPetDefinition(ownedPet);
+  const entries=getPetAbilityEntries(ownedPet).filter(entry=>entry.ability===ability&&!(entry.natural&&definition?.signatureAbility));
+  let total=entries.reduce((sum,entry)=>sum+abilityBonusAtLevel(entry.ability,entry.baseBonus,entry.level),0)+copiedPetBonus(player,ability);
+  const caps={capture:H3_GLOBAL_CAPS.capture,points:H3_GLOBAL_CAPS.points,eggFinder:H3_GLOBAL_CAPS.eggFinder,itemFinder:H3_GLOBAL_CAPS.itemFinder,shiny:H3_GLOBAL_CAPS.shiny,companionTrainer:H3_GLOBAL_CAPS.companionTrainer,incubator:H3_GLOBAL_CAPS.incubator,rareTracker:H3_GLOBAL_CAPS.rareTracker,baitSaver:H3_GLOBAL_CAPS.baitSaver,trapMaster:H3_GLOBAL_CAPS.trapMaster,luckyHunter:H3_GLOBAL_CAPS.rewardDouble,persistence:H3_GLOBAL_CAPS.persistence};
+  if(Number.isFinite(caps[ability])) total=Math.min(caps[ability],total);
+  return total;
 }
 
 function getPlayerPetIcon(player) {
@@ -1940,10 +1974,10 @@ function getPlayerHuntCooldown(player, data = null, userId = null) {
   if (sig?.definition.signatureAbility === "frozen_time" && ensureSignatureState(sig.owned).frozenTimeReady) {
     baseCooldown = Math.floor(baseCooldown * (sig.level >= 10 ? 0.40 : 0.50));
   }
-  const reductionMinutes = getPetBonus(player, "cooldown") * 5;
+  const reductionMinutes = getPetBonus(player, "cooldown");
   const blessing = getActiveCommunityBlessing(currentData, "cooldown");
   const blessingReduction = blessing?.definition?.cooldownReductionMs || 0;
-  const minimumCooldown = shatterActive ? 5 * 60 * 1000 : 30 * 60 * 1000;
+  const minimumCooldown = shatterActive ? 5 * 60 * 1000 : (isBigGameActive(currentData) ? BIG_GAME_COOLDOWN : (distortion ? DISTORTION_HUNT_COOLDOWN : H3_GLOBAL_CAPS.cooldownMinutes * 60 * 1000));
   return Math.max(
     minimumCooldown,
     baseCooldown - reductionMinutes * 60 * 1000 - blessingReduction
@@ -1951,16 +1985,9 @@ function getPlayerHuntCooldown(player, data = null, userId = null) {
 }
 
 function formatAbilityEffect(entry) {
-  const bonus = abilityBonusAtLevel(entry.ability, entry.baseBonus, entry.level);
-  const labels = {
-    eggFinder: `+${bonus}% egg discovery chance`,
-    shiny: `+${bonus}% shiny chance`,
-    capture: `+${bonus}% normal capture chance`,
-    cooldown: `${bonus * 5} minute hunt cooldown reduction`,
-    points: `+${bonus} points on successful catches`,
-    itemFinder: `+${bonus}% companion item-find chance`
-  };
-  return labels[entry.ability] || abilityDisplayName(entry.ability);
+  if(H3_ABILITY_DEFS?.[entry.ability]) return h3AbilityEffectText(entry.ability,Math.min(5,Number(entry.level)||1));
+  const bonus=abilityBonusAtLevel(entry.ability,entry.baseBonus,entry.level);
+  return `${abilityDisplayName(entry.ability)} +${bonus}`;
 }
 
 function petPassiveText(player) {
@@ -1979,27 +2006,14 @@ function petPassiveTextForOwned(ownedPet) {
 }
 
 function getIncubatorSlots(player) {
-  return Math.min(
-    MAX_INCUBATORS,
-    1 + Math.floor((player?.points || 0) / POINTS_PER_INCUBATOR)
-  );
+  return Math.min(MAX_INCUBATORS,h3InheritedSlotLimit(player));
 }
-
 function getNewIncubatorUnlockText(player, previousPoints) {
-  const before = Math.min(
-    MAX_INCUBATORS,
-    1 + Math.floor((previousPoints || 0) / POINTS_PER_INCUBATOR)
-  );
-  const after = getIncubatorSlots(player);
-  player.lastIncubatorSlots = after;
-
-  if (after <= before) return "";
-
-  return (
-    `\n\n🎉 **NEW INCUBATOR UNLOCKED!**\n` +
-    `You reached **${(after - 1) * POINTS_PER_INCUBATOR} Hunter Points**.\n` +
-    `Incubators: **${before} → ${after}**`
-  );
+  const fakeBefore={...player,points:previousPoints};
+  const before=getIncubatorSlots(fakeBefore), after=getIncubatorSlots(player);
+  player.lastIncubatorSlots=after;
+  if(after<=before) return "";
+  return `\n\n🎉 **HUNTER LEVEL ${h3HunterLevel(player)}!**\n🧬 Inherited ability slots: **${before} → ${after}**\n🥚 Incubators: **${before} → ${after}**`;
 }
 
 function isNormalEggPet(definition) {
@@ -2505,7 +2519,7 @@ function addWeeklyProgress(data, player, points, monster = null) {
 }
 
 function petAbilityCapacity(player) {
-  return 1 + Math.floor(Math.max(0, Number(player.points || 0)) / 100);
+  return 1 + h3InheritedSlotLimit(player); // natural + inherited slots
 }
 
 function perfectCatchLoot(player) {
@@ -7869,17 +7883,18 @@ client.on("messageCreate", async (message) => {
       if (currentAbilities >= capacity) {
         return message.reply(
           `🧬 This pet currently has **${currentAbilities}/${capacity} ability slots**. ` +
-          `Earn another 100 Hunter Points before adding another inherited ability.`
+          `Reach the next odd Hunter Level before adding another inherited ability.`
         );
       }
 
-      const chance = PET_INHERIT_CHANCE[sacrificeDef.rarity] || 15;
-      const xp = PET_COMBINE_XP[sacrificeDef.rarity] || 50;
+      const chanceInfo = h3AbilityInheritanceChance(keeper, sacrifice, sacrificeDef.ability);
+      const chance = chanceInfo.total;
       combineMode = "inherit";
 
       confirmationResult =
-        `Result: **${chance}% chance** to inherit **${abilityDisplayName(sacrificeDef.ability)}**. ` +
-        `Failure grants **${Math.floor(xp / 3)} XP**, evenly split across all **${currentAbilities}** currently owned abilities.`;
+        `Result: **${chance}% chance** to inherit **${abilityDisplayName(sacrificeDef.ability)}** ` +
+        `(base ${chanceInfo.base}% + Bond ${chanceInfo.bondBonus}% + habitat ${chanceInfo.habitatBonus}%). ` +
+        `The sacrificed pet is consumed whether inheritance succeeds or fails.`;
     }
 
     const prompt = await message.reply(
@@ -7972,13 +7987,21 @@ client.on("messageCreate", async (message) => {
           );
         }
 
-        const chance = PET_INHERIT_CHANCE[freshSacrificeDef.rarity] || 15;
+        const chanceInfo = h3AbilityInheritanceChance(freshKeeper, freshSacrifice, freshSacrificeDef.ability);
+        const chance = chanceInfo.total;
+
+        if (!h3AbilityDef(freshSacrificeDef.ability).inheritable) {
+          return message.reply("That special ability cannot be inherited. No pet was sacrificed.");
+        }
 
         if (Math.random() * 100 < chance) {
+          const donorRank = getNaturalAbilityLevelInfo(freshSacrifice).level;
           freshKeeper.inheritedAbilities.push({
             ability: freshSacrificeDef.ability,
-            baseBonus: freshSacrificeDef.baseBonus,
+            baseBonus: 1,
+            rank: donorRank,
             sourcePetKey: freshSacrificeDef.key,
+            sourceName: getOwnedPetName(freshSacrifice),
             sourceRarity: freshSacrificeDef.rarity,
             xp: 0,
             inheritedAt: Date.now()
@@ -7986,23 +8009,12 @@ client.on("messageCreate", async (message) => {
 
           result =
             `🧬 **ABILITY INHERITED!**\n` +
-            `${getOwnedPetName(freshKeeper)} learned **${abilityDisplayName(freshSacrificeDef.ability)}**!\n\n` +
-            `The new ability begins at **Ability Level 1 — 0 XP**.\n` +
-            `A companion can only know each ability once; future pets with this same ability will strengthen it with XP instead.`;
+            `${getOwnedPetName(freshKeeper)} learned **${abilityDisplayName(freshSacrificeDef.ability)} Rank ${h3RankRoman(donorRank)}**!\n\n` +
+            `Inheritance roll: **${chance}%**. The donor's current Rank transferred, but progress toward its next Rank did not.`;
         } else {
-          const consolation = Math.floor(
-            (PET_COMBINE_XP[freshSacrificeDef.rarity] || 50) / 3
-          );
-
-          const distribution = distributePetXpAcrossAbilities(freshKeeper, consolation);
-
           result =
             `💨 **INHERITANCE FAILED**\n` +
-            `The ability did not transfer, but ${getOwnedPetName(freshKeeper)} absorbed ` +
-            `**${consolation} XP**, evenly distributed across all **${distribution.abilityCount}** owned abilities.\n\n` +
-            `${formatDistributedPetXp(distribution)}\n\n` +
-            `**Ability Progress**\n${formatAllPetAbilityProgress(freshKeeper)}` +
-            `${distribution.levelUps.length ? `\n🎉 **ABILITY LEVEL UP!** ${distribution.levelUps.join("\n🎉 **ABILITY LEVEL UP!** ")}` : ""}`;
+            `The **${chance}%** inheritance roll failed. ${getOwnedPetName(freshSacrifice)} was still permanently sacrificed, and ${getOwnedPetName(freshKeeper)} remains unchanged.`;
         }
       }
     }
@@ -11739,7 +11751,9 @@ async function activityIncubateEgg(user, inventoryIndex) {
   const [egg] = player.eggs.splice(index,1);
   const eggKey = egg.eggKey || egg.distortionKey || null;
   const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
-  const duration = Number(distortion?.incubationMs || EGG_TYPES[egg.rarity]?.incubationMs || EGG_TYPES.Common.incubationMs);
+  const baseDuration = Number(distortion?.incubationMs || EGG_TYPES[egg.rarity]?.incubationMs || EGG_TYPES.Common.incubationMs);
+  const incubationReduction = Math.min(H3_GLOBAL_CAPS.incubator, getPetBonus(player,"incubator"));
+  const duration = Math.max(60 * 1000, Math.round(baseDuration * (1 - incubationReduction / 100)));
   const incubationStartedAt = Date.now();
   const incubationReadyAt = incubationStartedAt + duration;
   player.incubatingEggs.push({
@@ -11801,6 +11815,9 @@ async function activityHatchEgg(user, slotNumber) {
     nickname:null,
     personality:PET_PERSONALITIES[Math.floor(Math.random()*PET_PERSONALITIES.length)],
     companionXp:0,
+    naturalAbilityRank:1,
+    naturalAbilityXp:0,
+    inheritedAbilities:[],
     affectionEvents:0,
     timesHelped:0,
     hatchedAt:Date.now()
@@ -11875,6 +11892,63 @@ function activityRenamePet(user, petId, nickname) {
 }
 
 
+
+
+function h3DonorAbilityEntries(ownedPet){
+  return getPetAbilityEntries(ownedPet).map(entry=>({key:entry.ability,name:abilityDisplayName(entry.ability),rank:entry.level,rankRoman:h3RankRoman(entry.level),tier:h3AbilityDef(entry.ability).tier,inheritable:Boolean(h3AbilityDef(entry.ability).inheritable),natural:Boolean(entry.natural),effect:formatAbilityEffect(entry)}));
+}
+function h3CombineValidate(player,targetId,donorId){
+  const target=activityPetById(player,targetId), donor=activityPetById(player,donorId);
+  if(!target||!donor||target===donor) return {ok:false,error:"Choose two different pets you own."};
+  if(String(player.equippedPetId)===String(donor.id)) return {ok:false,error:"Your active pet cannot be sacrificed. Equip another companion first."};
+  return {ok:true,target,donor,targetDef:getOwnedPetDefinition(target),donorDef:getOwnedPetDefinition(donor)};
+}
+function activityPetCombinePreview(user,body={}){
+  const data=loadData(), player=getPlayer(data,user.id); ensureActivityProfile(player,user);
+  const check=h3CombineValidate(player,body.targetId,body.donorId); if(!check.ok) return check;
+  const {target,donor,targetDef,donorDef}=check;
+  const abilityKey=String(body.abilityKey||h3DonorAbilityEntries(donor)[0]?.key||"");
+  const donorAbility=h3DonorAbilityEntries(donor).find(a=>a.key===abilityKey);
+  if(!donorAbility) return {ok:false,error:"That donor does not know the selected ability."};
+  const known=getKnownPetAbility(target,abilityKey), slotsMax=h3InheritedSlotLimit(player), slotsUsed=(target.inheritedAbilities||[]).length;
+  const xpAmount=PET_COMBINE_XP[donorDef?.rarity]||50;
+  const trainingAmount=PET_ABILITY_COMBINE_XP[donorDef?.rarity]||25;
+  const chance=h3AbilityInheritanceChance(target,donor,abilityKey);
+  const mode=known?"duplicate":(!donorAbility.inheritable?"locked":"inherit");
+  return {ok:true,targetId:target.id,donorId:donor.id,targetName:getOwnedPetName(target),donorName:getOwnedPetName(donor),donorRarity:donorDef?.rarity||"Common",
+    ability:donorAbility,mode,known:Boolean(known),slotsUsed,slotsMax,totalAbilitySlots:1+slotsMax,canInherit:mode==="inherit"&&slotsUsed<slotsMax,
+    chance,xpSacrifice:{amount:xpAmount,...previewPetXpDistribution(target,xpAmount)},duplicateTraining:{amount:trainingAmount,...previewPetXpDistribution(target,trainingAmount)}};
+}
+function activityPetCombineXp(user,body={}){
+  const data=loadData(), player=getPlayer(data,user.id); ensureActivityProfile(player,user);
+  const check=h3CombineValidate(player,body.targetId,body.donorId); if(!check.ok) return check;
+  const {target,donor,donorDef}=check, amount=PET_COMBINE_XP[donorDef?.rarity]||50;
+  const distribution=distributePetXpAcrossAbilities(target,amount);
+  player.pets=player.pets.filter(p=>String(p.id)!==String(donor.id));
+  if(player.pendingHatchChoice&&String(player.pendingHatchChoice.petId)===String(donor.id)) player.pendingHatchChoice=null;
+  saveData(data);
+  return {ok:true,mode:"xp",message:`${getOwnedPetName(donor)} was sacrificed. ${amount} Ability XP was spread across ${distribution.abilityCount} non-maxed abilities.`,distribution,pets:activityOwnedPetPayload(player)};
+}
+function activityPetCombineInherit(user,body={}){
+  const data=loadData(), player=getPlayer(data,user.id); ensureActivityProfile(player,user);
+  const check=h3CombineValidate(player,body.targetId,body.donorId); if(!check.ok) return check;
+  const {target,donor,donorDef}=check, abilityKey=String(body.abilityKey||"");
+  const donorAbility=h3DonorAbilityEntries(donor).find(a=>a.key===abilityKey); if(!donorAbility) return {ok:false,error:"That donor does not know the selected ability."};
+  if(getKnownPetAbility(target,abilityKey)){
+    const amount=PET_ABILITY_COMBINE_XP[donorDef?.rarity]||25, distribution=distributePetXpAcrossAbilities(target,amount);
+    player.pets=player.pets.filter(p=>String(p.id)!==String(donor.id)); saveData(data);
+    return {ok:true,mode:"training",success:true,chance:100,message:`Duplicate ${abilityDisplayName(abilityKey)} converted into ${amount} Ability XP and was evenly spread across the target pet.`,distribution,pets:activityOwnedPetPayload(player)};
+  }
+  const def=h3AbilityDef(abilityKey); if(!def.inheritable||def.tier==="Special") return {ok:false,error:"That special ability cannot be inherited."};
+  const slotsMax=h3InheritedSlotLimit(player), slotsUsed=(target.inheritedAbilities||[]).length;
+  if(slotsUsed>=slotsMax) return {ok:false,error:`This pet has ${slotsUsed}/${slotsMax} inherited ability slots filled. Reach the next odd Hunter Level to unlock another slot.`};
+  const chance=h3AbilityInheritanceChance(target,donor,abilityKey), success=Math.random()*100<chance.total;
+  if(success){ target.inheritedAbilities.push({ability:abilityKey,baseBonus:1,rank:donorAbility.rank,xp:0,sourcePetKey:donor.key,sourceName:getOwnedPetName(donor),sourceRarity:donorDef?.rarity||"Common",inheritedAt:Date.now()}); }
+  player.pets=player.pets.filter(p=>String(p.id)!==String(donor.id));
+  if(player.pendingHatchChoice&&String(player.pendingHatchChoice.petId)===String(donor.id)) player.pendingHatchChoice=null;
+  saveData(data);
+  return {ok:true,mode:"inherit",success,chance:chance.total,ability:{...donorAbility,sourceName:getOwnedPetName(donor)},message:success?`${getOwnedPetName(target)} inherited ${abilityDisplayName(abilityKey)} at Rank ${h3RankRoman(donorAbility.rank)}!`:`Inheritance failed. ${getOwnedPetName(donor)} was still sacrificed.`,pets:activityOwnedPetPayload(player)};
+}
 
 function activityMerchantPayload(data, userId) {
   ensureBigGameMerchantData(data);
@@ -12110,39 +12184,29 @@ function ensureActivityProfile(player, user) {
       }
     };
   }
+  player.activityProfile.hunterLevel = h3HunterLevel(player);
   player.discordUsername = user.username;
   player.discordDisplayName = user.global_name || user.username;
   return player.activityProfile;
 }
 
 function activityOwnedPetPayload(player) {
-  return (player.pets || []).map(owned => {
-    const def = getOwnedPetDefinition(owned);
-    if (!def) return null;
-    const level = Number(owned.level || 1);
-    const bond = Number(owned.bondLevel || owned.bond || 1);
-    const rawXp = Number(owned.xp || owned.companionXp || 0);
-    const xpNeeded = Math.max(50, Number(PET_XP_BASE[def.rarity] || 50) + Math.max(0, level - 1) * 25);
-    return {
-      id: owned.id,
-      key: def.key,
-      name: def.name,
-      nickname: owned.nickname || null,
-      icon: def.icon,
-      habitat: def.habitat,
-      rarity: def.rarity,
-      ability: def.signatureName || abilityDisplayName(def.ability),
-      abilityEffect: def.signatureAbility
-        ? (signatureAbilityText(owned) || def.description)
-        : formatAbilityEffect({ ability:def.ability, baseBonus:def.baseBonus, level }),
-      description: def.description,
-      level,
-      bond,
-      xp: Math.min(100, Math.round((rawXp / xpNeeded) * 100)),
-      xpCurrent: rawXp,
-      xpNeeded,
-      image: def.image || null,
-      equipped: String(player.equippedPetId || "") === String(owned.id)
+  const inheritedLimit=h3InheritedSlotLimit(player);
+  return (player.pets||[]).map(owned=>{
+    const def=getOwnedPetDefinition(owned); if(!def) return null;
+    const levelInfo=getCompanionLevelInfo(owned), bond=getPetBondLevel(owned);
+    const abilities=getPetAbilityEntries(owned).map(entry=>({
+      key:entry.ability,name:abilityDisplayName(entry.ability),icon:h3AbilityDef(entry.ability).icon,
+      rank:entry.level,rankRoman:h3RankRoman(entry.level),xp:entry.xp||0,xpNeeded:entry.xpNeeded||0,
+      effect:formatAbilityEffect(entry),description:h3AbilityDef(entry.ability).description,capText:h3AbilityDef(entry.ability).capText,
+      tier:h3AbilityDef(entry.ability).tier,inheritable:Boolean(h3AbilityDef(entry.ability).inheritable),natural:Boolean(entry.natural),
+      sourcePetKey:entry.sourcePetKey||null,sourceName:entry.sourceName||null
+    }));
+    return {id:owned.id,key:def.key,name:def.name,nickname:owned.nickname||null,icon:def.icon,habitat:def.habitat,rarity:def.rarity,
+      ability:abilities[0]?.name||abilityDisplayName(def.ability),abilityEffect:abilities[0]?.effect||def.description,abilities,description:def.description,
+      level:levelInfo.level,bond,xp:levelInfo.level>=MAX_COMPANION_LEVEL?100:Math.min(100,Math.round((levelInfo.xpIntoLevel/Math.max(1,levelInfo.xpNeeded))*100)),
+      xpCurrent:levelInfo.xpIntoLevel,xpNeeded:levelInfo.xpNeeded,image:def.image||null,equipped:String(player.equippedPetId||"")===String(owned.id),
+      inheritedSlotsUsed:(owned.inheritedAbilities||[]).length,inheritedSlotsMax:inheritedLimit,totalAbilitySlots:1+inheritedLimit
     };
   }).filter(Boolean);
 }
@@ -12204,7 +12268,7 @@ function activityPlayerPayload(data, user) {
   return {
     hunter: {
       name: user.global_name || user.username,
-      level: Number(profile.hunterLevel || 1),
+      level: h3HunterLevel(player),
       points: Number(player.points || 0),
       tokens: Number(player.huntTokens || 0),
       title: player.title || profile.hunterTitle || "Novice Hunter",
@@ -12227,7 +12291,8 @@ function activityPlayerPayload(data, user) {
       inventory: activityFullInventoryPayload(player),
       trophies: H1_TROPHIES,
       titles: H1_TITLES,
-      cosmetics: H1_COSMETICS
+      cosmetics: H1_COSMETICS,
+      petProgression:{hunterLevel:h3HunterLevel(player),inheritedSlots:h3InheritedSlotLimit(player),incubators:getIncubatorSlots(player),maxInherited:H3_MAX_INHERITED_ABILITIES}
     },
     eggs: activityEggInventoryPayload(player),
     incubators: activityIncubatorPayload(player)
@@ -12570,6 +12635,16 @@ const activityServer = http.createServer(async (req, res) => {
         const body=await readRequestJson(req);
         const result=await activityHatchEgg(user,body.slot);
         return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/combine/preview") {
+        const body=await readRequestJson(req); const result=activityPetCombinePreview(user,body); return activityJson(res,result,result.ok?200:400);
+      }
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/combine/xp") {
+        const body=await readRequestJson(req); const result=activityPetCombineXp(user,body); return activityJson(res,result,result.ok?200:400);
+      }
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/combine/inherit") {
+        const body=await readRequestJson(req); const result=activityPetCombineInherit(user,body); return activityJson(res,result,result.ok?200:400);
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/equip") {
