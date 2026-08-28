@@ -218,9 +218,13 @@ const OPTIONS = {
   hair: [
     { value:"short", label:"Short" }, { value:"long", label:"Long" },
     { value:"messy", label:"Messy" }, { value:"swept", label:"Side Swept" },
-    { value:"ponytail", label:"Ponytail" }, { value:"bald", label:"Bald" },
+    { value:"ponytail", label:"Ponytail" }, { value:"pixie", label:"Pixie Cut" },
+    { value:"undercut", label:"Undercut", unlock:{type:"level",amount:3} },
+    { value:"curls", label:"Curly", unlock:{type:"level",amount:4} },
+    { value:"bun", label:"Hunter Bun", unlock:{type:"level",amount:5} },
     { value:"mohawk", label:"Mohawk", unlock:{type:"level",amount:5} },
-    { value:"braid", label:"Braid", unlock:{type:"level",amount:10} }
+    { value:"braid", label:"Long Braid", unlock:{type:"level",amount:7} },
+    { value:"bald", label:"Bald" }
   ],
   hairColor: [
     { value:"#241b18", label:"Black" }, { value:"#4a2f27", label:"Brown" },
@@ -240,9 +244,11 @@ const OPTIONS = {
   ],
   outfit: [
     { value:"ranger", label:"Ranger" }, { value:"leather", label:"Leather" },
-    { value:"scout", label:"Scout" }, { value:"traveler", label:"Traveler" },
+    { value:"scout", label:"Field Scout" }, { value:"traveler", label:"Traveler" },
+    { value:"storm", label:"Storm Hunter", unlock:{type:"level",amount:5} },
+    { value:"glass", label:"Glasswaste Hunter", unlock:{type:"petdex",amount:12} },
     { value:"rift", label:"Rift Hunter", unlock:{type:"level",amount:10} },
-    { value:"frost", label:"Frost Hunter", unlock:{type:"level",amount:15} },
+    { value:"frost", label:"Frost Hunter", unlock:{type:"level",amount:8} },
     { value:"ember", label:"Ember Hunter", unlock:{type:"petdex",amount:20} }
   ],
   cloak: [
@@ -254,13 +260,16 @@ const OPTIONS = {
   ],
   headgear: [
     { value:"none", label:"None" }, { value:"cap", label:"Hunter Cap" },
-    { value:"band", label:"Headband" },
+    { value:"band", label:"Field Headband" },
+    { value:"circlet", label:"Moonfen Circlet", unlock:{type:"petdex",amount:4} },
     { value:"hood", label:"Rift Hood", unlock:{type:"level",amount:10} },
-    { value:"horns", label:"Trophy Horns", unlock:{type:"trophies",amount:5} }
+    { value:"horns", label:"Trophy Horns", unlock:{type:"trophies",amount:3} },
+    { value:"starcrown", label:"Starfall Crown", unlock:{type:"petdex",amount:32} }
   ],
   weapon: [
     { value:"none", label:"None" }, { value:"bow", label:"Hunter Bow" },
-    { value:"spear", label:"Spear" }, { value:"sword", label:"Sword" },
+    { value:"spear", label:"Spear", unlock:{type:"level",amount:3} },
+    { value:"sword", label:"Sword", unlock:{type:"level",amount:4} },
     { value:"staff", label:"Rift Staff", unlock:{type:"level",amount:10} }
   ]
 };
@@ -903,29 +912,73 @@ function renderInventory() {
 function renderCollection() {
   if (!gameData) return;
 
-  document.getElementById("trophyGrid").innerHTML = gameData.trophies.map(t => `
-    <article class="trophy-card ${t.earned ? "" : "locked"}">
-      <div class="trophy-art">${t.earned ? t.icon : "🔒"}</div>
-      <div class="trophy-body"><h3>${t.earned ? t.name : "Unknown Trophy"}</h3><p class="card-meta">${t.source}</p><p class="card-ability">${t.earned ? t.description : "Complete the matching bounty to reveal this trophy."}</p></div>
-    </article>
-  `).join("");
+  const trophyGrid=document.getElementById("trophyGrid");
+  if (!gameData.trophies.length) {
+    trophyGrid.innerHTML=`
+      <div class="collection-empty-state">
+        <span>🏆</span>
+        <div><b>No new-season bounty trophies yet.</b><small>Trophies will appear here only after you personally complete a bounty during the new season.</small></div>
+      </div>`;
+  } else {
+    trophyGrid.innerHTML = gameData.trophies.map(t => `
+      <article class="trophy-card">
+        <div class="trophy-art">${t.image ? `<img class="collection-trophy-image" src="/assets/big-game-trophies/${escapeHtml(t.image)}" alt="${escapeHtml(t.name)}" onerror="this.replaceWith(document.createTextNode('🏆'))">` : (t.icon || "🏆")}</div>
+        <div class="trophy-body"><h3>${escapeHtml(t.name)}</h3><p class="card-meta">${escapeHtml(t.source)}</p><p class="card-ability">${escapeHtml(t.description)}</p></div>
+      </article>
+    `).join("");
+  }
 
   document.getElementById("titleList").innerHTML = gameData.titles.map(t => `
     <div class="title-row ${t.unlocked ? "" : "locked"} ${hunter?.title === t.name ? "equipped" : ""}">
-      <div><b>${t.secret && !t.unlocked ? "???" : t.name}</b><div class="title-state">${t.unlocked ? (hunter?.title === t.name ? "⭐ Equipped" : "Unlocked") : "Undiscovered"}</div></div>
-      <span>${t.unlocked ? "🎖️" : "🔒"}</span>
+      <div class="title-row-copy">
+        <b>${t.secret && !t.unlocked ? "???" : escapeHtml(t.name)}</b>
+        <div class="title-state">${t.unlocked ? (hunter?.title === t.name ? "⭐ Equipped" : (t.legacy ? "Lifetime title" : "Unlocked")) : escapeHtml(t.requirement || "Undiscovered")}</div>
+      </div>
+      ${t.unlocked
+        ? `<button class="secondary title-equip-btn" type="button" data-title-equip="${escapeHtml(t.name)}">${hunter?.title === t.name ? "Unequip" : "Equip"}</button>`
+        : `<span class="title-lock">🔒</span>`}
     </div>
   `).join("");
+
+  document.querySelectorAll("[data-title-equip]").forEach(btn=>{
+    btn.addEventListener("click",async()=>{
+      const title=btn.dataset.titleEquip;
+      const unequip=hunter?.title===title;
+      const original=btn.textContent;
+      btn.disabled=true;
+      btn.textContent="Saving…";
+      try{
+        const response=await activityFetch("/api/activity/title/equip",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({title:unequip?"":title})
+        });
+        const result=await response.json();
+        if(!response.ok||!result.ok) throw new Error(result.error||"Could not equip title.");
+        hunter.title=result.title || "Novice Hunter";
+        document.getElementById("hunterTitle").textContent=hunter.title;
+        const huntTitle=document.getElementById("huntOverviewTitle");
+        if(huntTitle) huntTitle.textContent=hunter.title;
+        renderCollection();
+        showActivityResult("🎖️",result.title?"Title Equipped":"Title Unequipped",result.message);
+      }catch(error){
+        showActivityResult("❌","Could Not Change Title",error.message);
+        btn.disabled=false;
+        btn.textContent=original;
+      }
+    });
+  });
 
   document.getElementById("cosmeticGrid").innerHTML = gameData.cosmetics.map(c => `
     <article class="cosmetic-card ${c.unlocked ? "" : "locked"}">
       <div class="cosmetic-art">${c.unlocked ? cosmeticIcon(c.slot) : "🔒"}</div>
-      <div class="cosmetic-body"><h3>${c.name}</h3><p class="card-meta">${c.slot}</p><p class="card-ability">${c.unlocked ? "Unlocked" : c.requirement}</p></div>
+      <div class="cosmetic-body"><h3>${escapeHtml(c.name)}</h3><p class="card-meta">${escapeHtml(c.slot)}</p><p class="card-ability">${c.unlocked ? "Unlocked in Appearance Editor" : escapeHtml(c.requirement)}</p></div>
     </article>
   `).join("");
 }
+
 function cosmeticIcon(slot) {
-  return ({Cloak:"🧥",Headgear:"🪖",Outfit:"🥋",Weapon:"⚔️"}[slot] || "✨");
+  return ({Cloak:"🧥",Headgear:"🪖",Outfit:"🥋",Weapon:"⚔️","Hair Style":"💇"}[slot] || "✨");
 }
 
 function buildCustomizerControls() {

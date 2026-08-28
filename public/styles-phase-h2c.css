@@ -3066,3 +3066,161 @@ body { background:#050a14; }
   }
 }
 
+
+/* ===== H.7 COLLECTION + APPEARANCE EXPANSION ===== */
+
+/* Previously-listed hair styles that had no art rules. */
+.avatar[data-hair="messy"] .hair-back {
+  left:7px; top:2px; width:50px; height:29px; border-radius:55% 48% 34% 42%;
+  transform:rotate(-3deg);
+}
+.avatar[data-hair="messy"] .hair-front {
+  left:9px; top:3px; width:46px; height:22px;
+  border-radius:60% 40% 45% 30%;
+  clip-path:polygon(0 7%,18% 0,28% 42%,41% 4%,54% 46%,69% 0,78% 47%,100% 8%,92% 100%,7% 100%);
+}
+
+.avatar[data-hair="swept"] .hair-back {
+  left:7px; top:3px; width:49px; height:30px; border-radius:55% 50% 35% 30%;
+}
+.avatar[data-hair="swept"] .hair-front {
+  left:6px; top:4px; width:49px; height:23px;
+  border-radius:68% 35% 45% 25%;
+  clip-path:polygon(0 0,100% 0,92% 35%,72% 47%,52% 58%,31% 70%,12% 100%,0 70%);
+  transform:rotate(-5deg);
+}
+
+.avatar[data-hair="ponytail"] .hair-back {
+  left:6px; top:2px; width:51px; height:44px; border-radius:52% 52% 35% 35%;
+}
+.avatar[data-hair="ponytail"] .hair-back::after {
+  content:""; position:absolute; right:-18px; top:15px; width:22px; height:50px;
+  background:var(--hair); border-radius:50% 42% 55% 42%; transform:rotate(-15deg);
+}
+.avatar[data-hair="ponytail"] .hair-front {
+  left:10px; top:5px; width:42px; height:16px; border-radius:60% 45% 40% 25%;
+}
+
+/* New unisex styles. */
+.avatar[data-hair="pixie"] .hair-back {
+  left:8px; top:4px; width:47px; height:25px; border-radius:55% 55% 30% 30%;
+}
+.avatar[data-hair="pixie"] .hair-front {
+  left:12px; top:4px; width:40px; height:17px;
+  clip-path:polygon(0 0,100% 0,84% 85%,66% 35%,50% 92%,28% 42%,0 100%);
+  border-radius:55% 45% 30% 25%;
+}
+
+.avatar[data-hair="undercut"] .hair-back {
+  left:14px; top:2px; width:39px; height:21px; border-radius:60% 50% 25% 25%;
+}
+.avatar[data-hair="undercut"] .hair-front {
+  left:18px; top:-1px; width:36px; height:22px; border-radius:70% 38% 45% 30%;
+  transform:rotate(-8deg);
+}
+.avatar[data-hair="undercut"] .hair-front::after {
+  content:""; position:absolute; left:-11px; top:12px; width:9px; height:13px;
+  background:color-mix(in srgb,var(--hair) 45%, transparent); border-radius:4px;
+}
+
+.avatar[data-hair="curls"] .hair-back {
+  left:4px; top:0; width:55px; height:47px; border-radius:48%;
+  box-shadow:-5px 10px 0 -1px var(--hair),5px 11px 0 -1px var(--hair),-8px 24px 0 -3px var(--hair),8px 24px 0 -3px var(--hair);
+}
+.avatar[data-hair="curls"] .hair-front {
+  left:7px; top:0; width:49px; height:19px; border-radius:50%;
+  box-shadow:8px -2px 0 -4px var(--hair),-8px 1px 0 -4px var(--hair);
+}
+
+.avatar[data-hair="bun"] .hair-back {
+  left:6px; top:3px; width:50px; height:37px; border-radius:50% 50% 34% 34%;
+}
+.avatar[data-hair="bun"] .hair-back::after {
+  content:""; position:absolute; left:17px; top:-18px; width:22px; height:22px;
+  background:var(--hair); border-radius:50%; box-shadow:inset -3px -3px rgba(0,0,0,.08);
+}
+.avatar[data-hair="bun"] .hair-front {
+  left:11px; top:5px; width:41px; height:15px; border-radius:60% 50% 30% 30%;
+}
+
+/* Existing customizer options that previously had labels but little/no visual difference. */
+.avatar[data-outfit="scout"] { --outfit:#43584d; --outfit2:#9a8159; }
+.avatar[data-outfit="traveler"] { --outfit:#4d3b32; --outfit2:#806348; }
+.avatar[data-outfit="storm"] { --outfit:#34485d; --outfit2:#7aa4bd; }
+.avatar[data-outfit="glass"] { --outfit:#69533b; --outfit2:#c19a5a; }
+
+.avatar[data-cloak="brown"] { --cloak:#5a4436; }
+.avatar[data-cloak="blue"] { --cloak:#314e6b; }
+
+.avatar[data-headgear="band"] .headgear {
+  left:6px; top:13px; width:51px; height:7px; border-radius:5px;
+  background:#8d5a32; transform:rotate(-2deg);
+}
+.avatar[data-headgear="band"] .headgear::after {
+  content:""; position:absolute; right:-10px; top:1px; width:17px; height:5px;
+  background:#8d5a32; transform:rotate(23deg); border-radius:4px;
+}
+.avatar[data-headgear="circlet"] .headgear {
+  left:8px; top:15px; width:47px; height:8px; border-top:3px solid #c7d2fe;
+  border-radius:50%;
+}
+.avatar[data-headgear="circlet"] .headgear::after {
+  content:""; position:absolute; left:20px; top:-5px; width:7px; height:7px;
+  transform:rotate(45deg); background:#a5b4fc;
+}
+.avatar[data-headgear="starcrown"] .headgear {
+  left:8px; top:-5px; width:48px; height:20px;
+  background:linear-gradient(180deg,#dbeafe,#818cf8);
+  clip-path:polygon(0 100%,7% 35%,25% 70%,40% 0,55% 72%,75% 30%,100% 100%);
+}
+
+.avatar[data-weapon="spear"] .weapon-back {
+  left:8px; top:45px; width:7px; height:145px; background:#6b4b34; transform:rotate(-12deg);
+}
+.avatar[data-weapon="spear"] .weapon-back::before {
+  left:-5px; top:-23px; width:17px; height:30px; background:#c9d3df;
+  clip-path:polygon(50% 0,100% 65%,65% 100%,35% 100%,0 65%);
+}
+.avatar[data-weapon="spear"] .weapon-back::after { display:none; }
+
+.avatar[data-weapon="sword"] .weapon-back {
+  left:11px; top:62px; width:8px; height:104px; background:#aeb7c6; transform:rotate(-24deg);
+}
+.avatar[data-weapon="sword"] .weapon-back::before {
+  left:-10px; top:82px; width:28px; height:7px; background:#d4a94b; border-radius:3px;
+}
+.avatar[data-weapon="sword"] .weapon-back::after {
+  left:1px; top:88px; width:6px; height:30px; background:#5b4032; border-radius:4px;
+}
+
+/* Collection UX */
+.collection-empty-state {
+  grid-column:1 / -1;
+  display:grid; grid-template-columns:auto minmax(0,1fr); gap:12px; align-items:center;
+  min-height:90px; padding:16px; border:1px dashed rgba(148,163,184,.22); border-radius:16px;
+  color:#cbd5e1;
+}
+.collection-empty-state > span { font-size:2rem; }
+.collection-empty-state > div { display:grid; gap:4px; }
+.collection-empty-state small { color:#94a3b8; line-height:1.35; }
+
+.collection-trophy-image {
+  width:76px; height:76px; object-fit:contain; display:block; margin:auto;
+}
+.title-row {
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+  gap:12px;
+}
+.title-row-copy { min-width:0; }
+.title-equip-btn {
+  min-width:92px;
+  padding:8px 12px !important;
+}
+.title-row.equipped .title-equip-btn {
+  border-color:rgba(251,191,36,.42);
+  color:#fde68a;
+}
+.title-lock { font-size:1.05rem; opacity:.65; }
+
