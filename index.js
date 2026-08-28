@@ -5410,6 +5410,7 @@ async function processFetchReturnsAndReminders() {
         };
         player.fetchState.completed = true;
         player.fetchState.completedAt = Date.now();
+        player.fetchState.activityResultSeen = false;
         changed = true;
 
         if (petChannel?.isTextBased()) {
@@ -5430,6 +5431,7 @@ async function processFetchReturnsAndReminders() {
       } else {
         player.fetchState.completed = true;
         player.fetchState.completedAt = Date.now();
+        player.fetchState.activityResultSeen = false;
         player.fetchState.result = { rewards:[], xpText:"", flavor:"Your companion returned from Fetch." };
         changed = true;
       }
@@ -12753,8 +12755,19 @@ function activityFetchPayload(player) {
       image:definition.image || null,
       icon:definition.icon || "🐾"
     } : null,
-    result:state?.result || null
+    result:state?.result || null,
+    revealResult:Boolean(state?.result && state?.completed && !state?.activityResultSeen)
   };
+}
+
+async function activityAcknowledgeFetchResult(user) {
+  const data=loadData();
+  const player=getPlayer(data,user.id);
+  if (player.fetchState?.completed && player.fetchState?.result) {
+    player.fetchState.activityResultSeen=true;
+    saveData(data);
+  }
+  return {ok:true};
 }
 
 async function activityStartFetch(user) {
@@ -13185,6 +13198,11 @@ const activityServer = http.createServer(async (req, res) => {
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/fetch/start") {
         const result=await activityStartFetch(user);
         return activityJson(res,result,result.ok?200:(result.code==="cooldown"?429:400));
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/fetch/ack") {
+        const result=await activityAcknowledgeFetchResult(user);
+        return activityJson(res,result,200);
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/title/equip") {
