@@ -183,7 +183,7 @@ const DISTORTION_FINAL_RESET_MINUTES = 10;
 const UNMADE_REPLACEMENT_CHANCE = 3;
 
 // ==================== WORLD STORY / WORLD SHATTER ====================
-const WORLD_EVENT_FEED_CHANNEL_ID = "1521536122239586456";
+// H.4 routes WORLD_EVENT_FEED_CHANNEL_ID dynamically; see notification routing block below.
 const WORLD_SHATTER_HUNT_COOLDOWN = 10 * 60 * 1000;
 const WORLD_SHATTER_COLLISION_DURATION = 20 * 60 * 1000;
 const WORLD_SHATTER_STABILIZE_MAX_DURATION = 2 * 60 * 60 * 1000;
@@ -523,9 +523,42 @@ const CAPTURE_ITEMS = {
   }
 };
 
-const MONSTER_NOTIFY_ROLE = "1531471045805084743";
-const MONSTER_CHANNEL_ID = "1533218205496115471";
-const EGGS_PETS_CHANNEL_ID = "1539117649840046140";
+// ==================== H.4 DISCORD NOTIFICATION ROUTING ====================
+// Until Sep 1, 2026 at midnight Mountain Time, ALL Monster Hunt public output
+// is routed to the test channel. The variables below switch automatically
+// while the process is running; no redeploy is required at launch.
+const H4_PUBLIC_LAUNCH_AT = Date.parse("2026-09-01T06:00:00Z"); // Sep 1 00:00 MDT
+const H4_TEST_CHANNEL_ID = "1520969860765450353";
+const H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID = "1521536122239586456";
+const H4_PRODUCTION_HUNT_CHANNEL_ID = "1533218205496115471";
+const H4_PRODUCTION_EGGS_PETS_CHANNEL_ID = "1539117649840046140";
+
+const H4_HUNT_ALERT_ROLE_ID = "1543005506577113118";
+const H4_MERCHANT_ALERT_ROLE_ID = "1543005682519908382";
+const H4_BIG_HUNT_ALERT_ROLE_ID = "1543005759238045786";
+const H4_BOUNTY_ALERT_ROLE_ID = "1543005828465033317";
+const H4_WORLD_EVENT_ALERT_ROLE_ID = "1543005860714905742";
+
+// Legacy callers still use these names. H.4 keeps them live and dynamically routed.
+const MONSTER_NOTIFY_ROLE = H4_HUNT_ALERT_ROLE_ID;
+let MONSTER_CHANNEL_ID = H4_TEST_CHANNEL_ID;
+let EGGS_PETS_CHANNEL_ID = H4_TEST_CHANNEL_ID;
+let WORLD_EVENT_FEED_CHANNEL_ID = H4_TEST_CHANNEL_ID;
+let H4_ANNOUNCEMENT_CHANNEL_ID = H4_TEST_CHANNEL_ID;
+
+function h4UsingTestChannel(now = Date.now()) {
+  return now < H4_PUBLIC_LAUNCH_AT;
+}
+function h4RefreshChannelRouting(now = Date.now()) {
+  const testing = h4UsingTestChannel(now);
+  MONSTER_CHANNEL_ID = testing ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_HUNT_CHANNEL_ID;
+  EGGS_PETS_CHANNEL_ID = testing ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_EGGS_PETS_CHANNEL_ID;
+  WORLD_EVENT_FEED_CHANNEL_ID = testing ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID;
+  H4_ANNOUNCEMENT_CHANNEL_ID = testing ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID;
+}
+h4RefreshChannelRouting();
+const h4RouteTimer = setInterval(() => h4RefreshChannelRouting(), 60 * 1000);
+if (typeof h4RouteTimer.unref === "function") h4RouteTimer.unref();
 
 // ==================== BIG GAME HUNT & TRAVELING MERCHANT ====================
 // Three Big Game Hunts are generated every week on different days.
@@ -4470,6 +4503,7 @@ function selectRandomUltraMonster({ summoned = false } = {}) {
 }
 
 async function getMonsterHuntChannel() {
+  h4RefreshChannelRouting();
   const cached = client.channels.cache.get(MONSTER_CHANNEL_ID);
   if (cached && cached.isTextBased()) return cached;
 
@@ -4482,6 +4516,7 @@ async function getMonsterHuntChannel() {
 }
 
 async function getEggsPetsChannel() {
+  h4RefreshChannelRouting();
   const cached = client.channels.cache.get(EGGS_PETS_CHANNEL_ID);
   if (cached && cached.isTextBased()) return cached;
 
@@ -5022,59 +5057,31 @@ function giveQuestBonusBait(player) {
 
 async function checkReadyEggNotifications() {
   const data = loadData();
-  const channel = await getEggsPetsChannel().catch(() => null);
   const now = Date.now();
   let changed = false;
 
   for (const [userId] of Object.entries(data.players || {})) {
     const player = getPlayer(data, userId);
+    const prefs = ensureH4NotificationPrefs(player);
 
     for (const incubation of player.incubatingEggs || []) {
       if (Number(incubation.readyAt || 0) > now || incubation.notified) continue;
 
       const rarity = incubation.rarity || "Common";
-      const messageText =
+
+      if (!prefs.eggReady) {
+        incubation.notified = true;
+        changed = true;
+        continue;
+      }
+
+      const delivered = await h4SendPlayerDm(
+        userId,
         `🥚✨ **YOUR EGG IS READY TO HATCH!**\n\n` +
-        `<@${userId}>, your **${rarity} Egg** has finished incubating!\n\n` +
-        `🐾 Open **Monster Hunt → Eggs** and press **Hatch** to discover your new companion.\n` +
-        `You can also use \`!hatch\` in the Eggs & Pets channel.`;
+        `Your **${rarity} Egg** has finished incubating!\n\n` +
+        `🐾 Open **Monster Hunt → Eggs** and press **Hatch** to discover your new companion.`
+      );
 
-      let delivered = false;
-
-      // Primary notification: Eggs & Pets channel.
-      if (channel?.isTextBased()) {
-        try {
-          await channel.send({
-            content: messageText,
-            allowedMentions: { users: [userId] }
-          });
-          delivered = true;
-          console.log(`Egg-ready notification sent in channel for ${userId}.`);
-        } catch (error) {
-          console.error(`Egg-ready channel notification failed for ${userId}:`, error);
-        }
-      } else {
-        console.error("Egg-ready notification: Eggs & Pets channel could not be loaded.");
-      }
-
-      // Fallback: DM the player if the channel notification could not be delivered.
-      if (!delivered) {
-        try {
-          const discordUser = await client.users.fetch(userId);
-          await discordUser.send(
-            `🥚✨ **YOUR EGG IS READY TO HATCH!**\n\n` +
-            `Your **${rarity} Egg** has finished incubating!\n\n` +
-            `🐾 Open **Monster Hunt → Eggs** and press **Hatch** to discover your new companion.`
-          );
-          delivered = true;
-          console.log(`Egg-ready fallback DM sent for ${userId}.`);
-        } catch (error) {
-          console.error(`Egg-ready fallback DM failed for ${userId}:`, error);
-        }
-      }
-
-      // Only mark it notified after Discord actually accepted a notification.
-      // If both methods fail, the once-per-minute checker will retry.
       if (delivered) {
         incubation.notified = true;
         changed = true;
@@ -5243,19 +5250,32 @@ async function processFetchReturnsAndReminders() {
       changed = true;
     }
 
-    // Cooldown alerts are routed by system instead of whichever channel the player last used.
+    // H.4: Normal Hunt-ready alerts are personal opt-in DMs.
+    // Fetch keeps its legacy reminder behavior for now.
     for (const type of ["hunt", "fetch"]) {
       const dueKey = `${type}DueAt`, sentKey = `${type}Sent`;
-      if (player.cooldownReminders?.[type] && player.reminderState?.[dueKey] && !player.reminderState[sentKey] && Date.now() >= player.reminderState[dueKey]) {
-        const notificationChannel = type === "hunt" ? huntChannel : petChannel;
-        if (notificationChannel?.isTextBased()) {
-          await notificationChannel.send(
-            type === "hunt"
-              ? `<@${userId}> 🏹 Your **\`!hunt\` cooldown is over!** The wilds are ready again.`
-              : `<@${userId}> 🐾 Your pet is ready to use **\`!fetch\`** again!`
-          ).catch(() => null);
+      const due = player.reminderState?.[dueKey] && !player.reminderState[sentKey] && Date.now() >= player.reminderState[dueKey];
+      if (!due) continue;
+
+      if (type === "hunt") {
+        const prefs = ensureH4NotificationPrefs(player);
+        if (prefs.huntReady) {
+          const delivered = await h4SendPlayerDm(
+            userId,
+            `🏹 **YOUR HUNT IS READY!**\n\nThe wilds are ready again. Open **Monster Hunt → Hunt** to begin your next hunt.`
+          );
+          if (!delivered) continue;
         }
-        player.reminderState[sentKey] = true;
+        player.reminderState.huntSent = true;
+        changed = true;
+        continue;
+      }
+
+      if (player.cooldownReminders?.fetch) {
+        if (petChannel?.isTextBased()) {
+          await petChannel.send(`<@${userId}> 🐾 Your pet is ready to use **\`!fetch\`** again!`).catch(() => null);
+        }
+        player.reminderState.fetchSent = true;
         changed = true;
       }
     }
@@ -5311,19 +5331,136 @@ async function getTextChannel(channelId) {
   return fetched?.isTextBased() ? fetched : null;
 }
 
-async function sendWorldEvent(sourceChannel, content, filename = null, pingEveryone = false) {
-  const source = sourceChannel?.isTextBased() ? sourceChannel : await getTextChannel(MONSTER_CHANNEL_ID);
-  const mirror = await getTextChannel(WORLD_EVENT_FEED_CHANNEL_ID);
-  const imagePath = filename ? findImageFile(filename) : null;
-  async function sendTo(channel, allowPing) {
-    if (!channel?.isTextBased()) return null;
-    const payload = { content, allowedMentions: allowPing ? { parse: ["everyone","roles"] } : { parse: [] } };
-    if (imagePath) payload.files = [new AttachmentBuilder(imagePath)];
-    return channel.send(payload).catch(error => { console.error("World event send failed:", error); return null; });
+async function getAnnouncementChannel() {
+  h4RefreshChannelRouting();
+  return getTextChannel(H4_ANNOUNCEMENT_CHANNEL_ID);
+}
+
+const H4_NOTIFICATION_DEFAULTS = Object.freeze({
+  huntReady: true,
+  eggReady: true,
+  huntAlerts: false,
+  merchantAlerts: false,
+  bigHuntAlerts: false,
+  bountyAlerts: false,
+  worldEventAlerts: false
+});
+
+const H4_ROLE_PREFS = Object.freeze({
+  huntAlerts: H4_HUNT_ALERT_ROLE_ID,
+  merchantAlerts: H4_MERCHANT_ALERT_ROLE_ID,
+  bigHuntAlerts: H4_BIG_HUNT_ALERT_ROLE_ID,
+  bountyAlerts: H4_BOUNTY_ALERT_ROLE_ID,
+  worldEventAlerts: H4_WORLD_EVENT_ALERT_ROLE_ID
+});
+
+function ensureH4NotificationPrefs(player) {
+  if (!player.notificationPrefs || typeof player.notificationPrefs !== "object") {
+    player.notificationPrefs = {};
   }
-  const first = await sendTo(source, pingEveryone);
-  if (mirror && (!source || mirror.id !== source.id)) await sendTo(mirror, false);
-  return first;
+  for (const [key, value] of Object.entries(H4_NOTIFICATION_DEFAULTS)) {
+    if (typeof player.notificationPrefs[key] !== "boolean") player.notificationPrefs[key] = value;
+  }
+  return player.notificationPrefs;
+}
+
+async function h4SetMemberAlertRole(userId, roleId, enabled) {
+  const guild = client.guilds.cache.first();
+  if (!guild || !roleId) return { ok:false, error:"Discord server is unavailable." };
+  const member = await guild.members.fetch(userId).catch(() => null);
+  if (!member) return { ok:false, error:"Could not find your Discord server membership." };
+  try {
+    if (enabled) await member.roles.add(roleId, "Monster Hunt notification preference");
+    else await member.roles.remove(roleId, "Monster Hunt notification preference");
+    return { ok:true };
+  } catch (error) {
+    console.error("H.4 role preference update failed:", error);
+    return { ok:false, error:"The bot could not update that alert role. Make sure it has Manage Roles and sits above the alert roles." };
+  }
+}
+
+async function h4NotificationPrefsPayload(data, userId) {
+  const player = getPlayer(data, userId);
+  const prefs = ensureH4NotificationPrefs(player);
+  const guild = client.guilds.cache.first();
+  const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+  const result = { ...prefs };
+  if (member) {
+    for (const [key, roleId] of Object.entries(H4_ROLE_PREFS)) {
+      result[key] = member.roles.cache.has(roleId);
+      prefs[key] = result[key];
+    }
+  }
+  saveData(data);
+  return {
+    preferences: result,
+    testing: h4UsingTestChannel(),
+    publicChannelId: h4UsingTestChannel() ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_HUNT_CHANNEL_ID,
+    announcementChannelId: h4UsingTestChannel() ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID
+  };
+}
+
+async function h4UpdateNotificationPreference(data, userId, key, enabled) {
+  if (!(key in H4_NOTIFICATION_DEFAULTS)) return { ok:false, error:"Unknown notification preference." };
+  const player = getPlayer(data, userId);
+  const prefs = ensureH4NotificationPrefs(player);
+  const value = Boolean(enabled);
+  const roleId = H4_ROLE_PREFS[key];
+  if (roleId) {
+    const roleResult = await h4SetMemberAlertRole(userId, roleId, value);
+    if (!roleResult.ok) return roleResult;
+  }
+  prefs[key] = value;
+  saveData(data);
+  return { ok:true, key, enabled:value, preferences:{...prefs} };
+}
+
+async function h4SendPlayerDm(userId, content) {
+  try {
+    const discordUser = await client.users.fetch(userId);
+    await discordUser.send(content);
+    return true;
+  } catch (error) {
+    console.error(`H.4 DM failed for ${userId}:`, error);
+    return false;
+  }
+}
+
+function h4RoleMention(roleId) {
+  return roleId ? `<@&${roleId}>` : "";
+}
+
+async function h4PostSuccessfulActivityCatch(user, monster, rewards = {}) {
+  h4RefreshChannelRouting();
+  const channel = await getMonsterHuntChannel();
+  if (!channel?.isTextBased()) return null;
+  const rarity = monster?.rarity || "Unknown";
+  const habitat = monster?.habitat || "Unknown";
+  const pointText = Number(rewards.points || 0) ? `⭐ **+${Number(rewards.points || 0)} Hunter Points**\n` : "";
+  const tokenText = Number(rewards.tokens || 0) ? `🪙 **+${Number(rewards.tokens || 0)} Hunt Tokens**\n` : "";
+  const eggText = Number(rewards.eggs || 0) ? `🥚 **+${Number(rewards.eggs || 0)} Egg${Number(rewards.eggs || 0) === 1 ? "" : "s"}**\n` : "";
+  return channel.send(buildMonsterEmbed(
+    monster,
+    `${monster?.shiny ? "✨ SHINY CAPTURE" : "🏹 MONSTER CAUGHT"} — ${monster?.name || "Unknown Monster"}`,
+    `<@${user.id}> made a successful Activity capture!\n\n` +
+    `**Rarity:** ${rarity}\n**Habitat:** ${habitat}\n\n` +
+    `${pointText}${tokenText}${eggText}`
+  )).catch(error => { console.error("H.4 public catch feed failed:", error); return null; });
+}
+
+async function sendWorldEvent(sourceChannel, content, filename = null, pingEveryone = false) {
+  const source = await getAnnouncementChannel() || (sourceChannel?.isTextBased() ? sourceChannel : await getTextChannel(MONSTER_CHANNEL_ID));
+  const imagePath = filename ? findImageFile(filename) : null;
+  if (!source?.isTextBased()) return null;
+  const finalContent = pingEveryone
+    ? `${h4RoleMention(H4_WORLD_EVENT_ALERT_ROLE_ID)}\n\n${content}`
+    : content;
+  const payload = {
+    content: finalContent,
+    allowedMentions: pingEveryone ? { roles: [H4_WORLD_EVENT_ALERT_ROLE_ID] } : { parse: [] }
+  };
+  if (imagePath) payload.files = [new AttachmentBuilder(imagePath)];
+  return source.send(payload).catch(error => { console.error("World event send failed:", error); return null; });
 }
 
 function nextWorldShatterSaturday(now = Date.now()) {
@@ -6196,22 +6333,23 @@ function merchantCollectionText(player, includeEffects = false) {
 async function sendRoleImageAnnouncement(channel, content, filename = null, pingRole = false) {
   if (!channel?.isTextBased()) return null;
   const imagePath = filename ? findImageFile(filename) : null;
+  const roleId = typeof pingRole === "string" ? pingRole : (pingRole ? MONSTER_NOTIFY_ROLE : null);
   const payload = {
     content,
-    allowedMentions: pingRole ? { roles: [MONSTER_NOTIFY_ROLE] } : { parse: [] }
+    allowedMentions: roleId ? { roles: [roleId] } : { parse: [] }
   };
   if (imagePath) payload.files = [new AttachmentBuilder(imagePath)];
-  return channel.send(payload).catch(error => { console.error("Big Game/Merchant announcement failed:", error); return null; });
+  return channel.send(payload).catch(error => { console.error("Monster Hunt announcement failed:", error); return null; });
 }
 
 async function announceBigGameStart(channel, data) {
   return sendRoleImageAnnouncement(channel,
-    `<@&${MONSTER_NOTIFY_ROLE}>\n\n🚨 **BIG GAME HUNT HAS BEGUN!**\n\n` +
+    `<@&${H4_BIG_HUNT_ALERT_ROLE_ID}>\n\n🚨 **BIG GAME HUNT HAS BEGUN!**\n\n` +
     `For the next **2 HOURS**, monster activity has surged!\n\n` +
     `⏱️ \`!hunt\` every **30 minutes**\n🪙 Successful catches earn **DOUBLE Hunt Tokens**\n` +
     `🥇 1st — **+50 Hunter Points**\n🥈 2nd — **+30 Hunter Points**\n🥉 3rd — **+15 Hunter Points**\n\n` +
     `Everyone can hunt **RIGHT NOW**. Tokens remain yours after the event.\n` +
-    `**Ends <t:${Math.floor(data.bigGame.endsAt / 1000)}:t> Mountain Time (<t:${Math.floor(data.bigGame.endsAt / 1000)}:R>). GO!**`, BIG_GAME_IMAGE, true);
+    `**Ends <t:${Math.floor(data.bigGame.endsAt / 1000)}:t> Mountain Time (<t:${Math.floor(data.bigGame.endsAt / 1000)}:R>). GO!**`, BIG_GAME_IMAGE, H4_BIG_HUNT_ALERT_ROLE_ID);
 }
 
 async function finishBigGameHunt(data, channel, { forced = false } = {}) {
@@ -6307,7 +6445,7 @@ async function processBigGameMerchantSystem() {
     ensureBigGameMerchantData(data);
     const now = Date.now();
     const clock = mountainClock(new Date(now));
-    const channel = await getMonsterHuntChannel();
+    const channel = await getAnnouncementChannel();
     let dirty = false;
     if (ensureBigGameWeeklySchedule(data, new Date(now))) dirty = true;
     if (ensureMerchantWeeklySchedule(data, new Date(now))) dirty = true;
@@ -6323,16 +6461,16 @@ async function processBigGameMerchantSystem() {
       if (sameMountainDay && clock.totalMinutes >= 9 * 60 && now < event.startAt - 30 * 60 * 1000 && !event.morningSent) {
         event.morningSent = true; dirty = true; saveData(data);
         await sendRoleImageAnnouncement(channel,
-          `<@&${MONSTER_NOTIFY_ROLE}>\n\n🎯 **BIG GAME HUNT TODAY**\n\n` +
+          `<@&${H4_BIG_HUNT_ALERT_ROLE_ID}>\n\n🎯 **BIG GAME HUNT TODAY**\n\n` +
           `Monster activity is expected to surge **<t:${Math.floor(event.startAt / 1000)}:t> Mountain Time**.\n\n` +
-          `⚔️ Hunt every 30 minutes\n🪙 Earn Hunt Tokens\n🏆 Compete for 50 / 30 / 15 Hunter Points\n\nGet your bait ready.`, BIG_GAME_IMAGE, true);
+          `⚔️ Hunt every 30 minutes\n🪙 Earn Hunt Tokens\n🏆 Compete for 50 / 30 / 15 Hunter Points\n\nGet your bait ready.`, BIG_GAME_IMAGE, H4_BIG_HUNT_ALERT_ROLE_ID);
       }
 
       if (now >= event.startAt - 30 * 60 * 1000 && now < event.startAt && !event.warningSent) {
         event.warningSent = true; dirty = true; saveData(data);
         await sendRoleImageAnnouncement(channel,
-          `<@&${MONSTER_NOTIFY_ROLE}>\n\n⚠️ **30 MINUTES UNTIL BIG GAME HUNT**\n\n` +
-          `At <t:${Math.floor(event.startAt / 1000)}:t>, hunt cooldowns drop to 30 minutes and successful catches begin awarding DOUBLE Hunt Tokens.\n\nCheck your bait. Check your inventory.`, BIG_GAME_IMAGE, true);
+          `<@&${H4_BIG_HUNT_ALERT_ROLE_ID}>\n\n⚠️ **30 MINUTES UNTIL BIG GAME HUNT**\n\n` +
+          `At <t:${Math.floor(event.startAt / 1000)}:t>, hunt cooldowns drop to 30 minutes and successful catches begin awarding DOUBLE Hunt Tokens.\n\nCheck your bait. Check your inventory.`, BIG_GAME_IMAGE, H4_BIG_HUNT_ALERT_ROLE_ID);
       }
 
       // Recover a scheduled event after a short Railway restart without extending its original end time.
@@ -6400,10 +6538,10 @@ async function processBigGameMerchantSystem() {
         ? `No wagon approached. No footsteps were heard. Yet a figure with no name is standing at the edge of the hunting grounds.`
         : `A ${definition.icon} merchant has appeared along the edge of the hunting grounds.`;
       await sendRoleImageAnnouncement(channel,
-        `<@&${MONSTER_NOTIFY_ROLE}>\n\n${merchant.type === "nameless" ? "❓ **SOMETHING HAS ARRIVED**" : "🛒 **A TRAVELING MERCHANT HAS ARRIVED**"}\n\n` +
+        `<@&${H4_MERCHANT_ALERT_ROLE_ID}>\n\n${merchant.type === "nameless" ? "❓ **SOMETHING HAS ARRIVED**" : "🛒 **A TRAVELING MERCHANT HAS ARRIVED**"}\n\n` +
         `${arrivalText}\n\n**${definition.name}** will remain <t:${Math.floor(merchant.departureAt / 1000)}:R>.\n` +
         `Some merchandise is server-wide limited stock. Type \`!merchant\` to browse.${merchant.clearance ? "\n\n🔥 **CLEARANCE PRICES ARE ACTIVE!**" : ""}`,
-        merchant.clearance ? "merchant_clearance.png" : definition.image, true);
+        merchant.clearance ? "merchant_clearance.png" : definition.image, H4_MERCHANT_ALERT_ROLE_ID);
     }
     if (merchant.active && merchant.specialAt && now >= merchant.specialAt && !merchant.specialDone && now < merchant.departureAt) {
       merchant.specialDone = true;
@@ -7043,6 +7181,17 @@ function isSeasonAdminBypassCommand(command) {
 
 
 client.on("messageCreate", async (message) => {
+  // H.4 pre-launch safety: keep the three future live-season channels completely quiet.
+  // Until Sep 1, the bot ignores commands/messages there and uses only the Test channel.
+  if (
+    h4UsingTestChannel() &&
+    [
+      H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID,
+      H4_PRODUCTION_HUNT_CHANNEL_ID,
+      H4_PRODUCTION_EGGS_PETS_CHANNEL_ID
+    ].includes(message.channel?.id)
+  ) return;
+
   if (message.author.bot) return;
 
   const content = message.content.trim();
@@ -8847,6 +8996,27 @@ ${captureChoicesText(choices)}
     }
 
     return message.reply("Unknown Bounty test option. Use `!bountytest help`.");
+  }
+
+  if (command.startsWith("!testalerts")) {
+    if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("Only admins can test Monster Hunt alerts.");
+    const requested = content.slice("!testalerts".length).trim().toLowerCase() || "all";
+    const testChannel = await getTextChannel(H4_TEST_CHANNEL_ID);
+    if (!testChannel?.isTextBased()) return message.reply("The configured Monster Hunt test channel could not be loaded.");
+    const samples = {
+      hunt: [H4_HUNT_ALERT_ROLE_ID, "🏹 **HUNT ALERT TEST**\n\nThe wilds are active. This is how Hunt Alert role pings will look."],
+      merchant: [H4_MERCHANT_ALERT_ROLE_ID, "🛒 **MERCHANT ALERT TEST**\n\nA traveling merchant has arrived at camp."],
+      big: [H4_BIG_HUNT_ALERT_ROLE_ID, "👑 **BIG HUNT ALERT TEST**\n\nA Big Game Hunt is about to begin."],
+      bounty: [H4_BOUNTY_ALERT_ROLE_ID, "🎯 **BOUNTY ALERT TEST**\n\nA new hidden-target bounty has been posted."],
+      world: [H4_WORLD_EVENT_ALERT_ROLE_ID, "🌌 **WORLD EVENT ALERT TEST**\n\nReality is beginning to fracture across the hunting grounds."]
+    };
+    const keys = requested === "all" ? Object.keys(samples) : [requested];
+    for (const key of keys) {
+      const sample = samples[key];
+      if (!sample) continue;
+      await sendRoleImageAnnouncement(testChannel, `${h4RoleMention(sample[0])}\n\n${sample[1]}`, null, sample[0]);
+    }
+    return message.reply(`✅ Alert test sent to <#${H4_TEST_CHANNEL_ID}>. Nothing was posted in the live-season channels.`);
   }
 
   if (command === "!hunt") {
@@ -11630,7 +11800,9 @@ function startBounty(data,forced=null){
  return data.bounty;
 }
 async function announceBountyStart(ch,data){
- const n=bountyNpc(data);return sendRoleImageAnnouncement(ch,`<@&${MONSTER_NOTIFY_ROLE}>\n\n📜 **A NEW BOUNTY HAS BEEN POSTED**\n\n**${n?.name||"A traveling hunter"}** needs help tracking a dangerous creature.\n\n🎯 **Target: UNKNOWN**\n🔎 ${bountyClue(data)}\n\nUse \`!bountyhunt\` once every **60 minutes**.`,n?.image||null,true);
+ const n=bountyNpc(data);
+ const targetChannel = await getAnnouncementChannel() || ch;
+ return sendRoleImageAnnouncement(targetChannel,`<@&${H4_BOUNTY_ALERT_ROLE_ID}>\n\n📜 **A NEW BOUNTY HAS BEEN POSTED**\n\n**${n?.name||"A traveling hunter"}** needs help tracking a dangerous creature.\n\n🎯 **Target: UNKNOWN**\n🔎 ${bountyClue(data)}\n\nUse \`!bountyhunt\` once every **60 minutes**.`,n?.image||null,H4_BOUNTY_ALERT_ROLE_ID);
 }
 async function performBountyHunt(data,id,ch=null){
  const b=ensureBountyData(data);
@@ -11718,7 +11890,7 @@ async function turnInBounty(data,id,ch=null){
  return{ok:true,targetName:t.name,nextAt:b.nextAt,participantCount:ids.length};
 }
 let bountyMonitorBusy=false;
-async function bountyMonitor(){if(bountyMonitorBusy)return;bountyMonitorBusy=true;try{const d=loadData(),b=ensureBountyData(d);if(!b.active&&b.status==="cooldown"&&b.nextAt&&Date.now()>=b.nextAt){startBounty(d);saveData(d);const ch=client.channels.cache.get(MONSTER_CHANNEL_ID);if(ch?.isTextBased())await announceBountyStart(ch,d)}}catch(e){console.error("Bounty monitor failed:",e)}finally{bountyMonitorBusy=false}}
+async function bountyMonitor(){if(bountyMonitorBusy)return;bountyMonitorBusy=true;try{const d=loadData(),b=ensureBountyData(d);if(!b.active&&b.status==="cooldown"&&b.nextAt&&Date.now()>=b.nextAt){startBounty(d);saveData(d);const ch=await getAnnouncementChannel();if(ch?.isTextBased())await announceBountyStart(ch,d)}}catch(e){console.error("Bounty monitor failed:",e)}finally{bountyMonitorBusy=false}}
 setInterval(()=>bountyMonitor().catch(console.error),60*1000);
 
 function activityLiveEventsPayload(data, userId) {
@@ -12490,17 +12662,9 @@ async function activityCapture(user, itemKey = null) {
   const sent = [];
   const fakeMessage = {
     author:{ id:user.id, username:user.username },
-    channel:channel?.isTextBased() ? channel : { send:async payload => { sent.push(payload); return { reply:async()=>null }; } },
-    reply:async payload => {
-      sent.push(payload);
-      if (channel?.isTextBased()) {
-        const decorated = typeof payload === "string"
-          ? { content:`🎮 **Activity Hunt Result — <@${user.id}>**\n${payload}`, allowedMentions:{users:[user.id]} }
-          : { ...payload, content:`🎮 **Activity Hunt Result — <@${user.id}>**`, allowedMentions:{users:[user.id]} };
-        return channel.send(decorated).catch(() => ({ reply:async()=>null }));
-      }
-      return { reply:async()=>null };
-    }
+    isActivity:true,
+    channel:{ send:async payload => { sent.push(payload); return { reply:async()=>null }; } },
+    reply:async payload => { sent.push(payload); return { reply:async()=>null }; }
   };
 
   await performCaptureAttempt(fakeMessage, user.id, itemKey || null);
@@ -12523,6 +12687,14 @@ async function activityCapture(user, itemKey = null) {
   const roll = Number((description.match(/\*\*Roll:\*\*\s*(\d+)/i) || [])[1] || 0) || null;
   const chance = Number((description.match(/\*\*(?:Final )?Capture Chance:\*\*\s*(\d+)%/i) || [])[1] || 0)
     || calculateCaptureChance(beforePlayer, monster, itemKey || null, beforeData, user.id).total;
+
+  if (after.caught > before.caught) {
+    await h4PostSuccessfulActivityCatch(user, monster, {
+      points:after.points - before.points,
+      tokens:after.tokens - before.tokens,
+      eggs:after.eggs - before.eggs
+    });
+  }
 
   return {
     ok:true,
@@ -12732,6 +12904,19 @@ const activityServer = http.createServer(async (req, res) => {
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/live-events") {
         const data=loadData();
         return activityJson(res,activityLiveEventsPayload(data,user.id));
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/notifications") {
+        const data=loadData();
+        const result=await h4NotificationPrefsPayload(data,user.id);
+        return activityJson(res,{ok:true,...result});
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/notifications") {
+        const body=await readRequestJson(req);
+        const data=loadData();
+        const result=await h4UpdateNotificationPreference(data,user.id,String(body.key||""),Boolean(body.enabled));
+        return activityJson(res,result,result.ok?200:400);
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/egg/incubate") {
