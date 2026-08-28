@@ -2378,9 +2378,10 @@ setInterval(()=>{
 
 // ===== H.4 PLAYER NOTIFICATION PREFERENCES =====
 const H4_NOTIFICATION_META = [
-  {key:"huntReady",icon:"🏹",name:"Hunt Ready",detail:"DM me when my normal Hunt cooldown ends.",kind:"DM"},
-  {key:"eggReady",icon:"🥚",name:"Egg Ready",detail:"DM me when an incubated egg is ready to hatch.",kind:"DM"},
-  {key:"huntAlerts",icon:"🏹",name:"Hunt Alerts",detail:"Give me the Discord Hunt Alerts role.",kind:"Role"},
+  {key:"huntReady",icon:"🏹",name:"Hunt Ready",detail:"Notify me in Discord when my normal Hunt cooldown ends.",kind:"Personal Alert"},
+  {key:"eggReady",icon:"🥚",name:"Egg Ready",detail:"Notify me in Discord when one of my incubated eggs is ready to hatch.",kind:"Personal Alert"},
+  {key:"fetchReady",icon:"🐾",name:"Fetch Alerts",detail:"Notify me when my companion is ready to use !fetch again.",kind:"Personal Alert"},
+  {key:"huntAlerts",icon:"🏹",name:"Hunt Alerts",detail:"Give me the Discord Hunt Alerts role for general hunt announcements.",kind:"Role"},
   {key:"merchantAlerts",icon:"🛒",name:"Merchant Alerts",detail:"Ping me when a traveling merchant arrives.",kind:"Role"},
   {key:"bigHuntAlerts",icon:"👑",name:"Big Hunt Alerts",detail:"Ping me for Big Game warnings and starts.",kind:"Role"},
   {key:"bountyAlerts",icon:"🎯",name:"Bounty Alerts",detail:"Ping me when a new bounty is posted.",kind:"Role"},
@@ -2400,7 +2401,7 @@ function ensureH4NotificationPanel(){
       <div><p class="eyebrow">🔔 NOTIFICATIONS</p><h3>Monster Hunt Alerts</h3></div>
       <span class="h4-notification-route" id="h4NotificationRoute">Loading…</span>
     </div>
-    <p class="muted">Choose private reminders and opt-in Discord alert roles.</p>
+    <p class="muted">Choose personal ready notifications and opt-in Discord event roles.</p>
     <div class="h4-notification-grid" id="h4NotificationGrid">
       <div class="empty-state">Loading notification preferences…</div>
     </div>`;
