@@ -11312,10 +11312,19 @@ function activityLiveEventsPayload(data, userId) {
 
   // Build compatible detailed objects only when those systems are active.
   const bigActive = isBigGameActive(data, now);
-  const bigScores = Object.entries(data.bigGame?.scores || {}).map(([id,score]) => {
-    const p = getPlayer(data,id);
-    return { name:p.discordDisplayName || p.discordUsername || `Hunter ${String(id).slice(-4)}`, score:Number(score || 0), id };
-  }).sort((a,b)=>b.score-a.score).slice(0,10);
+  const rankedBigGame = getBigGameRanking(data);
+  const bigScores = rankedBigGame.slice(0,10).map(entry => {
+    const p = getPlayer(data,entry.userId);
+    return {
+      name:p.discordDisplayName || p.discordUsername || `Hunter ${String(entry.userId).slice(-4)}`,
+      score:Number(entry.score || 0),
+      id:entry.userId
+    };
+  });
+  const bigPlayer = getPlayer(data,userId);
+  const bigPlayerRankIndex = rankedBigGame.findIndex(entry => entry.userId === userId);
+  const bigHuntCooldown = getPlayerHuntCooldown(bigPlayer,data,userId);
+  const bigHuntReadyAt = Number(bigPlayer.lastHunt || 0) + bigHuntCooldown;
 
   const distortionState = data.activeDistortion;
   const distortionDef = distortionState ? DISTORTIONS[distortionState.key] : null;
@@ -11325,11 +11334,16 @@ function activityLiveEventsPayload(data, userId) {
     hasAny:active.length > 0,
     bigGame:{
       active:bigActive,
+      startedAt:Number(data.bigGame?.startedAt || 0),
       endsAt:Number(data.bigGame?.endsAt || 0),
       playerScore:Number(data.bigGame?.scores?.[userId] || 0),
-      tokenBalance:Number(getPlayer(data,userId).huntTokens || 0),
+      playerRank:bigPlayerRankIndex >= 0 ? bigPlayerRankIndex + 1 : null,
+      tokenBalance:Number(bigPlayer.huntTokens || 0),
+      huntCooldownMs:Number(bigHuntCooldown || 0),
+      huntReadyAt:Number(bigHuntReadyAt || 0),
       leaderboard:bigScores,
-      tokenRewards:{...BIG_GAME_TOKEN_REWARDS}
+      tokenRewards:{...BIG_GAME_TOKEN_REWARDS},
+      placementRewards:[...BIG_GAME_PLACEMENT_REWARDS]
     },
     bounty:{ active:false, npc:"", clue:"", participants:0, attempts:0 },
     distortion:{
