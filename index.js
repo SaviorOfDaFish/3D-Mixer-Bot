@@ -11369,7 +11369,7 @@ function activityEggInventoryPayload(player) {
       rarity,
       name: distortion?.name || `${rarity} Egg`,
       icon: distortion?.icon || EGG_TYPES[rarity]?.icon || "🥚",
-      image: distortion?.image || null,
+      image: distortion?.image || EGG_TYPES[rarity]?.image || null,
       incubationMs: Number(distortion?.incubationMs || EGG_TYPES[rarity]?.incubationMs || EGG_TYPES.Common.incubationMs)
     };
   });
@@ -11388,7 +11388,7 @@ function activityIncubatorPayload(player) {
       rarity,
       name:distortion?.name || `${rarity} Egg`,
       icon:distortion?.icon || EGG_TYPES[rarity]?.icon || "🥚",
-      image:distortion?.image || null,
+      image:distortion?.image || EGG_TYPES[rarity]?.image || null,
       startedAt:Number(egg.startedAt || 0),
       readyAt:Number(egg.readyAt || 0),
       ready:Date.now() >= Number(egg.readyAt || 0)
@@ -11399,13 +11399,13 @@ function activityIncubatorPayload(player) {
 
 function activityFullInventoryPayload(player) {
   const rows = [
-    { key:"berry", name:"Hunter Berry", icon:"🍓", qty:Number(player.captureItems?.berry || 0), type:"Capture Item", effect:"+10% to one capture attempt." },
-    { key:"honey", name:"Sticky Honey", icon:"🍯", qty:Number(player.captureItems?.honey || 0), type:"Capture Item", effect:"+20% to one capture attempt." },
-    { key:"net", name:"Enchanted Net", icon:"🕸️", qty:Number(player.captureItems?.net || 0), type:"Capture Item", effect:"+30% to one capture attempt." },
-    { key:"masterCharm", name:"Master Charm", icon:"🌟", qty:Number(player.captureItems?.masterCharm || 0), type:"Capture Item", effect:"Guarantees one capture attempt." },
-    { key:"rare_bait", name:"Rare Bait", icon:"🔵", qty:Number(player.bait?.rare || 0), type:"Bait", effect:"Improves Rare odds on your next normal hunt." },
-    { key:"epic_bait", name:"Epic Bait", icon:"🟣", qty:Number(player.bait?.epic || 0), type:"Bait", effect:"Improves Epic odds on your next normal hunt." },
-    { key:"legendary_bait", name:"Legendary Bait", icon:"🟠", qty:Number(player.bait?.legendary || 0), type:"Bait", effect:"Improves Legendary odds on your next normal hunt." }
+    { key:"berry", name:"Hunter Berry", icon:"🍓", image:"hunter_berry.png", qty:Number(player.captureItems?.berry || 0), type:"Capture Item", effect:"+10% to one capture attempt." },
+    { key:"honey", name:"Sticky Honey", icon:"🍯", image:"sticky_honey.png", qty:Number(player.captureItems?.honey || 0), type:"Capture Item", effect:"+20% to one capture attempt." },
+    { key:"net", name:"Enchanted Net", icon:"🕸️", image:"enchanted_net.png", qty:Number(player.captureItems?.net || 0), type:"Capture Item", effect:"+30% to one capture attempt." },
+    { key:"masterCharm", name:"Master Charm", icon:"🌟", image:"master_charm.png", qty:Number(player.captureItems?.masterCharm || 0), type:"Capture Item", effect:"Guarantees one capture attempt." },
+    { key:"rare_bait", name:"Rare Bait", icon:"🔵", image:"rare_bait.png", qty:Number(player.bait?.rare || 0), type:"Bait", effect:"Improves Rare odds on your next normal hunt." },
+    { key:"epic_bait", name:"Epic Bait", icon:"🟣", image:"epic_bait.png", qty:Number(player.bait?.epic || 0), type:"Bait", effect:"Improves Epic odds on your next normal hunt." },
+    { key:"legendary_bait", name:"Legendary Bait", icon:"🟠", image:"legendary_bait.png", qty:Number(player.bait?.legendary || 0), type:"Bait", effect:"Improves Legendary odds on your next normal hunt." }
   ];
 
   // Merchant purchases/collection are real live values.
@@ -11417,6 +11417,7 @@ function activityFullInventoryPayload(player) {
       key,
       name:def.name,
       icon:def.icon || "🎒",
+      image:def.image || null,
       qty,
       type:def.kind === "collectible" ? "Collectible" : "Merchant",
       effect:def.effectDescription || def.description || "Merchant item.",
