@@ -3224,3 +3224,135 @@ body { background:#050a14; }
 }
 .title-lock { font-size:1.05rem; opacity:.65; }
 
+
+/* ===== H.7.1 FUN COSMETICS ===== */
+
+/* Army helmet */
+.avatar[data-headgear="army"] .headgear {
+  left:5px; top:-1px; width:53px; height:30px;
+  background:#52634a;
+  border-radius:52% 52% 24% 24%;
+  border:2px solid #303c2b;
+  box-shadow:inset 0 -7px rgba(0,0,0,.12);
+}
+.avatar[data-headgear="army"] .headgear::after {
+  content:""; position:absolute; left:-4px; bottom:-3px; width:61px; height:7px;
+  border-radius:50%; background:#3f5039;
+}
+
+/* Ninja mask */
+.avatar[data-headgear="ninja_mask"] .headgear {
+  left:5px; top:10px; width:53px; height:42px;
+  border-radius:44% 44% 42% 42%;
+  background:#1f2937;
+  clip-path:polygon(0 0,100% 0,96% 100%,5% 100%);
+}
+.avatar[data-headgear="ninja_mask"] .headgear::after {
+  content:""; position:absolute; left:9px; top:12px; width:35px; height:10px;
+  background:var(--skin); border-radius:6px;
+}
+
+/* Cowboy hat */
+.avatar[data-headgear="cowboy"] .headgear {
+  left:8px; top:-10px; width:47px; height:24px;
+  border-radius:50% 50% 32% 32%;
+  background:#8a603b;
+  border:2px solid #5e4027;
+}
+.avatar[data-headgear="cowboy"] .headgear::after {
+  content:""; position:absolute; left:-13px; top:15px; width:72px; height:8px;
+  background:#8a603b; border-radius:50%;
+  border:2px solid #5e4027;
+}
+
+/* Wizard hat */
+.avatar[data-headgear="wizard_hat"] .headgear {
+  left:8px; top:-35px; width:49px; height:52px;
+  background:#3d3a78;
+  clip-path:polygon(50% 0,100% 84%,75% 77%,100% 100%,0 100%,25% 77%);
+}
+.avatar[data-headgear="wizard_hat"] .headgear::after {
+  content:"✦"; position:absolute; left:18px; top:24px; color:#f8df7a; font-size:12px;
+}
+
+/* Overalls */
+.avatar[data-outfit="overalls"] { --outfit:#5a7ca5; --outfit2:#b8c6d8; }
+.avatar[data-outfit="overalls"] .torso {
+  background:
+    linear-gradient(90deg,transparent 0 22%,#47688f 22% 34%,transparent 34% 66%,#47688f 66% 78%,transparent 78%),
+    linear-gradient(180deg,#c79d63 0 32%,#5a7ca5 32% 100%);
+}
+.avatar[data-outfit="overalls"] .torso::after {
+  left:22px; top:28px; width:20px; height:26px;
+  border:2px solid rgba(255,255,255,.26);
+  background:transparent; box-shadow:none;
+}
+
+/* Ninja robe */
+.avatar[data-outfit="ninja"] { --outfit:#1d2733; --outfit2:#2f3b49; --cloak:#111827; }
+.avatar[data-outfit="ninja"] .torso {
+  background:linear-gradient(135deg,#18212b 0 46%,#374151 47% 53%,#18212b 54% 100%);
+}
+.avatar[data-outfit="ninja"] .belt { background:#6b1f2a; }
+
+/* Pirate coat */
+.avatar[data-outfit="pirate"] { --outfit:#643331; --outfit2:#c9a66b; }
+.avatar[data-outfit="pirate"] .torso {
+  background:
+    linear-gradient(90deg,#643331 0 39%,#ead6a7 40% 47%,#c9a66b 48% 52%,#ead6a7 53% 60%,#643331 61% 100%);
+}
+.avatar[data-outfit="pirate"] .torso::before {
+  left:14px; top:13px; width:5px; height:5px; border-radius:50%;
+  background:#d4a94b; box-shadow:0 15px #d4a94b,31px 0 #d4a94b,31px 15px #d4a94b;
+}
+
+/* Wizard robe */
+.avatar[data-outfit="wizard"] { --outfit:#36306d; --outfit2:#6c63a7; }
+.avatar[data-outfit="wizard"] .torso {
+  background:
+    radial-gradient(circle at 25% 27%,#f8df7a 0 2px,transparent 3px),
+    radial-gradient(circle at 74% 55%,#f8df7a 0 2px,transparent 3px),
+    linear-gradient(90deg,#36306d,#6c63a7);
+}
+
+/* Katana */
+.avatar[data-weapon="katana"] .weapon-back {
+  left:11px; top:50px; width:7px; height:128px; background:#d7dde7;
+  transform:rotate(-26deg); border-radius:70% 70% 4px 4px;
+}
+.avatar[data-weapon="katana"] .weapon-back::before {
+  left:-8px; top:103px; width:23px; height:6px; background:#2c313a; border-radius:5px;
+}
+.avatar[data-weapon="katana"] .weapon-back::after {
+  left:0; top:108px; width:7px; height:27px; background:#5b2630;
+}
+
+/* Pitchfork */
+.avatar[data-weapon="pitchfork"] .weapon-back {
+  left:9px; top:42px; width:7px; height:148px; background:#704a2e;
+  transform:rotate(-14deg);
+}
+.avatar[data-weapon="pitchfork"] .weapon-back::before {
+  left:-10px; top:-23px; width:27px; height:30px;
+  background:
+    linear-gradient(90deg,#9ba6b3 0 5px,transparent 5px 11px,#9ba6b3 11px 16px,transparent 16px 22px,#9ba6b3 22px 27px);
+}
+.avatar[data-weapon="pitchfork"] .weapon-back::after {
+  left:-8px; top:1px; width:23px; height:5px; background:#9ba6b3;
+}
+
+/* Magic wand */
+.avatar[data-weapon="wand"] .weapon-back {
+  left:13px; top:78px; width:5px; height:82px; background:#5b4032; transform:rotate(-30deg);
+}
+.avatar[data-weapon="wand"] .weapon-back::before {
+  content:"✦"; left:-8px; top:-23px; width:auto; height:auto; background:transparent;
+  color:#fde68a; font-size:24px; line-height:1; text-shadow:0 0 8px #a78bfa;
+}
+.avatar[data-weapon="wand"] .weapon-back::after { display:none; }
+
+/* Give the hunter a slightly more expressive cartoon silhouette without
+   replacing the existing avatar system. */
+.avatar .face { box-shadow:inset 0 -3px rgba(0,0,0,.08),0 1px 0 rgba(255,255,255,.08); }
+.avatar .eyes i { transform:scale(1.06); }
+

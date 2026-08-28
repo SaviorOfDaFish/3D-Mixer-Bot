@@ -247,6 +247,10 @@ const OPTIONS = {
     { value:"scout", label:"Field Scout" }, { value:"traveler", label:"Traveler" },
     { value:"storm", label:"Storm Hunter", unlock:{type:"level",amount:5} },
     { value:"glass", label:"Glasswaste Hunter", unlock:{type:"petdex",amount:12} },
+    { value:"overalls", label:"Overalls", unlock:{type:"level",amount:3} },
+    { value:"ninja", label:"Ninja Robe", unlock:{type:"level",amount:6} },
+    { value:"pirate", label:"Pirate Coat", unlock:{type:"petdex",amount:10} },
+    { value:"wizard", label:"Wizard Robe", unlock:{type:"petdex",amount:18} },
     { value:"rift", label:"Rift Hunter", unlock:{type:"level",amount:10} },
     { value:"frost", label:"Frost Hunter", unlock:{type:"level",amount:8} },
     { value:"ember", label:"Ember Hunter", unlock:{type:"petdex",amount:20} }
@@ -261,6 +265,10 @@ const OPTIONS = {
   headgear: [
     { value:"none", label:"None" }, { value:"cap", label:"Hunter Cap" },
     { value:"band", label:"Field Headband" },
+    { value:"army", label:"Army Helmet", unlock:{type:"level",amount:3} },
+    { value:"ninja_mask", label:"Ninja Mask", unlock:{type:"level",amount:6} },
+    { value:"cowboy", label:"Cowboy Hat", unlock:{type:"petdex",amount:8} },
+    { value:"wizard_hat", label:"Wizard Hat", unlock:{type:"petdex",amount:18} },
     { value:"circlet", label:"Moonfen Circlet", unlock:{type:"petdex",amount:4} },
     { value:"hood", label:"Rift Hood", unlock:{type:"level",amount:10} },
     { value:"horns", label:"Trophy Horns", unlock:{type:"trophies",amount:3} },
@@ -270,6 +278,9 @@ const OPTIONS = {
     { value:"none", label:"None" }, { value:"bow", label:"Hunter Bow" },
     { value:"spear", label:"Spear", unlock:{type:"level",amount:3} },
     { value:"sword", label:"Sword", unlock:{type:"level",amount:4} },
+    { value:"katana", label:"Katana", unlock:{type:"level",amount:6} },
+    { value:"pitchfork", label:"Pitchfork", unlock:{type:"level",amount:3} },
+    { value:"wand", label:"Magic Wand", unlock:{type:"petdex",amount:12} },
     { value:"staff", label:"Rift Staff", unlock:{type:"level",amount:10} }
   ]
 };
@@ -931,8 +942,8 @@ function renderCollection() {
   document.getElementById("titleList").innerHTML = gameData.titles.map(t => `
     <div class="title-row ${t.unlocked ? "" : "locked"} ${hunter?.title === t.name ? "equipped" : ""}">
       <div class="title-row-copy">
-        <b>${t.secret && !t.unlocked ? "???" : escapeHtml(t.name)}</b>
-        <div class="title-state">${t.unlocked ? (hunter?.title === t.name ? "⭐ Equipped" : (t.legacy ? "Lifetime title" : "Unlocked")) : escapeHtml(t.requirement || "Undiscovered")}</div>
+        <b>${t.unlocked ? escapeHtml(t.name) : "🔒 Locked Title"}</b>
+        <div class="title-state">${t.unlocked ? (hunter?.title === t.name ? "⭐ Equipped" : (t.legacy ? "Lifetime title" : "Unlocked")) : escapeHtml(t.requirement || "Keep hunting to discover this title.")}</div>
       </div>
       ${t.unlocked
         ? `<button class="secondary title-equip-btn" type="button" data-title-equip="${escapeHtml(t.name)}">${hunter?.title === t.name ? "Unequip" : "Equip"}</button>`
