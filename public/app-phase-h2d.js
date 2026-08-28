@@ -1615,7 +1615,7 @@ function renderPhaseEEvents() {
     document.getElementById("bigGameLeaderboard").innerHTML=rows.length?rows.map((entry,i)=>`
       <div class="leaderboard-row">
         <div class="rank-medal">${["🥇","🥈","🥉"][i]||`#${i+1}`}</div>
-        <div><b>${entry.name}</b>${entry.id===String(activityUser?.id||"")?`<small class="you-tag">YOU</small>`:""}</div>
+        <div><b>${entry.name}</b>${false?`<small class="you-tag">YOU</small>`:""}</div>
         <div class="leader-score">${entry.score} 🪙</div>
       </div>`).join("")
       :`<div class="empty-state">No successful catches yet. The board is wide open.</div>`;
