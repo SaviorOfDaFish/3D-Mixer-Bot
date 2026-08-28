@@ -353,7 +353,8 @@ function renderActivePet() {
   document.getElementById("petName").textContent = petDisplayName(pet);
   document.getElementById("petLevel").textContent = pet.level;
   document.getElementById("petBond").textContent = pet.bond;
-  document.getElementById("petAbility").textContent = pet.ability;
+  const naturalAbility = pet.abilities?.find(a => a.natural) || pet.abilities?.[0];
+  document.getElementById("petAbility").textContent = naturalAbility ? `${naturalAbility.icon || "✨"} ${naturalAbility.name} ${naturalAbility.rankRoman || ""} — ${naturalAbility.effect}` : pet.ability;
 
   const xpTarget = Math.max(100, pet.level * 100);
   const xpCurrent = Math.round((Number(pet.xp || 0) / 100) * xpTarget);
@@ -414,7 +415,8 @@ function renderPets() {
       <div class="pet-card-body">
         <h3>${petDisplayName(p)}</h3>
         <p class="card-meta">${p.name !== petDisplayName(p) ? `${p.name} • ` : ""}${p.habitat} • Lv. ${p.level}</p>
-        <p class="card-ability">${p.ability}</p>
+        <p class="card-ability">${p.abilities?.[0] ? `${p.abilities[0].icon || "✨"} ${p.abilities[0].name} ${p.abilities[0].rankRoman || ""}` : p.ability}</p>
+        ${p.inheritedSlotsMax != null ? `<p class="card-slots">🧬 ${p.inheritedSlotsUsed}/${p.inheritedSlotsMax} inherited slots</p>` : ""}
         <div class="pet-progress"><span style="width:${Math.max(8,p.xp)}%"></span></div>
       </div>
     </article>
@@ -445,9 +447,17 @@ function showPetDetail(key) {
       <div class="detail-stat"><small>Bond</small><b>${owned ? `${p.bond}/5` : "—"}</b></div>
     </div>
     <div class="pet-ability-panel">
-      <small>COMPANION ABILITY</small>
-      <strong>${p.ability || "Companion Ability"}</strong>
-      <p>${p.abilityEffect || p.description || "This companion helps you during Monster Hunt."}</p>
+      <small>COMPANION ABILITIES</small>
+      <div class="pet-ability-stack">
+        ${(p.abilities?.length ? p.abilities : [{name:p.ability,effect:p.abilityEffect,natural:true}]).map(a => `
+          <div class="pet-ability-row ${a.natural ? "natural" : "inherited"}">
+            <div class="ability-row-head"><strong>${a.icon || (a.natural ? "✨" : "🧬")} ${a.name || "Companion Ability"} ${a.rankRoman ? `• Rank ${a.rankRoman}` : ""}</strong><span>${a.natural ? "Natural" : "Inherited"}</span></div>
+            <p>${a.effect || "This companion helps you during Monster Hunt."}</p>
+            ${a.capText ? `<small class="ability-cap">🛡️ ${a.capText}</small>` : ""}
+            ${!a.natural && a.sourceName ? `<small class="ability-source">Inherited from ${a.sourceName}</small>` : ""}
+          </div>`).join("")}
+      </div>
+      ${owned && p.inheritedSlotsMax != null ? `<div class="ability-slot-meter"><b>Inherited Slots</b><span>${p.inheritedSlotsUsed}/${p.inheritedSlotsMax}</span><div><i style="width:${Math.min(100,(p.inheritedSlotsUsed/Math.max(1,p.inheritedSlotsMax))*100)}%"></i></div></div>` : ""}
     </div>
     ${p.description ? `<p class="detail-copy"><b>About this companion</b><br>${p.description}</p>` : ""}
     ${owned ? `
@@ -512,6 +522,16 @@ async function commitPetName(clear=false) {
     : `✅ ${pet.name} is using its species name again.`;
 }
 
+
+document.getElementById("openPetCombine")?.addEventListener("click",openPetCombine);
+document.getElementById("closePetCombine")?.addEventListener("click",closePetCombine);
+document.getElementById("petCombineModal")?.addEventListener("click",e=>{if(e.target.id==="petCombineModal") closePetCombine();});
+document.getElementById("combineTarget")?.addEventListener("change",()=>{ if(document.getElementById("combineTarget").value===document.getElementById("combineDonor").value){ const alt=gameData.ownedPets.find(p=>String(p.id)!==String(document.getElementById("combineTarget").value)&&!p.equipped)||gameData.ownedPets.find(p=>String(p.id)!==String(document.getElementById("combineTarget").value)); if(alt) document.getElementById("combineDonor").value=String(alt.id); } refreshCombineAbilityOptions(); });
+document.getElementById("combineDonor")?.addEventListener("change",refreshCombineAbilityOptions);
+document.getElementById("combineAbility")?.addEventListener("change",refreshCombinePreview);
+document.getElementById("combineXpBtn")?.addEventListener("click",()=>runPetCombine("xp"));
+document.getElementById("combineInheritBtn")?.addEventListener("click",()=>runPetCombine("inherit"));
+
 function closeDetail() { document.getElementById("detailModal").classList.add("hidden"); }
 document.getElementById("closeDetail").onclick = closeDetail;
 document.getElementById("detailModal").addEventListener("click", e => { if (e.target.id === "detailModal") closeDetail(); });
@@ -523,6 +543,63 @@ document.getElementById("petNameInput").addEventListener("keydown", e => {
   if (e.key === "Enter") commitPetName(false);
 });
 
+
+
+function combinePetName(p){ return p ? `${petDisplayName(p)} • ${p.rarity} • Lv. ${p.level}` : ""; }
+function h3MeterClass(chance){ return chance>=80?"excellent":chance>=60?"good":chance>=40?"uncertain":chance>0?"risky":"locked"; }
+function renderPetProgressionBanner(){
+  const el=document.getElementById("petProgressionBanner"); if(!el||!gameData) return;
+  const prog=gameData.petProgression||{};
+  el.innerHTML=`<span>🏹 Hunter Lv. <b>${prog.hunterLevel||hunter?.level||1}</b></span><span>🧬 Inherited Slots <b>${prog.inheritedSlots||1}/${prog.maxInherited||5}</b></span><span>🥚 Incubators <b>${prog.incubators||1}/5</b></span>`;
+}
+function openPetCombine(){
+  if(!gameData?.ownedPets?.length || gameData.ownedPets.length<2){ document.getElementById("status").textContent="❌ You need at least two pets to combine."; return; }
+  const modal=document.getElementById("petCombineModal"), target=document.getElementById("combineTarget"), donor=document.getElementById("combineDonor");
+  const options=gameData.ownedPets.map(p=>`<option value="${p.id}">${combinePetName(p)}${p.equipped?" • ACTIVE":""}</option>`).join("");
+  target.innerHTML=options; donor.innerHTML=options;
+  const active=gameData.ownedPets.find(p=>p.equipped); if(active) target.value=String(active.id);
+  const firstDonor=gameData.ownedPets.find(p=>String(p.id)!==String(target.value)&&!p.equipped) || gameData.ownedPets.find(p=>String(p.id)!==String(target.value));
+  if(firstDonor) donor.value=String(firstDonor.id);
+  modal.classList.remove("hidden"); refreshCombineAbilityOptions();
+}
+function closePetCombine(){ document.getElementById("petCombineModal")?.classList.add("hidden"); }
+function refreshCombineAbilityOptions(){
+  const donor=gameData?.ownedPets?.find(p=>String(p.id)===String(document.getElementById("combineDonor").value));
+  const sel=document.getElementById("combineAbility");
+  if(!donor){sel.innerHTML="";return;}
+  sel.innerHTML=(donor.abilities||[]).map(a=>`<option value="${a.key}">${a.icon||"✨"} ${a.name} • Rank ${a.rankRoman||a.rank}${a.inheritable?"":" • LOCKED"}</option>`).join("");
+  refreshCombinePreview();
+}
+async function refreshCombinePreview(){
+  const targetId=document.getElementById("combineTarget")?.value, donorId=document.getElementById("combineDonor")?.value, abilityKey=document.getElementById("combineAbility")?.value;
+  const host=document.getElementById("combinePreview"); if(!targetId||!donorId||!abilityKey||String(targetId)===String(donorId)){ host.innerHTML='<div class="empty-state">Choose two different pets.</div>'; return; }
+  host.innerHTML='<div class="empty-state">Calculating server-side inheritance odds…</div>';
+  const response=await activityFetch("/api/activity/pet/combine/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({targetId,donorId,abilityKey})});
+  const r=await response.json(); if(!response.ok){host.innerHTML=`<div class="combine-error">❌ ${r.error||"Unable to preview combination."}</div>`; return;}
+  const chance=r.mode==="duplicate"?100:Number(r.chance?.total||0), cls=h3MeterClass(chance);
+  const inheritanceText=r.mode==="duplicate"?`Guaranteed duplicate training: ${r.duplicateTraining.amount} Ability XP will be evenly spread.`:r.mode==="locked"?"This special ability cannot be inherited.":`${r.chance.base}% base + ${r.chance.bondBonus}% Bond + ${r.chance.habitatBonus}% same habitat`;
+  host.innerHTML=`
+    <div class="combine-pair"><div><small>TARGET</small><b>${r.targetName}</b><span>🧬 ${r.slotsUsed}/${r.slotsMax} inherited slots</span></div><div class="combine-arrow">←</div><div><small>SACRIFICE</small><b>${r.donorName}</b><span>${r.donorRarity}</span></div></div>
+    <div class="inherit-card"><div class="inherit-title"><span>${r.ability.name} • Rank ${r.ability.rankRoman}</span><b>${chance}%</b></div><div class="inherit-meter ${cls}"><i style="width:${chance}%"></i></div><p>${inheritanceText}</p>${r.mode==="inherit"&&!r.canInherit?`<p class="combine-error">❌ No empty inherited ability slot. Reach the next odd Hunter Level.</p>`:""}</div>
+    <div class="xp-preview"><b>⚡ XP Sacrifice Alternative</b><p>${r.xpSacrifice.amount} Ability XP → ${r.xpSacrifice.abilityCount||0} non-maxed abilities</p>${r.xpSacrifice.allocations?.map(a=>`<span>${a.natural?"✨":"🧬"} ${a.ability}: +${a.amount} XP</span>`).join("")||'<span>All abilities are already maxed.</span>'}</div>`;
+  document.getElementById("combineInheritBtn").disabled = r.mode==="locked" || (r.mode==="inherit"&&!r.canInherit);
+  document.getElementById("combineInheritBtn").textContent = r.mode==="duplicate" ? "✨ Guaranteed Training" : `🧬 Attempt Inheritance — ${chance}%`;
+}
+async function runPetCombine(mode){
+  const targetId=document.getElementById("combineTarget").value, donorId=document.getElementById("combineDonor").value, abilityKey=document.getElementById("combineAbility").value;
+  const donor=gameData.ownedPets.find(p=>String(p.id)===String(donorId));
+  const action=mode==="xp"?"sacrifice this pet for distributed Ability XP":"attempt this inheritance";
+  if(!confirm(`Permanently sacrifice ${petDisplayName(donor)} to ${action}? This cannot be undone.`)) return;
+  const btn=mode==="xp"?document.getElementById("combineXpBtn"):document.getElementById("combineInheritBtn"); btn.disabled=true;
+  const response=await activityFetch(`/api/activity/pet/combine/${mode}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({targetId,donorId,abilityKey})});
+  const r=await response.json(); btn.disabled=false;
+  if(!response.ok){document.getElementById("status").textContent=`❌ ${r.error||"Combination failed."}`; return refreshCombinePreview();}
+  if(Array.isArray(r.pets)) gameData.ownedPets=r.pets;
+  const ownedKeys=new Set(gameData.ownedPets.map(p=>p.key)); if(!ownedKeys.has(activePetKey)) activePetKey=gameData.ownedPets.find(p=>p.equipped)?.key||gameData.ownedPets[0]?.key||null;
+  renderPetProgressionBanner(); renderActivePet(); renderPets(); closePetCombine();
+  document.getElementById("ownedPetCount").textContent=gameData.ownedPets.length; document.getElementById("petsCount").textContent=`${gameData.ownedPets.length} owned`;
+  document.getElementById("status").textContent=`${r.success===false?"💔":"✅"} ${r.message}`;
+}
 
 function renderDex() {
   if (!gameData) return;
@@ -1822,6 +1899,7 @@ async function boot() {
 
     renderMainAvatar();
     renderPetFilters();
+    renderPetProgressionBanner();
     renderPets();
     renderDex();
     renderInventoryFilters();
