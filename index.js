@@ -445,11 +445,11 @@ const BIG_GAME_IMAGE = "big_game_hunt.png";
 const BIG_GAME_AWARD_IMAGES = ["big_game_first.png", "big_game_second.png", "big_game_third.png"];
 
 const MERCHANT_TYPE_DEFINITIONS = {
-  aldric: { name: "Aldric, the Traveling Hunter", icon: "🧙", weight: 55, durationHours: 8, image: "merchant_arrival.png" },
-  gribble: { name: "Gribble", icon: "🎲", weight: 20, durationHours: 6, image: "gribbles_gamble.png" },
-  beastkeeper: { name: "The Beastkeeper", icon: "🐲", weight: 12, durationHours: 8, image: "beastkeeper.png" },
+  aldric: { name: "Aldric, the Traveling Hunter", icon: "🧙", weight: 55, durationHours: 8, image: "aldric_traveling_hunter.png" },
+  gribble: { name: "Gribble", icon: "🎲", weight: 20, durationHours: 6, image: "gribble_questionable_goods.png" },
+  beastkeeper: { name: "The Beastkeeper", icon: "🐲", weight: 12, durationHours: 8, image: "the_beastkeeper.png" },
   pale_collector: { name: "The Pale Collector", icon: "👻", weight: 7, durationHours: 6, image: "pale_collector.png" },
-  riftwalker: { name: "The Riftwalker", icon: "🌌", weight: 5, durationHours: 4, image: "riftwalker.png" },
+  riftwalker: { name: "The Riftwalker", icon: "🌌", weight: 5, durationHours: 4, image: "riftwalker_merchant.png" },
   nameless: { name: "The Nameless Merchant", icon: "❓", weight: 1, durationHours: 2, image: "nameless_merchant.png" }
 };
 
@@ -12167,7 +12167,7 @@ function activityEggPayload(player) {
       name: distortion?.name || `${egg.rarity || "Common"} Egg`,
       rarity: egg.rarity || (distortion ? "Distortion" : "Common"),
       icon: distortion?.icon || EGG_TYPES[egg.rarity]?.icon || "🥚",
-      image: distortion?.image || null
+      image: distortion?.image || EGG_TYPES[egg.rarity]?.image || null
     };
   });
 }
