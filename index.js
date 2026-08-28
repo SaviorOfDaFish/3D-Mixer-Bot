@@ -11620,7 +11620,7 @@ async function activityMerchantPurchase(user, itemKey) {
     const item=MERCHANT_ITEMS[offer.key];
     saveData(data);
 
-    const channel=await getTextChannel(HUNT_CHANNEL_ID).catch(()=>null);
+    const channel=await getTextChannel(MONSTER_CHANNEL_ID).catch(()=>null);
     if(channel?.isTextBased()){
       await channel.send({
         content:`${item?.icon||"🎒"} **ACTIVITY PURCHASE**\n<@${user.id}> purchased **${item?.name||offer.key}** from **${MERCHANT_TYPE_DEFINITIONS[data.merchant.type]?.name||"the merchant"}**!`,
