@@ -170,9 +170,21 @@ function assetImage(src, fallback, className="asset-icon") {
   return `<img class="${className}" src="${src}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-flex'"/><span class="${className}-fallback" style="display:none">${fallback || "✨"}</span>`;
 }
 
+const CORE_ITEM_IMAGES = new Set([
+  "hunter_berry.png","sticky_honey.png","enchanted_net.png","master_charm.png",
+  "rare_bait.png","epic_bait.png","legendary_bait.png","hunt_token.png"
+]);
+
 function inventoryArtPath(item) {
   if (!item?.image) return null;
-  return item.type === "Capture Item" || item.type === "Bait"
+  return CORE_ITEM_IMAGES.has(item.image)
+    ? `/assets/items/${item.image}`
+    : `/assets/merchant-items/${item.image}`;
+}
+
+function merchantItemArtPath(item) {
+  if (!item?.image) return null;
+  return CORE_ITEM_IMAGES.has(item.image)
     ? `/assets/items/${item.image}`
     : `/assets/merchant-items/${item.image}`;
 }
@@ -612,7 +624,7 @@ async function refreshH2BMerchant() {
       </section>
       <div class="merchant-live-grid">${(payload.offers||[]).map(o=>`
         <article class="inventory-card merchant-offer ${o.soldOut?"zero":""}">
-          <div class="inventory-top"><span class="inventory-icon">${assetImage(o.image?`/assets/merchant-items/${o.image}`:null,o.icon||"🎒","inventory-item-image")}</span><span class="qty-badge">${o.stock===null?"∞":`${o.stock} left`}</span></div>
+          <div class="inventory-top"><span class="inventory-icon">${assetImage(merchantItemArtPath(o),o.icon||"🎒","inventory-item-image")}</span><span class="qty-badge">${o.stock===null?"∞":`${o.stock} left`}</span></div>
           <div class="inventory-body">
             <h3>${o.name}</h3>
             <p class="card-meta">${o.barter?o.barter:`🪙 ${o.price} Hunt Tokens`}</p>
@@ -970,7 +982,7 @@ function renderEggs() {
   }
   list.innerHTML=incubations.length?incubations.map(x=>`
     <div class="h2a-incubator-row ${x.ready?"ready":""}">
-      <span>${x.icon}</span>
+      <span class="h2a-incubator-row-art">${assetImage(x.image?`/assets/eggs/${x.image}`:null,x.icon||"🥚","incubator-row-image")}</span>
       <div><b>Slot ${x.slot}: ${x.name}</b><small>${x.ready?"Ready to hatch":`${formatCountdown(Math.max(0,x.readyAt-Date.now()))} remaining`}</small></div>
       ${x.ready?`<button class="secondary h2a-hatch-slot" data-slot="${x.slot}">Hatch</button>`:""}
     </div>`).join("")

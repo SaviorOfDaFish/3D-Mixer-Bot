@@ -2725,3 +2725,8 @@ body { background:#050a14; }
 .egg-live-image{width:100%;height:100%;max-width:132px;max-height:112px;object-fit:contain;filter:drop-shadow(0 8px 14px rgba(0,0,0,.35))}
 .incubator-egg-image{width:54px;height:54px;object-fit:contain;display:block}
 .incubator-egg-image-fallback{font-size:32px;align-items:center;justify-content:center}
+
+/* H.2E comprehensive artwork resolver */
+.incubator-row-image{width:44px;height:44px;object-fit:contain;display:block}
+.incubator-row-image-fallback{font-size:1.5rem;align-items:center;justify-content:center}
+.h2a-incubator-row-art{width:50px;min-width:50px;display:flex;align-items:center;justify-content:center}
