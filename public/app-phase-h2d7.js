@@ -325,10 +325,21 @@ document.addEventListener("click", e => {
   if (nav) navTo(nav.dataset.nav);
 });
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch]));
+}
 function petDisplayName(p) {
   return localPetNicknames[p.key] || p.nickname || p.name;
 }
 function ownedPet(key) { return gameData?.ownedPets.find(p => p.key === key) || null; }
+function petAbilitySummaryHtml(pet, compact=false) {
+  const abilities = pet?.abilities?.length ? pet.abilities : [];
+  if (!abilities.length) return `<span class="pet-ability-chip">✨ ${pet?.ability || "No ability"}</span>`;
+  return `<span class="pet-ability-stack ${compact ? "compact" : ""}">${abilities.map(a =>
+    `<span class="pet-ability-chip ${a.natural ? "natural" : "inherited"}" title="${escapeHtml(a.description || "")}">${a.icon || "✨"} <b>${escapeHtml(a.name)}</b> <small>Rank ${escapeHtml(a.rankRoman || String(a.rank || "I"))}</small><em>${escapeHtml(a.effect || "")}</em></span>`
+  ).join("")}</span>`;
+}
+
 function allKnownPet(key) { return [...(gameData?.petDex || []), ...(gameData?.beyondPets || [])].find(p => p.key === key) || null; }
 
 function renderActivePet() {
@@ -353,8 +364,8 @@ function renderActivePet() {
   document.getElementById("petName").textContent = petDisplayName(pet);
   document.getElementById("petLevel").textContent = pet.level;
   document.getElementById("petBond").textContent = pet.bond;
-  const naturalAbility = pet.abilities?.find(a => a.natural) || pet.abilities?.[0];
-  document.getElementById("petAbility").textContent = naturalAbility ? `${naturalAbility.icon || "✨"} ${naturalAbility.name} ${naturalAbility.rankRoman || ""} — ${naturalAbility.effect}` : pet.ability;
+  const petAbilityHost=document.getElementById("petAbility");
+  if (petAbilityHost) petAbilityHost.innerHTML = petAbilitySummaryHtml(pet, true);
 
   const xpTarget = Math.max(100, pet.level * 100);
   const xpCurrent = Math.round((Number(pet.xp || 0) / 100) * xpTarget);
@@ -1248,7 +1259,7 @@ function updateHuntOverviewProfile() {
   const pet = ownedPet(activePetKey) || gameData.ownedPets[0];
   if (!pet) return;
   document.getElementById("huntOverviewPetName").textContent = petDisplayName(pet);
-  document.getElementById("huntOverviewPetAbility").textContent = pet.ability;
+  document.getElementById("huntOverviewPetAbility").innerHTML = petAbilitySummaryHtml(pet, true);
   document.getElementById("huntOverviewPetLevel").textContent = pet.level;
   document.getElementById("huntOverviewPetBond").textContent = pet.bond;
 
@@ -1494,7 +1505,9 @@ function populateEncounterPage() {
   document.getElementById("encounterCatchChance").textContent = `${currentEncounter.baseChance}%`;
   document.getElementById("encounterHabitat").textContent = activeHuntZone.name;
   document.getElementById("encounterDifficulty").textContent = getDifficulty(currentEncounter.baseChance);
-  document.getElementById("encounterPetName").textContent = pet ? petDisplayName(pet) : "None";
+  const encounterPetName=document.getElementById("encounterPetName");
+  encounterPetName.textContent = pet ? petDisplayName(pet) : "None";
+  if (pet) encounterPetName.title = (pet.abilities||[]).map(a=>`${a.name} Rank ${a.rankRoman||a.rank}: ${a.effect}`).join(" | ");
   document.getElementById("encounterDescription").textContent =
     currentEncounter.name === "The Hollow King"
       ? "A dread monarch of the dead, ruler of forgotten souls and shattered thrones."
