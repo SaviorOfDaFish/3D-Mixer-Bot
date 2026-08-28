@@ -5230,26 +5230,51 @@ async function processFetchReturnsAndReminders() {
   for (const [userId, playerRaw] of Object.entries(data.players || {})) {
     const player = getPlayer(data, userId);
 
-    // Pet fetch returns always belong in the dedicated Eggs & Pets channel.
+    // H.5: Fetch resolves server-side even if Discord is temporarily unavailable.
+    // The Activity can then show the same result on the Home screen.
     if (player.fetchState && !player.fetchState.completed && Date.now() >= player.fetchState.readyAt) {
       const ownedPet = player.pets.find(p => String(p.id) === String(player.fetchState.petId));
       const definition = getOwnedPetDefinition(ownedPet);
-      if (ownedPet && definition && petChannel?.isTextBased()) {
+      if (ownedPet && definition) {
         const fetchResult = rollFetchRewards(data, player, ownedPet, definition);
         const rewards = fetchResult.rewards;
         const xpText = awardCompanionXp(player, FETCH_COMPANION_XP, "Fetch Adventure");
-        const embed = new EmbedBuilder()
-          .setTitle(`🐾 ${getOwnedPetName(ownedPet)} Returned!`)
-          .setDescription(`${fetchFlavor(definition, ownedPet.personality, true, ownedPet)}\n\n**Found:**\n${rewards.map(x => `• ${x}`).join("\n")}\n\n⭐ ${xpText}`);
-        const art = getPetArtworkUrl(definition); if (art) embed.setImage(art);
-        await petChannel.send({ content: `<@${userId}>`, embeds: [embed] }).catch(() => null);
+        const returnFlavor = fetchFlavor(definition, ownedPet.personality, true, ownedPet);
 
-        if (fetchResult.relicDiscovery) {
-          await announceWorldRelicDiscovery(petChannel, fetchResult.relicDiscovery, userId);
+        player.fetchState.result = {
+          petName:getOwnedPetName(ownedPet),
+          petKey:definition.key,
+          petImage:definition.image || null,
+          petIcon:definition.icon || "🐾",
+          rewards:[...rewards],
+          xpText,
+          flavor:returnFlavor
+        };
+        player.fetchState.completed = true;
+        player.fetchState.completedAt = Date.now();
+        changed = true;
+
+        if (petChannel?.isTextBased()) {
+          const embed = new EmbedBuilder()
+            .setTitle(`🐾 ${getOwnedPetName(ownedPet)} Returned!`)
+            .setDescription(`${returnFlavor}\n\n**Found:**\n${rewards.map(x => `• ${x}`).join("\n")}\n\n⭐ ${xpText}`);
+          const art = getPetArtworkUrl(definition); if (art) embed.setImage(art);
+          await petChannel.send({
+            content:`<@${userId}>`,
+            embeds:[embed],
+            allowedMentions:{users:[userId],roles:[]}
+          }).catch(() => null);
+
+          if (fetchResult.relicDiscovery) {
+            await announceWorldRelicDiscovery(petChannel, fetchResult.relicDiscovery, userId);
+          }
         }
+      } else {
+        player.fetchState.completed = true;
+        player.fetchState.completedAt = Date.now();
+        player.fetchState.result = { rewards:[], xpText:"", flavor:"Your companion returned from Fetch." };
+        changed = true;
       }
-      player.fetchState.completed = true;
-      changed = true;
     }
 
     // H.4.1: Hunt and Fetch cooldown-ready alerts are opt-in personal
@@ -12542,6 +12567,81 @@ function activityEggPayload(player) {
   });
 }
 
+function activityFetchPayload(player) {
+  const now = Date.now();
+  const state = player.fetchState || null;
+  const fetchPet = state?.petId
+    ? (player.pets || []).find(p => String(p.id) === String(state.petId))
+    : getEquippedPet(player);
+  const definition = getOwnedPetDefinition(fetchPet);
+  const cooldownReadyAt = Number(player.lastFetch || 0) + FETCH_COOLDOWN;
+  const active = Boolean(state && !state.completed && Number(state.readyAt || 0) > now);
+  const returning = Boolean(state && !state.completed && Number(state.readyAt || 0) <= now);
+  return {
+    active,
+    returning,
+    completed:Boolean(state?.completed),
+    startedAt:Number(state?.startedAt || 0),
+    readyAt:Number(state?.readyAt || 0),
+    completedAt:Number(state?.completedAt || 0),
+    cooldownReadyAt,
+    cooldownMs:FETCH_COOLDOWN,
+    durationMs:FETCH_DURATION,
+    ready:!active && !returning && now >= cooldownReadyAt,
+    pet:fetchPet && definition ? {
+      id:fetchPet.id,
+      key:definition.key,
+      name:getOwnedPetName(fetchPet),
+      image:definition.image || null,
+      icon:definition.icon || "🐾"
+    } : null,
+    result:state?.result || null
+  };
+}
+
+async function activityStartFetch(user) {
+  const data = loadData();
+  const player = getPlayer(data,user.id);
+  ensureActivityProfile(player,user);
+
+  const ownedPet = getEquippedPet(player);
+  const definition = getOwnedPetDefinition(ownedPet);
+  if (!ownedPet || !definition) return {ok:false,error:"Equip a companion before sending one to Fetch."};
+
+  const now=Date.now();
+  if (player.fetchState && !player.fetchState.completed) {
+    return {ok:false,code:"fetching",error:`${getOwnedPetName(ownedPet)} is already fetching.`,fetch:activityFetchPayload(player)};
+  }
+
+  const left = FETCH_COOLDOWN - (now - Number(player.lastFetch || 0));
+  if (left > 0) {
+    return {ok:false,code:"cooldown",error:"Your companion is still resting after Fetch.",timeLeft:left,fetch:activityFetchPayload(player)};
+  }
+
+  player.lastFetch=now;
+  player.fetchState={
+    petId:ownedPet.id,
+    startedAt:now,
+    readyAt:now+FETCH_DURATION,
+    completed:false,
+    completedAt:0,
+    result:null,
+    channelId:EGGS_PETS_CHANNEL_ID
+  };
+  player.reminderState = player.reminderState || {};
+  player.reminderState.channelId=EGGS_PETS_CHANNEL_ID;
+  player.reminderState.fetchDueAt=now+FETCH_COOLDOWN;
+  player.reminderState.fetchSent=false;
+  saveData(data);
+
+  return {
+    ok:true,
+    message:`${getOwnedPetName(ownedPet)} went Fetching!`,
+    flavor:fetchFlavor(definition,ownedPet.personality,false,ownedPet),
+    fetch:activityFetchPayload(player)
+  };
+}
+
 function activityPlayerPayload(data, user) {
   const player = getPlayer(data, user.id);
   const profile = ensureActivityProfile(player, user);
@@ -12565,7 +12665,8 @@ function activityPlayerPayload(data, user) {
       bait: { ...player.bait },
       activeBait: player.activeBait || null,
       captureItems: { ...player.captureItems },
-      huntReadyAt: Number(player.lastHunt || 0) + getPlayerHuntCooldown(player, data, user.id)
+      huntReadyAt: Number(player.lastHunt || 0) + getPlayerHuntCooldown(player, data, user.id),
+      fetch: activityFetchPayload(player)
     },
     phaseD: {
       ownedPets,
@@ -12915,6 +13016,17 @@ const activityServer = http.createServer(async (req, res) => {
         const data=loadData();
         const result=await h4NotificationPrefsPayload(data,user.id);
         return activityJson(res,{ok:true,...result});
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/fetch") {
+        const data=loadData();
+        const player=getPlayer(data,user.id);
+        return activityJson(res,{ok:true,fetch:activityFetchPayload(player)});
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/fetch/start") {
+        const result=await activityStartFetch(user);
+        return activityJson(res,result,result.ok?200:(result.code==="cooldown"?429:400));
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/notifications") {
