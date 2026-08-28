@@ -4874,37 +4874,68 @@ function giveQuestBonusBait(player) {
 
 async function checkReadyEggNotifications() {
   const data = loadData();
-  const channel = await getEggsPetsChannel();
-  if (!channel) return;
-
+  const channel = await getEggsPetsChannel().catch(() => null);
   const now = Date.now();
   let changed = false;
 
-  for (const [userId, rawPlayer] of Object.entries(data.players || {})) {
+  for (const [userId] of Object.entries(data.players || {})) {
     const player = getPlayer(data, userId);
 
     for (const incubation of player.incubatingEggs || []) {
-      if (incubation.readyAt > now || incubation.notified) continue;
+      if (Number(incubation.readyAt || 0) > now || incubation.notified) continue;
 
-      incubation.notified = true;
-      changed = true;
-
-      await channel.send(
+      const rarity = incubation.rarity || "Common";
+      const messageText =
         `🥚✨ **YOUR EGG IS READY TO HATCH!**\n\n` +
-        `${formatPlayerMention(data, userId)}, your **${incubation.rarity} Egg** has finished incubating!\n\n` +
+        `<@${userId}>, your **${rarity} Egg** has finished incubating!\n\n` +
         `🐾 Open **Monster Hunt → Eggs** and press **Hatch** to discover your new companion.\n` +
-        `You can also use \`!hatch\` here in the Eggs & Pets channel.`
-      ).catch(error => {
-        console.error(`Failed to send egg-ready notification for ${userId}:`, error);
-        incubation.notified = false;
+        `You can also use \`!hatch\` in the Eggs & Pets channel.`;
+
+      let delivered = false;
+
+      // Primary notification: Eggs & Pets channel.
+      if (channel?.isTextBased()) {
+        try {
+          await channel.send({
+            content: messageText,
+            allowedMentions: { users: [userId] }
+          });
+          delivered = true;
+          console.log(`Egg-ready notification sent in channel for ${userId}.`);
+        } catch (error) {
+          console.error(`Egg-ready channel notification failed for ${userId}:`, error);
+        }
+      } else {
+        console.error("Egg-ready notification: Eggs & Pets channel could not be loaded.");
+      }
+
+      // Fallback: DM the player if the channel notification could not be delivered.
+      if (!delivered) {
+        try {
+          const discordUser = await client.users.fetch(userId);
+          await discordUser.send(
+            `🥚✨ **YOUR EGG IS READY TO HATCH!**\n\n` +
+            `Your **${rarity} Egg** has finished incubating!\n\n` +
+            `🐾 Open **Monster Hunt → Eggs** and press **Hatch** to discover your new companion.`
+          );
+          delivered = true;
+          console.log(`Egg-ready fallback DM sent for ${userId}.`);
+        } catch (error) {
+          console.error(`Egg-ready fallback DM failed for ${userId}:`, error);
+        }
+      }
+
+      // Only mark it notified after Discord actually accepted a notification.
+      // If both methods fail, the once-per-minute checker will retry.
+      if (delivered) {
+        incubation.notified = true;
         changed = true;
-      });
+      }
     }
   }
 
   if (changed) saveData(data);
 }
-
 
 function getMountainDateTimeParts(date = new Date()) {
   const parts = Object.fromEntries(
@@ -11334,16 +11365,26 @@ async function activityIncubateEgg(user, inventoryIndex) {
   const eggKey = egg.eggKey || egg.distortionKey || null;
   const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
   const duration = Number(distortion?.incubationMs || EGG_TYPES[egg.rarity]?.incubationMs || EGG_TYPES.Common.incubationMs);
+  const incubationStartedAt = Date.now();
+  const incubationReadyAt = incubationStartedAt + duration;
   player.incubatingEggs.push({
     id:egg.id,
     rarity:egg.rarity || "Common",
     eggKey,
     adminTest:Boolean(egg.adminTest),
-    startedAt:Date.now(),
-    readyAt:Date.now()+duration,
+    startedAt:incubationStartedAt,
+    readyAt:incubationReadyAt,
     notified:false
   });
   saveData(data);
+
+  // Exact-time backup in addition to the global once-per-minute checker.
+  // The startup catch-up checker still covers Railway redeploys/restarts.
+  setTimeout(() => {
+    checkReadyEggNotifications().catch(error =>
+      console.error("Exact egg-ready notification check failed:", error)
+    );
+  }, Math.max(1000, incubationReadyAt - Date.now() + 1000));
   return {ok:true, ...activityIncubatorPayload(player), eggs:activityEggInventoryPayload(player)};
 }
 
