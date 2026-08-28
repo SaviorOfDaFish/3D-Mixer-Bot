@@ -11210,7 +11210,7 @@ function activityFullInventoryPayload(player) {
     });
   }
 
-  return rows;
+  return rows.filter(item => Number(item.qty || 0) > 0);
 }
 
 function activityLeaderboardPayload(data, userId) {
