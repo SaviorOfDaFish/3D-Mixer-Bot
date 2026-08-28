@@ -585,21 +585,76 @@ async function refreshCombinePreview(){
   document.getElementById("combineInheritBtn").disabled = r.mode==="locked" || (r.mode==="inherit"&&!r.canInherit);
   document.getElementById("combineInheritBtn").textContent = r.mode==="duplicate" ? "✨ Guaranteed Training" : `🧬 Attempt Inheritance — ${chance}%`;
 }
-async function runPetCombine(mode){
-  const targetId=document.getElementById("combineTarget").value, donorId=document.getElementById("combineDonor").value, abilityKey=document.getElementById("combineAbility").value;
-  const donor=gameData.ownedPets.find(p=>String(p.id)===String(donorId));
-  const action=mode==="xp"?"sacrifice this pet for distributed Ability XP":"attempt this inheritance";
-  if(!confirm(`Permanently sacrifice ${petDisplayName(donor)} to ${action}? This cannot be undone.`)) return;
-  const btn=mode==="xp"?document.getElementById("combineXpBtn"):document.getElementById("combineInheritBtn"); btn.disabled=true;
-  const response=await activityFetch(`/api/activity/pet/combine/${mode}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({targetId,donorId,abilityKey})});
-  const r=await response.json(); btn.disabled=false;
-  if(!response.ok){document.getElementById("status").textContent=`❌ ${r.error||"Combination failed."}`; return refreshCombinePreview();}
-  if(Array.isArray(r.pets)) gameData.ownedPets=r.pets;
-  const ownedKeys=new Set(gameData.ownedPets.map(p=>p.key)); if(!ownedKeys.has(activePetKey)) activePetKey=gameData.ownedPets.find(p=>p.equipped)?.key||gameData.ownedPets[0]?.key||null;
-  renderPetProgressionBanner(); renderActivePet(); renderPets(); closePetCombine();
-  document.getElementById("ownedPetCount").textContent=gameData.ownedPets.length; document.getElementById("petsCount").textContent=`${gameData.ownedPets.length} owned`;
-  document.getElementById("status").textContent=`${r.success===false?"💔":"✅"} ${r.message}`;
+let pendingCombineAction=null;
+
+function closeCombineConfirm(){
+  document.getElementById("combineConfirmModal")?.classList.add("hidden");
+  pendingCombineAction=null;
 }
+function closeCombineResult(){ document.getElementById("combineResultModal")?.classList.add("hidden"); }
+function showCombineResult(r,mode){
+  const modal=document.getElementById("combineResultModal");
+  const success=r.success!==false;
+  document.getElementById("combineResultIcon").textContent=mode==="xp"?"⚡":(success?"✨":"💔");
+  document.getElementById("combineResultEyebrow").textContent=mode==="xp"?"ABILITY TRAINING COMPLETE":"PET FUSION RESULT";
+  document.getElementById("combineResultTitle").textContent=mode==="xp"?"Ability XP Distributed!":(success?"Inheritance Successful!":"Inheritance Failed");
+  document.getElementById("combineResultMessage").textContent=r.message||"The combination is complete.";
+  const details=[];
+  if(r.ability?.name) details.push(`<div><small>ABILITY</small><b>${r.ability.icon||"✨"} ${r.ability.name}${r.ability.rankRoman?` • Rank ${r.ability.rankRoman}`:""}</b></div>`);
+  if(r.chance!=null) details.push(`<div><small>FINAL CHANCE</small><b>${r.chance}%</b></div>`);
+  if(r.slotsUsed!=null && r.slotsMax!=null) details.push(`<div><small>INHERITED SLOTS</small><b>${r.slotsUsed}/${r.slotsMax}</b></div>`);
+  if(Array.isArray(r.allocations)&&r.allocations.length) details.push(`<div class="combine-result-wide"><small>XP DISTRIBUTION</small>${r.allocations.map(a=>`<span>${a.natural?"✨":"🧬"} ${a.ability}: +${a.amount} XP</span>`).join("")}</div>`);
+  document.getElementById("combineResultDetails").innerHTML=details.join("");
+  modal.classList.remove("hidden");
+}
+function requestPetCombine(mode){
+  const targetId=document.getElementById("combineTarget").value, donorId=document.getElementById("combineDonor").value, abilityKey=document.getElementById("combineAbility").value;
+  const target=gameData.ownedPets.find(p=>String(p.id)===String(targetId));
+  const donor=gameData.ownedPets.find(p=>String(p.id)===String(donorId));
+  if(!target||!donor||String(targetId)===String(donorId)) return;
+  pendingCombineAction={mode,targetId,donorId,abilityKey};
+  const isXp=mode==="xp";
+  document.getElementById("combineConfirmIcon").textContent=isXp?"⚡":"🧬";
+  document.getElementById("combineConfirmTitle").textContent=isXp?"Sacrifice for Ability XP?":"Attempt Ability Inheritance?";
+  document.getElementById("combineConfirmText").innerHTML=isXp
+    ? `<b>${petDisplayName(donor)}</b> will be sacrificed and its Ability XP value will be distributed evenly across <b>${petDisplayName(target)}</b>'s non-maxed abilities.`
+    : `<b>${petDisplayName(donor)}</b> will be sacrificed to attempt transferring <b>${document.getElementById("combineAbility").selectedOptions[0]?.textContent||"this ability"}</b> to <b>${petDisplayName(target)}</b>.`;
+  document.getElementById("confirmCombineAction").textContent=isXp?"⚡ Sacrifice for XP":"🧬 Attempt Inheritance";
+  document.getElementById("combineConfirmModal").classList.remove("hidden");
+}
+async function executePendingPetCombine(){
+  if(!pendingCombineAction) return;
+  const {mode,targetId,donorId,abilityKey}=pendingCombineAction;
+  const confirmBtn=document.getElementById("confirmCombineAction");
+  confirmBtn.disabled=true; confirmBtn.textContent="Working…";
+  try{
+    const response=await activityFetch(`/api/activity/pet/combine/${mode}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({targetId,donorId,abilityKey})});
+    const r=await response.json();
+    if(!response.ok) throw new Error(r.error||"Combination failed.");
+    closeCombineConfirm();
+    if(Array.isArray(r.pets)) gameData.ownedPets=r.pets;
+    const ownedKeys=new Set(gameData.ownedPets.map(p=>p.key)); if(!ownedKeys.has(activePetKey)) activePetKey=gameData.ownedPets.find(p=>p.equipped)?.key||gameData.ownedPets[0]?.key||null;
+    renderPetProgressionBanner(); renderActivePet(); renderPets(); closePetCombine();
+    document.getElementById("ownedPetCount").textContent=gameData.ownedPets.length; document.getElementById("petsCount").textContent=`${gameData.ownedPets.length} owned`;
+    document.getElementById("status").textContent=`${r.success===false?"💔":"✅"} ${r.message||"Combination complete."}`;
+    showCombineResult(r,mode);
+  }catch(error){
+    closeCombineConfirm();
+    showCombineResult({success:false,message:error.message},mode);
+  }finally{
+    confirmBtn.disabled=false;
+    pendingCombineAction=null;
+  }
+}
+async function runPetCombine(mode){ requestPetCombine(mode); }
+
+document.getElementById("closeCombineConfirm")?.addEventListener("click",closeCombineConfirm);
+document.getElementById("cancelCombineAction")?.addEventListener("click",closeCombineConfirm);
+document.getElementById("confirmCombineAction")?.addEventListener("click",executePendingPetCombine);
+document.getElementById("combineConfirmModal")?.addEventListener("click",e=>{if(e.target.id==="combineConfirmModal") closeCombineConfirm();});
+document.getElementById("closeCombineResult")?.addEventListener("click",closeCombineResult);
+document.getElementById("combineResultDone")?.addEventListener("click",closeCombineResult);
+document.getElementById("combineResultModal")?.addEventListener("click",e=>{if(e.target.id==="combineResultModal") closeCombineResult();});
 
 function renderDex() {
   if (!gameData) return;
