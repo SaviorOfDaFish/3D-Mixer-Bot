@@ -8528,6 +8528,115 @@ ${captureChoicesText(choices)}
   if(command.startsWith("!startbounty")){if(!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))return message.reply("Only admins can start a bounty.");if(ensureBountyData(data).active)return message.reply("A bounty is already active.");const raw=content.slice(12).trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");const forced=BOUNTY_TARGETS.find(t=>t.key===raw||t.name.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"")===raw)?.key||null;startBounty(data,forced);saveData(data);await announceBountyStart(message.channel,data);return}
   if(command==="!endbounty"){if(!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))return message.reply("Only admins can end a bounty.");const b=ensureBountyData(data);b.active=false;b.status="idle";b.nextAt=0;b.catcherId=null;b.trophyHolderId=null;saveData(data);return message.reply("📜 Active bounty ended. No rewards awarded.")}
 
+  if(command.startsWith("!bountytest")){
+    if(!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)){
+      return message.reply("Only admins can use Bounty test controls.");
+    }
+
+    const sub=content.slice("!bountytest".length).trim().toLowerCase();
+    const b=ensureBountyData(data);
+    const target=bountyTarget(data);
+    const player=getPlayer(data,message.author.id);
+
+    if(!sub || sub==="help"){
+      return message.reply(
+        `🧪 **BOUNTY TEST CONTROLS**\n\n` +
+        `\`!bountytest status\` — Show the real live Bounty state\n` +
+        `\`!bountytest resetcooldown\` — Clear only your Bounty cooldown\n` +
+        `\`!bountytest clue\` — Add yourself as a participant + advance a clue\n` +
+        `\`!bountytest escape\` — Simulate a close encounter without capture\n` +
+        `\`!bountytest catch\` — Force the current target to be captured by you\n` +
+        `\`!bountytest next\` — After a completed Bounty, post the next one immediately for testing\n\n` +
+        `These commands affect the live Bounty test state, but do **not** change Normal Hunt or Big Game cooldowns.`
+      );
+    }
+
+    if(sub==="status"){
+      const liveTarget=bountyTarget(data);
+      const nextText=b.nextAt ? `<t:${Math.floor(b.nextAt/1000)}:F> (<t:${Math.floor(b.nextAt/1000)}:R>)` : "None";
+      return message.reply(
+        `🧪 **LIVE BOUNTY TEST STATUS**\n\n` +
+        `Active: **${b.active}**\n` +
+        `Status: **${b.status}**\n` +
+        `Target (admin view): **${liveTarget?.name || "None"}**\n` +
+        `NPC: **${bountyNpc(data)?.name || "None"}**\n` +
+        `Participants: **${bountyCount(data)}**\n` +
+        `Attempts: **${Number(b.attempts||0)}**\n` +
+        `Clue level: **${Number(b.clueLevel||0)+1}**\n` +
+        `Catcher: **${b.catcherId ? `<@${b.catcherId}>` : "None"}**\n` +
+        `Trophy holder: **${b.trophyHolderId ? `<@${b.trophyHolderId}>` : "None"}**\n` +
+        `Next bounty: ${nextText}\n\n` +
+        `Your Hunter Points: **${Number(player.points||0)}**\n` +
+        `Your Hunt Tokens: **${Number(player.huntTokens||0)}**`
+      );
+    }
+
+    if(sub==="resetcooldown"){
+      b.lastAttempts[message.author.id]=0;
+      saveData(data);
+      return message.reply("🧪 Your **Bounty Hunt cooldown only** has been cleared.");
+    }
+
+    if(sub==="clue"){
+      if(!b.active || b.status!=="hunting" || !target) return message.reply("No active hunting-stage Bounty exists.");
+      b.participants[message.author.id]=true;
+      b.lastAttempts[message.author.id]=Date.now();
+      b.attempts=Number(b.attempts||0)+1;
+      b.clueLevel=Math.min(target.clues.length-1,Number(b.clueLevel||0)+1);
+      saveData(data);
+      return message.reply(
+        `🧪 **FORCED CLUE RESULT**\n\n🔎 ${bountyClue(data)}\n\n` +
+        `Participants: **${bountyCount(data)}** • Attempts: **${b.attempts}**`
+      );
+    }
+
+    if(sub==="escape"){
+      if(!b.active || b.status!=="hunting" || !target) return message.reply("No active hunting-stage Bounty exists.");
+      b.participants[message.author.id]=true;
+      b.lastAttempts[message.author.id]=Date.now();
+      b.attempts=Number(b.attempts||0)+1;
+      b.clueLevel=Math.min(target.clues.length-1,Number(b.clueLevel||0)+1);
+      saveData(data);
+      return message.reply(
+        `🧪 **FORCED CLOSE ENCOUNTER**\n\nThe hidden target escaped.\n\n` +
+        `🔎 ${bountyClue(data)}\nParticipants: **${bountyCount(data)}** • Attempts: **${b.attempts}**`
+      );
+    }
+
+    if(sub==="catch"){
+      if(!b.active || b.status!=="hunting" || !target) return message.reply("No active hunting-stage Bounty exists.");
+      b.participants[message.author.id]=true;
+      b.lastAttempts[message.author.id]=Date.now();
+      b.attempts=Number(b.attempts||0)+1;
+      b.status="awaiting_turnin";
+      b.catcherId=message.author.id;
+      b.trophyHolderId=message.author.id;
+      player.bountyTrophies||={};
+      player.bountyTrophies[target.key]=Number(player.bountyTrophies[target.key]||0)+1;
+      saveData(data);
+
+      await sendRoleImageAnnouncement(
+        message.channel,
+        `🧪 **FORCED BOUNTY CAPTURE TEST**\n\n<@${message.author.id}> captured **${target.name}**.\n` +
+        `🏆 Trophy recovered: **${target.trophy}**\n\nNow use the real \`!turninbounty\` command or the Activity **Return Trophy** button to test rewards and completion.`,
+        target.image,
+        false
+      );
+      return;
+    }
+
+    if(sub==="next"){
+      if(b.active) return message.reply("End or complete the current Bounty before forcing the next one.");
+      if(b.status!=="cooldown") return message.reply("The Bounty is not currently in its 24-hour post-completion cooldown.");
+      startBounty(data);
+      saveData(data);
+      await announceBountyStart(message.channel,data);
+      return;
+    }
+
+    return message.reply("Unknown Bounty test option. Use `!bountytest help`.");
+  }
+
   if (command === "!hunt") {
     if (message.channel.id === EGGS_PETS_CHANNEL_ID) {
       return message.reply(
