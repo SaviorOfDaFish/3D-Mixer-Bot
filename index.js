@@ -11483,6 +11483,96 @@ function activityRenamePet(user, petId, nickname) {
 }
 
 
+
+function activityMerchantPayload(data, userId) {
+  ensureBigGameMerchantData(data);
+  const merchant=data.merchant;
+  const player=getPlayer(data,userId);
+  if (!merchant?.active || Date.now() >= Number(merchant.departureAt||0)) {
+    return {active:false,tokens:Number(player.huntTokens||0),merchant:null,offers:[]};
+  }
+  const def=MERCHANT_TYPE_DEFINITIONS[merchant.type];
+  return {
+    active:true,
+    tokens:Number(player.huntTokens||0),
+    merchant:{
+      type:merchant.type,
+      name:def?.name||"Traveling Merchant",
+      icon:def?.icon||"🛒",
+      image:def?.image||null,
+      departureAt:Number(merchant.departureAt||0),
+      clearance:Boolean(merchant.clearance),
+      gribble:merchant.type==="gribble"
+    },
+    offers:(merchant.inventory||[]).map(offer=>{
+      const item=MERCHANT_ITEMS[offer.key];
+      return {
+        key:offer.key,
+        name:item?.name||offer.key,
+        icon:item?.icon||"🎒",
+        description:item?.description||"",
+        effect:item?.effectDescription||"",
+        image:item?.image||null,
+        price:offer.barter?null:Number(offer.price||0),
+        barter:offer.barter?merchantBarterText(offer.barter):null,
+        stock:offer.stock===null?null:Number(offer.stock||0),
+        soldOut:offer.stock!==null && Number(offer.stock||0)<=0
+      };
+    })
+  };
+}
+
+async function activityMerchantPurchase(user, itemKey) {
+  const data=loadData();
+  ensureBigGameMerchantData(data);
+  const player=getPlayer(data,user.id);
+  if (isSeasonLocked(data)) return {ok:false,error:"The season is currently locked."};
+  if (!data.merchant?.active || Date.now() >= Number(data.merchant.departureAt||0)) return {ok:false,error:"No merchant is currently accepting purchases."};
+  if (merchantPurchaseLocks.has(user.id)) return {ok:false,error:"Your previous merchant transaction is still processing."};
+
+  const offer=(data.merchant.inventory||[]).find(x=>x.key===String(itemKey||""));
+  if (!offer) return {ok:false,error:"That item is no longer in the merchant's current inventory."};
+  if (offer.stock!==null && Number(offer.stock||0)<=0) return {ok:false,error:"SOLD OUT — another hunter got there first."};
+
+  merchantPurchaseLocks.add(user.id);
+  try {
+    if (offer.barter) {
+      const missing=Object.entries(offer.barter).filter(([key,amount])=>collectionCount(player,key)<amount);
+      if (missing.length) return {ok:false,error:`Required barter: ${merchantBarterText(offer.barter)}.`};
+      for (const [key,amount] of Object.entries(offer.barter)) removeCollectionItem(player,key,amount);
+    } else {
+      const price=Number(offer.price||0);
+      if (Number(player.huntTokens||0)<price) return {ok:false,error:`You need ${price} Hunt Tokens, but only have ${player.huntTokens}.`};
+      player.huntTokens-=price;
+      player.tokensSpent=Number(player.tokensSpent||0)+price;
+    }
+    if (offer.stock!==null) offer.stock--;
+    offer.sold=Number(offer.sold||0)+1;
+    grantPurchasedItem(player,offer.key);
+    player.merchantPurchases=Array.isArray(player.merchantPurchases)?player.merchantPurchases:[];
+    player.merchantPurchases.push({key:offer.key,price:offer.price,barter:offer.barter,merchant:data.merchant.type,at:Date.now()});
+    const item=MERCHANT_ITEMS[offer.key];
+    saveData(data);
+
+    const channel=await getTextChannel(HUNT_CHANNEL_ID).catch(()=>null);
+    if(channel?.isTextBased()){
+      await channel.send({
+        content:`${item?.icon||"🎒"} **ACTIVITY PURCHASE**\n<@${user.id}> purchased **${item?.name||offer.key}** from **${MERCHANT_TYPE_DEFINITIONS[data.merchant.type]?.name||"the merchant"}**!`,
+        allowedMentions:{users:[user.id]}
+      }).catch(()=>{});
+    }
+
+    return {
+      ok:true,
+      purchased:{key:offer.key,name:item?.name||offer.key,icon:item?.icon||"🎒"},
+      merchant:activityMerchantPayload(data,user.id),
+      inventory:activityFullInventoryPayload(player)
+    };
+  } finally {
+    merchantPurchaseLocks.delete(user.id);
+  }
+}
+
 // ==================== H.1 DISCORD ACTIVITY AUTH + LIVE GAME BRIDGE ====================
 const activityTokenCache = new Map();
 
@@ -11956,6 +12046,17 @@ const activityServer = http.createServer(async (req, res) => {
           activityWritesEnabled:true,
           botReady:Boolean(client.user)
         });
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/merchant") {
+        const data=loadData();
+        return activityJson(res,{ok:true,...activityMerchantPayload(data,user.id)});
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/merchant/buy") {
+        const body=await readRequestJson(req);
+        const result=await activityMerchantPurchase(user,body.itemKey);
+        return activityJson(res,result,result.ok?200:400);
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/bait") {
