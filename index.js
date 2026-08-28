@@ -539,6 +539,13 @@ const H4_BIG_HUNT_ALERT_ROLE_ID = "1543005759238045786";
 const H4_BOUNTY_ALERT_ROLE_ID = "1543005828465033317";
 const H4_WORLD_EVENT_ALERT_ROLE_ID = "1543005860714905742";
 
+// Personal ready-alert roles. These roles act as opt-in switches.
+// The bot mentions only the individual hunter when their timer finishes so
+// one player's cooldown never pings every member of the role.
+const H4_EGG_READY_ROLE_ID = "1543010894844403753";
+const H4_HUNT_READY_ROLE_ID = "1543011185404674128";
+const H4_FETCH_ALERT_ROLE_ID = "1543011414254288967";
+
 // Legacy callers still use these names. H.4 keeps them live and dynamically routed.
 const MONSTER_NOTIFY_ROLE = H4_HUNT_ALERT_ROLE_ID;
 let MONSTER_CHANNEL_ID = H4_TEST_CHANNEL_ID;
@@ -5058,6 +5065,7 @@ function giveQuestBonusBait(player) {
 async function checkReadyEggNotifications() {
   const data = loadData();
   const now = Date.now();
+  const petChannel = await getEggsPetsChannel();
   let changed = false;
 
   for (const [userId] of Object.entries(data.players || {})) {
@@ -5069,23 +5077,17 @@ async function checkReadyEggNotifications() {
 
       const rarity = incubation.rarity || "Common";
 
-      if (!prefs.eggReady) {
-        incubation.notified = true;
-        changed = true;
-        continue;
+      if (prefs.eggReady && petChannel?.isTextBased()) {
+        await petChannel.send({
+          content:
+            `<@${userId}> 🥚✨ **Your ${rarity} Egg is ready to hatch!**\n` +
+            `Open **Monster Hunt → Eggs** and press **Hatch** to meet your new companion.`,
+          allowedMentions:{ users:[userId], roles:[] }
+        }).catch(error => console.error("Egg-ready channel notification failed:", error));
       }
 
-      const delivered = await h4SendPlayerDm(
-        userId,
-        `🥚✨ **YOUR EGG IS READY TO HATCH!**\n\n` +
-        `Your **${rarity} Egg** has finished incubating!\n\n` +
-        `🐾 Open **Monster Hunt → Eggs** and press **Hatch** to discover your new companion.`
-      );
-
-      if (delivered) {
-        incubation.notified = true;
-        changed = true;
-      }
+      incubation.notified = true;
+      changed = true;
     }
   }
 
@@ -5250,34 +5252,37 @@ async function processFetchReturnsAndReminders() {
       changed = true;
     }
 
-    // H.4: Normal Hunt-ready alerts are personal opt-in DMs.
-    // Fetch keeps its legacy reminder behavior for now.
+    // H.4.1: Hunt and Fetch cooldown-ready alerts are opt-in personal
+    // channel mentions. Alert roles are used as the preference switch only;
+    // the role itself is NOT pinged, avoiding server-wide spam each time one
+    // player's cooldown finishes.
     for (const type of ["hunt", "fetch"]) {
       const dueKey = `${type}DueAt`, sentKey = `${type}Sent`;
       const due = player.reminderState?.[dueKey] && !player.reminderState[sentKey] && Date.now() >= player.reminderState[dueKey];
       if (!due) continue;
 
+      const prefs = ensureH4NotificationPrefs(player);
+
       if (type === "hunt") {
-        const prefs = ensureH4NotificationPrefs(player);
-        if (prefs.huntReady) {
-          const delivered = await h4SendPlayerDm(
-            userId,
-            `🏹 **YOUR HUNT IS READY!**\n\nThe wilds are ready again. Open **Monster Hunt → Hunt** to begin your next hunt.`
-          );
-          if (!delivered) continue;
+        if (prefs.huntReady && huntChannel?.isTextBased()) {
+          await huntChannel.send({
+            content:`<@${userId}> 🏹 **Your Hunt is ready!** Open **Monster Hunt → Hunt** or use \`!hunt\`.`,
+            allowedMentions:{ users:[userId], roles:[] }
+          }).catch(error => console.error("Hunt-ready channel notification failed:", error));
         }
         player.reminderState.huntSent = true;
         changed = true;
         continue;
       }
 
-      if (player.cooldownReminders?.fetch) {
-        if (petChannel?.isTextBased()) {
-          await petChannel.send(`<@${userId}> 🐾 Your pet is ready to use **\`!fetch\`** again!`).catch(() => null);
-        }
-        player.reminderState.fetchSent = true;
-        changed = true;
+      if (prefs.fetchReady && petChannel?.isTextBased()) {
+        await petChannel.send({
+          content:`<@${userId}> 🐾 **Your companion is ready to Fetch again!** Use \`!fetch\`.`,
+          allowedMentions:{ users:[userId], roles:[] }
+        }).catch(error => console.error("Fetch-ready channel notification failed:", error));
       }
+      player.reminderState.fetchSent = true;
+      changed = true;
     }
   }
   if (changed) saveData(data);
@@ -5337,8 +5342,9 @@ async function getAnnouncementChannel() {
 }
 
 const H4_NOTIFICATION_DEFAULTS = Object.freeze({
-  huntReady: true,
-  eggReady: true,
+  huntReady: false,
+  eggReady: false,
+  fetchReady: false,
   huntAlerts: false,
   merchantAlerts: false,
   bigHuntAlerts: false,
@@ -5347,6 +5353,9 @@ const H4_NOTIFICATION_DEFAULTS = Object.freeze({
 });
 
 const H4_ROLE_PREFS = Object.freeze({
+  huntReady: H4_HUNT_READY_ROLE_ID,
+  eggReady: H4_EGG_READY_ROLE_ID,
+  fetchReady: H4_FETCH_ALERT_ROLE_ID,
   huntAlerts: H4_HUNT_ALERT_ROLE_ID,
   merchantAlerts: H4_MERCHANT_ALERT_ROLE_ID,
   bigHuntAlerts: H4_BIG_HUNT_ALERT_ROLE_ID,
@@ -6767,7 +6776,7 @@ async function sendOverhaulAnnouncementOnce() {
 
 client.once("clientReady", () => {
   console.log(`Logged in as ${client.user.tag}`);
-  sendOverhaulAnnouncementOnce().catch(error => console.error("Overhaul announcement failed:", error));
+  // H.4.1: Legacy Season 2 overhaul announcement intentionally disabled for the fresh season.
 
   // Checks every minute for the one-time Season 2 launch.
   cron.schedule("* * * * *", async () => {
@@ -6930,40 +6939,23 @@ client.once("clientReady", () => {
   );
 
 
-  // Ultra Rare state monitor.
-  // This runs independently of node-cron so summoned arrivals are announced
-  // promptly and reliably on Railway. Saved state still survives redeploys.
-  let ultraMonitorBusy = false;
-
-  const runUltraMonitor = async () => {
-    if (ultraMonitorBusy) return;
-    ultraMonitorBusy = true;
-
-    try {
-      const channel = await getMonsterHuntChannel();
-      if (!channel) {
-        console.error(`Ultra Rare monitor could not access channel ${MONSTER_CHANNEL_ID}.`);
-        return;
-      }
-
-      await processUltraState(channel);
-      await processWeeklyUltraSchedule(channel);
-    } catch (error) {
-      console.error("Ultra Rare monitor error:", error);
-    } finally {
-      ultraMonitorBusy = false;
+  // H.4.1: LEGACY ULTRA HUNTS ARE DISABLED FOR THE NEW SEASON.
+  // Clear any saved scheduled/active Ultra state left over from the previous
+  // season so a Railway redeploy cannot resurrect an old event.
+  {
+    const ultraCleanupData = loadData();
+    let ultraChanged = false;
+    if (ultraCleanupData.ultraRareState) {
+      ultraCleanupData.ultraRareState = null;
+      ultraChanged = true;
     }
-  };
-
-  // Recover a dedicated timer for a saved scheduled summon after a redeploy.
-  const startupData = loadData();
-  if (getUltraStateStatus(startupData.ultraRareState) === "scheduled") {
-    scheduleUltraArrivalCheck(startupData.ultraRareState.startAt);
+    if (ultraCleanupData.ultraWeeklySchedule) {
+      ultraCleanupData.ultraWeeklySchedule = null;
+      ultraChanged = true;
+    }
+    if (ultraChanged) saveData(ultraCleanupData);
   }
 
-  // Check immediately after login, then every 10 seconds.
-  runUltraMonitor();
-  setInterval(runUltraMonitor, 10 * 1000);
 });
 
 // ==================== H.2A.1 FRESH-SEASON RESET ====================
@@ -8998,6 +8990,16 @@ ${captureChoicesText(choices)}
     return message.reply("Unknown Bounty test option. Use `!bountytest help`.");
   }
 
+  if (
+    command === "!ultrahunt" ||
+    command === "!ultrastatus" ||
+    command === "!ultrahelp" ||
+    command.startsWith("!startultra") ||
+    command.startsWith("!summon")
+  ) {
+    return message.reply("🌌 **Legacy Ultra Hunts are disabled for the new Monster Hunt season.**");
+  }
+
   if (command.startsWith("!testalerts")) {
     if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("Only admins can test Monster Hunt alerts.");
     const requested = content.slice("!testalerts".length).trim().toLowerCase() || "all";
@@ -9005,6 +9007,9 @@ ${captureChoicesText(choices)}
     if (!testChannel?.isTextBased()) return message.reply("The configured Monster Hunt test channel could not be loaded.");
     const samples = {
       hunt: [H4_HUNT_ALERT_ROLE_ID, "🏹 **HUNT ALERT TEST**\n\nThe wilds are active. This is how Hunt Alert role pings will look."],
+      huntready: [H4_HUNT_READY_ROLE_ID, "🏹 **HUNT READY ROLE TEST**\n\nThis role is the opt-in switch for personal Hunt-ready notifications."],
+      eggready: [H4_EGG_READY_ROLE_ID, "🥚 **EGG READY ROLE TEST**\n\nThis role is the opt-in switch for personal egg-ready notifications."],
+      fetch: [H4_FETCH_ALERT_ROLE_ID, "🐾 **FETCH ALERT ROLE TEST**\n\nThis role is the opt-in switch for personal Fetch-ready notifications."],
       merchant: [H4_MERCHANT_ALERT_ROLE_ID, "🛒 **MERCHANT ALERT TEST**\n\nA traveling merchant has arrived at camp."],
       big: [H4_BIG_HUNT_ALERT_ROLE_ID, "👑 **BIG HUNT ALERT TEST**\n\nA Big Game Hunt is about to begin."],
       bounty: [H4_BOUNTY_ALERT_ROLE_ID, "🎯 **BOUNTY ALERT TEST**\n\nA new hidden-target bounty has been posted."],
