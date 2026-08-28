@@ -2723,10 +2723,75 @@ body { background:#050a14; }
 .merchant-npc-image{width:72px;height:72px;object-fit:cover;border-radius:14px;display:block}
 .merchant-npc-image-fallback{font-size:38px;align-items:center;justify-content:center}
 .egg-live-image{width:100%;height:100%;max-width:132px;max-height:112px;object-fit:contain;filter:drop-shadow(0 8px 14px rgba(0,0,0,.35))}
-.incubator-egg-image{width:54px;height:54px;object-fit:contain;display:block}
+.incubator-egg-image{width:168px;height:184px;max-width:78%;max-height:82%;object-fit:contain;display:block;filter:drop-shadow(0 14px 22px rgba(0,0,0,.38))}
 .incubator-egg-image-fallback{font-size:32px;align-items:center;justify-content:center}
 
 /* H.2E comprehensive artwork resolver */
 .incubator-row-image{width:44px;height:44px;object-fit:contain;display:block}
 .incubator-row-image-fallback{font-size:1.5rem;align-items:center;justify-content:center}
 .h2a-incubator-row-art{width:50px;min-width:50px;display:flex;align-items:center;justify-content:center}
+
+
+/* H.2E.1 — incubation scale + merchant cinematic hero */
+.merchant-live-header{
+  position:relative;
+  overflow:hidden;
+  min-height:210px;
+  display:flex;
+  align-items:flex-end;
+  padding:0;
+  isolation:isolate;
+}
+.merchant-live-header.has-merchant-art::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:-2;
+  background-image:var(--merchant-hero-image);
+  background-size:cover;
+  background-position:center 32%;
+  transform:scale(1.015);
+}
+.merchant-live-header.has-merchant-art::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:-1;
+  background:
+    linear-gradient(90deg,rgba(4,8,20,.96) 0%,rgba(4,8,20,.84) 38%,rgba(4,8,20,.38) 68%,rgba(4,8,20,.20) 100%),
+    linear-gradient(0deg,rgba(4,8,20,.94) 0%,rgba(4,8,20,.10) 70%);
+}
+.merchant-live-content{
+  width:100%;
+  padding:24px 26px 22px;
+  text-shadow:0 2px 12px rgba(0,0,0,.8);
+}
+.merchant-live-header.has-merchant-art .merchant-live-content{max-width:66%;}
+.merchant-live-header .eyebrow{color:#a5b4fc;}
+.merchant-live-header h3{font-size:1.65rem;margin:1px 0 0;}
+.merchant-live-header p{max-width:620px;}
+@media (max-width:700px){
+  .merchant-live-header{min-height:190px;}
+  .merchant-live-header.has-merchant-art::before{background-position:center 25%;}
+  .merchant-live-header.has-merchant-art::after{
+    background:linear-gradient(0deg,rgba(4,8,20,.97) 0%,rgba(4,8,20,.78) 55%,rgba(4,8,20,.26) 100%);
+  }
+  .merchant-live-header.has-merchant-art .merchant-live-content{max-width:100%;padding-top:78px;}
+  .merchant-live-content{padding:18px;}
+  .incubator-egg-image{width:146px;height:164px;}
+}
+
+/* H.2E.2 hatch reveal */
+.hatch-reveal-sheet{position:relative;width:min(94vw,620px);max-height:92dvh;overflow:auto;background:linear-gradient(180deg,#121a31,#09111f);border:1px solid rgba(129,140,248,.38);border-radius:26px 26px 0 0;padding:24px;text-align:center;box-shadow:0 -24px 80px rgba(0,0,0,.58)}
+.hatch-reveal-close{position:absolute;right:14px;top:14px;z-index:2}
+.hatch-reveal-art{height:min(42vh,330px);display:grid;place-items:center;margin:2px 0 12px;background:radial-gradient(circle,rgba(124,58,237,.22),rgba(14,165,233,.08) 42%,transparent 70%);border-radius:22px}
+.hatch-reveal-art img{width:min(82%,330px);height:min(82%,330px);object-fit:contain;filter:drop-shadow(0 18px 28px rgba(0,0,0,.4))}
+.hatch-reveal-art .fallback-icon{font-size:7rem}
+.hatch-reveal-sheet h2{font-size:2rem;margin:4px 0 6px}
+.hatch-reveal-meta{color:#a5b4fc;font-weight:800;margin-bottom:14px}
+.hatch-reveal-flavor{font-style:italic;color:#cbd5e1;line-height:1.5;margin:0 auto 18px;max-width:500px}
+.hatch-ability-card{text-align:left;background:rgba(99,102,241,.12);border:1px solid rgba(129,140,248,.25);border-radius:16px;padding:14px 16px;margin:0 auto 14px;max-width:520px}
+.hatch-ability-card span{display:block;color:#a5b4fc;font-size:.75rem;font-weight:900;letter-spacing:.08em;margin-bottom:5px}.hatch-ability-card strong{font-size:1.08rem}.hatch-ability-card p{color:#cbd5e1;margin:5px 0 0}
+.hatch-reveal-rewards{font-weight:800;color:#fde68a;margin:10px 0 18px}
+.hatch-reveal-actions{display:flex;gap:10px}.hatch-reveal-actions button{flex:1;min-height:48px}
+@media(max-width:520px){.hatch-reveal-actions{flex-direction:column-reverse}.hatch-reveal-art{height:250px}}

@@ -616,11 +616,20 @@ async function refreshH2BMerchant() {
       return;
     }
     const m=payload.merchant;
+    const merchantBg=merchantArtPath(m.image);
+    const merchantHeroStyle=merchantBg
+      ? ` style="--merchant-hero-image:url('${merchantBg}')"`
+      : "";
+    const merchantFallback=!merchantBg
+      ? `<span class="merchant-avatar">${assetImage(null,m.icon||"🛒","merchant-npc-image")}</span>`
+      : "";
     host.innerHTML=`
-      <section class="panel merchant-live-header">
-        <div class="merchant-live-title"><span class="merchant-avatar">${assetImage(merchantArtPath(m.image),m.icon||"🛒","merchant-npc-image")}</span><div><p class="eyebrow">NOW VISITING</p><h3>${m.name}</h3></div></div>
-        <p>${m.clearance?"🔥 Clearance prices are active!":"The merchant is currently accepting Hunt Tokens and configured barter trades."}</p>
-        <small>Leaves in ${formatCountdown(Math.max(0,Number(m.departureAt)-Date.now()))}</small>
+      <section class="panel merchant-live-header ${merchantBg?"has-merchant-art":""}"${merchantHeroStyle}>
+        <div class="merchant-live-content">
+          <div class="merchant-live-title">${merchantFallback}<div><p class="eyebrow">NOW VISITING</p><h3>${m.name}</h3></div></div>
+          <p>${m.clearance?"🔥 Clearance prices are active!":"The merchant is currently accepting Hunt Tokens and configured barter trades."}</p>
+          <small>Leaves in ${formatCountdown(Math.max(0,Number(m.departureAt)-Date.now()))}</small>
+        </div>
       </section>
       <div class="merchant-live-grid">${(payload.offers||[]).map(o=>`
         <article class="inventory-card merchant-offer ${o.soldOut?"zero":""}">
@@ -863,6 +872,46 @@ function renderRecentHunts() {
 }
 
 
+async function showHatchReveal(payload){
+  const pet=payload?.pet;
+  if(!pet) return;
+  const modal=document.getElementById("hatchRevealModal");
+  document.getElementById("hatchRevealArt").innerHTML=assetImage(pet.image?`/assets/pets/${pet.image}`:null,pet.icon||"🐾","hatch-pet-image");
+  document.getElementById("hatchRevealName").textContent=pet.name||"New Companion";
+  document.getElementById("hatchRevealMeta").textContent=`${pet.rarity||"Companion"} • ${pet.habitat||"Unknown Habitat"}`;
+  document.getElementById("hatchRevealFlavor").textContent=pet.flavor||pet.description||"A new companion joins your hunt.";
+  document.getElementById("hatchRevealAbility").textContent=pet.ability||"Companion Ability";
+  document.getElementById("hatchRevealAbilityEffect").textContent=pet.abilityEffect||pet.description||"This companion will help you on future hunts.";
+  document.getElementById("hatchRevealRewards").textContent=`⭐ +${Number(payload.pointsAwarded||0)} Hunter Points${payload.newDex?" • 📖 New PetDex discovery!":""}`;
+  modal.classList.remove("hidden");
+  const close=()=>modal.classList.add("hidden");
+  document.getElementById("closeHatchReveal").onclick=close;
+  document.getElementById("hatchRevealLater").onclick=close;
+  document.getElementById("hatchRevealEquip").onclick=async()=>{
+    const button=document.getElementById("hatchRevealEquip");
+    button.disabled=true; button.textContent="Equipping…";
+    const response=await activityFetch("/api/activity/pet/equip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({petId:pet.id})});
+    const result=await response.json();
+    if(!response.ok){button.disabled=false;button.textContent="🐾 Equip New Pet";document.getElementById("status").textContent=`❌ ${result.error||"Could not equip pet."}`;return;}
+    if(gameData?.ownedPets) gameData.ownedPets.forEach(x=>x.equipped=String(x.id)===String(pet.id));
+    document.getElementById("status").textContent=`🐾 ${pet.name} is now your active companion!`;
+    close(); renderHome(); renderPets(); renderDex();
+  };
+}
+
+async function hatchActivityEgg(slot){
+  const response=await activityFetch("/api/activity/egg/hatch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:Number(slot)})});
+  const payload=await response.json();
+  if(!response.ok){document.getElementById("status").textContent=`❌ ${payload.error||"Could not hatch egg."}`;return null;}
+  document.getElementById("status").textContent=`🐣 ${payload.pet.name} hatched! +${payload.pointsAwarded} Hunter Points`;
+  const syncRes=await activityFetch("/api/activity/sync");
+  const sync=await syncRes.json();
+  if(syncRes.ok&&sync.ok){hunter=sync.hunter;gameData=sync.phaseD;phaseG9Social={...(phaseG9Social||{}),eggs:Array.isArray(sync.eggs)?sync.eggs:[],incubatorSlots:Number(sync.incubators?.slots||1),incubations:Array.isArray(sync.incubators?.incubations)?sync.incubators.incubations:[],recentHunts:Array.isArray(sync.recentHunts)?sync.recentHunts:[]};}
+  applyLocalPetNames();renderHome();renderPets();renderDex();renderEggs();
+  await showHatchReveal(payload);
+  return payload;
+}
+
 async function refreshH2AEggData() {
   try {
     const response=await activityFetch("/api/activity/sync");
@@ -946,29 +995,7 @@ function renderEggs() {
     if(first.ready){
       hatchBtn.classList.remove("hidden");
       hatchBtn.textContent=`🐣 Hatch ${first.name}`;
-      hatchBtn.onclick=async()=>{
-        const response=await activityFetch("/api/activity/egg/hatch",{
-          method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({slot:first.slot})
-        });
-        const payload=await response.json();
-        if(!response.ok) return document.getElementById("status").textContent=`❌ ${payload.error||"Could not hatch egg."}`;
-        document.getElementById("status").textContent=`🐣 ${payload.pet.name} hatched! +${payload.pointsAwarded} Hunter Points`;
-        const syncRes=await activityFetch("/api/activity/sync");
-        const sync=await syncRes.json();
-        if(syncRes.ok && sync.ok){
-          hunter=sync.hunter;
-          gameData=sync.phaseD;
-          phaseG9Social={
-            ...(phaseG9Social||{}),
-            eggs:Array.isArray(sync.eggs)?sync.eggs:[],
-            incubatorSlots:Number(sync.incubators?.slots||1),
-            incubations:Array.isArray(sync.incubators?.incubations)?sync.incubators.incubations:[],
-            recentHunts:Array.isArray(sync.recentHunts)?sync.recentHunts:[]
-          };
-        }
-        applyLocalPetNames();renderHome();renderPets();renderDex();renderEggs();
-      };
+      hatchBtn.onclick=async()=>{ hatchBtn.disabled=true; try{ await hatchActivityEgg(first.slot); } finally { hatchBtn.disabled=false; } };
     } else hatchBtn.classList.add("hidden");
   }
 
@@ -987,15 +1014,7 @@ function renderEggs() {
       ${x.ready?`<button class="secondary h2a-hatch-slot" data-slot="${x.slot}">Hatch</button>`:""}
     </div>`).join("")
     :`<div class="empty-state">All incubators are empty.</div>`;
-  list.querySelectorAll("[data-slot]").forEach(btn=>btn.onclick=async()=>{
-    const response=await activityFetch("/api/activity/egg/hatch",{
-      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:Number(btn.dataset.slot)})
-    });
-    const payload=await response.json();
-    if(!response.ok) return document.getElementById("status").textContent=`❌ ${payload.error}`;
-    document.getElementById("status").textContent=`🐣 ${payload.pet.name} hatched!`;
-    location.reload();
-  });
+  list.querySelectorAll("[data-slot]").forEach(btn=>btn.onclick=async()=>{ btn.disabled=true; try{ await hatchActivityEgg(Number(btn.dataset.slot)); } finally { btn.disabled=false; } });
 }
 
 function renderHomeLeaderboard() {

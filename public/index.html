@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-h2c.css?v=1601" />
+  <link rel="stylesheet" href="/styles-phase-h2c.css?v=1603" />
 </head>
 <body>
   <div class="app-shell">
@@ -723,6 +723,27 @@
     </section>
   </div>
 
+  <div class="modal-backdrop hidden" id="hatchRevealModal" role="dialog" aria-modal="true">
+    <section class="hatch-reveal-sheet">
+      <button class="icon-button hatch-reveal-close" id="closeHatchReveal" aria-label="Close">✕</button>
+      <div class="hatch-reveal-art" id="hatchRevealArt"></div>
+      <p class="eyebrow">NEW COMPANION HATCHED!</p>
+      <h2 id="hatchRevealName">Companion</h2>
+      <div class="hatch-reveal-meta" id="hatchRevealMeta"></div>
+      <p class="hatch-reveal-flavor" id="hatchRevealFlavor"></p>
+      <div class="hatch-ability-card">
+        <span>✨ PET ABILITY</span>
+        <strong id="hatchRevealAbility"></strong>
+        <p id="hatchRevealAbilityEffect"></p>
+      </div>
+      <div class="hatch-reveal-rewards" id="hatchRevealRewards"></div>
+      <div class="hatch-reveal-actions">
+        <button class="secondary" id="hatchRevealLater" type="button">Keep Current Pet</button>
+        <button class="primary" id="hatchRevealEquip" type="button">🐾 Equip New Pet</button>
+      </div>
+    </section>
+  </div>
+
   <div class="modal-backdrop hidden" id="renamePetModal" role="dialog" aria-modal="true">
     <section class="rename-sheet">
       <header class="customizer-header">
@@ -746,6 +767,6 @@
   </div>
 
   <script src="/activity-auth.js?v=1220"></script>
-  <script src="/app-phase-h2d7.js?v=1601"></script>
+  <script src="/app-phase-h2d7.js?v=1603"></script>
 </body>
 </html>
