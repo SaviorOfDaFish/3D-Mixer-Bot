@@ -2839,3 +2839,43 @@ body { background:#050a14; }
 #petAbility,#huntOverviewPetAbility{display:block;width:100%}
 .pet-ability-line{align-items:flex-start}
 @media (max-width:620px){.pet-ability-chip{grid-template-columns:auto auto;gap:3px 6px}.pet-ability-chip small{grid-column:2}.pet-ability-chip em{grid-column:1/-1}}
+
+/* ===== H.3.3 HUNT COMPANION PANEL LAYOUT ===== */
+/* Keep the hunter + pet artwork unobstructed, then place companion details below the scene. */
+.overview-world-card {
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+}
+.overview-copy {
+  flex:0 0 auto;
+}
+.overview-character-stage {
+  position:relative;
+  inset:auto;
+  flex:0 0 auto;
+  height:350px;
+  margin-top:8px;
+}
+.overview-pet-meta {
+  position:relative;
+  left:auto;
+  right:auto;
+  bottom:auto;
+  z-index:6;
+  flex:0 0 auto;
+  margin-top:12px;
+  width:100%;
+  box-sizing:border-box;
+  align-items:flex-start;
+}
+#huntOverviewPetAbility .pet-ability-stack,
+#huntOverviewPetAbility.pet-ability-stack {
+  margin-top:6px;
+}
+
+@media (max-width:620px) {
+  .overview-character-stage { height:310px; }
+  .overview-pet-meta { flex-direction:column; align-items:stretch; }
+  .overview-pet-stats { justify-content:flex-start; }
+}
