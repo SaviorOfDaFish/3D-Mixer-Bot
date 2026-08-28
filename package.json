@@ -1,8 +1,8 @@
 {
   "name": "mixer-monster-hunt-h0",
-  "version": "2.2.2-h2a2",
+  "version": "2.3.0-h2e-art",
   "private": true,
-  "description": "Monster Hunt H.2A.2 - live Activity action and Discord/Volume sync fix",
+  "description": "Monster Hunt H.2E - new season core art integration",
   "main": "index.js",
   "scripts": {
     "start": "npm run build:activity && node index.js",

@@ -167,10 +167,10 @@ const MAX_COMPANION_LEVEL = 25;
 const MAX_PET_BOND_LEVEL = 5;
 
 const EGG_TYPES = {
-  Common: { icon: "🥚", incubationMs: 30 * 60 * 1000 },
-  Rare: { icon: "🔵", incubationMs: 1 * 60 * 60 * 1000 },
-  Epic: { icon: "🟣", incubationMs: 2 * 60 * 60 * 1000 },
-  Legendary: { icon: "🟡", incubationMs: 4 * 60 * 60 * 1000 }
+  Common: { icon: "🥚", image: "common_egg.png", incubationMs: 30 * 60 * 1000 },
+  Rare: { icon: "🔵", image: "rare_egg.png", incubationMs: 1 * 60 * 60 * 1000 },
+  Epic: { icon: "🟣", image: "epic_egg.png", incubationMs: 2 * 60 * 60 * 1000 },
+  Legendary: { icon: "🟡", image: "legendary_egg.png", incubationMs: 4 * 60 * 60 * 1000 }
 };
 
 const DISTORTION_HUNT_COOLDOWN = 30 * 60 * 1000;
@@ -297,53 +297,40 @@ const NEW_PET_SPECIES_BONUS = 5;
 const PET_PERSONALITIES = ["Cheerful", "Curious", "Loyal", "Mischievous", "Sleepy", "Brave"];
 
 const pets = [
-  // 🌲 FOREST
-  { key: "briar_pup", name: "Briar Pup", icon: "🌿", habitat: "Forest", rarity: "Common", ability: "capture", baseBonus: 1, description: "Slightly increases normal monster capture chance." },
-  { key: "myceling", name: "Myceling", icon: "🍄", habitat: "Forest", rarity: "Rare", ability: "eggFinder", baseBonus: 2, description: "Increases the chance to discover eggs." },
-  { key: "rootling_guardian", name: "Rootling Guardian", icon: "🌳", habitat: "Forest", rarity: "Epic", ability: "itemFinder", baseBonus: 6, description: "Finds useful hunting supplies after successful hunts." },
-  { key: "verdant_sentinel", name: "Verdant Sentinel", icon: "🦉", habitat: "Forest", rarity: "Legendary", ability: "shiny", baseBonus: 3, description: "Greatly increases shiny monster odds." },
-
-  // 🌊 OCEAN
-  { key: "reef_snapper", name: "Reef Snapper", icon: "🪸", habitat: "Ocean", rarity: "Common", ability: "points", baseBonus: 2, description: "Earns bonus points from successful hunts." },
-  { key: "abyss_prowler", name: "Abyss Prowler", icon: "🌊", habitat: "Ocean", rarity: "Rare", ability: "cooldown", baseBonus: 2, description: "Reduces the normal hunt cooldown." },
-  { key: "inkfiend_hatchling", name: "Inkfiend Hatchling", icon: "🦑", habitat: "Ocean", rarity: "Epic", ability: "itemFinder", baseBonus: 7, description: "Frequently finds useful hunting supplies." },
-  { key: "leviacub", name: "Leviacub", icon: "🐉", habitat: "Ocean", rarity: "Legendary", ability: "points", baseBonus: 6, description: "Earns a large point bonus from successful hunts." },
-
-  // 🏔️ MOUNTAIN
-  { key: "pebble_maw", name: "Pebble Maw", icon: "🪨", habitat: "Mountain", rarity: "Common", ability: "itemFinder", baseBonus: 3, description: "Occasionally finds capture items after successful hunts." },
-  { key: "crystal_burrower", name: "Crystal Burrower", icon: "💎", habitat: "Mountain", rarity: "Rare", ability: "eggFinder", baseBonus: 2, description: "Increases the chance to discover eggs." },
-  { key: "ironhide_cub", name: "Ironhide Cub", icon: "🦍", habitat: "Mountain", rarity: "Epic", ability: "capture", baseBonus: 2, description: "Increases normal monster capture chance." },
-  { key: "titan_spawn", name: "Titan Spawn", icon: "⛰️", habitat: "Mountain", rarity: "Legendary", ability: "points", baseBonus: 7, description: "Earns a large point bonus from successful hunts." },
-
-  // 🌋 VOLCANO
-  { key: "cinderling", name: "Cinderling", icon: "🔥", habitat: "Volcano", rarity: "Common", ability: "points", baseBonus: 2, description: "Earns bonus points from successful hunts." },
-  { key: "ashfang", name: "Ashfang", icon: "🌋", habitat: "Volcano", rarity: "Rare", ability: "itemFinder", baseBonus: 5, description: "Finds useful items after successful hunts." },
-  { key: "ember_drake", name: "Ember Drake", icon: "🐉", habitat: "Volcano", rarity: "Epic", ability: "eggFinder", baseBonus: 3, description: "Greatly increases the chance to discover eggs." },
-  { key: "infernal_wyrmling", name: "Infernal Wyrmling", icon: "🌋", habitat: "Volcano", rarity: "Legendary", ability: "shiny", baseBonus: 3, description: "Greatly increases shiny monster odds." },
-
-  // ❄️ ARCTIC
-  { key: "ice_crawler", name: "Ice Crawler", icon: "❄️", habitat: "Arctic", rarity: "Common", ability: "cooldown", baseBonus: 1, description: "Slightly reduces the normal hunt cooldown." },
-  { key: "frost_wretch", name: "Frost Wretch", icon: "🐺", habitat: "Arctic", rarity: "Rare", ability: "capture", baseBonus: 2, description: "Increases normal monster capture chance." },
-  { key: "glacier_horror", name: "Glacier Horror", icon: "🐻", habitat: "Arctic", rarity: "Epic", ability: "points", baseBonus: 5, description: "Earns additional points from successful hunts." },
-  { key: "white_tyrant_cub", name: "White Tyrant Cub", icon: "👑", habitat: "Arctic", rarity: "Legendary", ability: "capture", baseBonus: 4, description: "Greatly increases normal monster capture chance." },
-
-  // 🌌 VOID
-  { key: "living_eye", name: "Living Eye", icon: "👁️", habitat: "Void", rarity: "Common", ability: "eggFinder", baseBonus: 1, description: "Slightly increases the chance to discover eggs." },
-  { key: "night_skitter", name: "Night Skitter", icon: "🕷️", habitat: "Void", rarity: "Rare", ability: "shiny", baseBonus: 1, description: "Slightly increases shiny monster odds." },
-  { key: "void_watcher", name: "Void Watcher", icon: "🌌", habitat: "Void", rarity: "Epic", ability: "eggFinder", baseBonus: 3, description: "Greatly increases the chance to discover eggs." },
-  { key: "astral_spawn", name: "Astral Spawn", icon: "🌠", habitat: "Void", rarity: "Legendary", ability: "shiny", baseBonus: 4, description: "Massively increases shiny monster odds." },
-
-  // ☁️ SKY
-  { key: "storm_imp", name: "Storm Imp", icon: "⚡", habitat: "Sky", rarity: "Common", ability: "itemFinder", baseBonus: 3, description: "Occasionally finds capture items after successful hunts." },
-  { key: "cloud_ripper", name: "Cloud Ripper", icon: "☁️", habitat: "Sky", rarity: "Rare", ability: "cooldown", baseBonus: 3, description: "Reduces the normal hunt cooldown." },
-  { key: "tempest_hatchling", name: "Tempest Hatchling", icon: "🌩️", habitat: "Sky", rarity: "Epic", ability: "capture", baseBonus: 3, description: "Greatly increases normal monster capture chance." },
-  { key: "storm_emperor_cub", name: "Storm Emperor Cub", icon: "👑", habitat: "Sky", rarity: "Legendary", ability: "cooldown", baseBonus: 5, description: "Greatly reduces the normal hunt cooldown." },
-
-  // 🪦 UNDEAD
-  { key: "bone_gnawer", name: "Bone Gnawer", icon: "🦴", habitat: "Undead", rarity: "Common", ability: "points", baseBonus: 2, description: "Earns bonus points from successful hunts." },
-  { key: "grave_whisper", name: "Grave Whisper", icon: "👻", habitat: "Undead", rarity: "Rare", ability: "eggFinder", baseBonus: 2, description: "Increases the chance to discover eggs." },
-  { key: "crypt_fiend", name: "Crypt Fiend", icon: "⚔️", habitat: "Undead", rarity: "Epic", ability: "itemFinder", baseBonus: 7, description: "Frequently finds valuable hunting supplies." },
-  { key: "hollow_prince", name: "Hollow Prince", icon: "👑", habitat: "Undead", rarity: "Legendary", ability: "points", baseBonus: 8, description: "Earns a massive point bonus from successful hunts." },
+  // ===== NEW SEASON STANDARD COMPANIONS =====
+  { key: "puddlewyrm", name: "Puddlewyrm", icon: "🌙", habitat: "Moonfen", rarity: "Common", ability: "capture", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "puddlewyrm.png" },
+  { key: "mosscap", name: "Mosscap", icon: "🍄", habitat: "Moonfen", rarity: "Rare", ability: "eggFinder", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "mosscap.png" },
+  { key: "fen_gricklet", name: "Fen Gricklet", icon: "🐾", habitat: "Moonfen", rarity: "Epic", ability: "itemFinder", baseBonus: 6, description: "A new-season Monster Hunt companion.", image: "fen_gricklet.png" },
+  { key: "lunarch_whelp", name: "Lunarch Whelp", icon: "🌙", habitat: "Moonfen", rarity: "Legendary", ability: "shiny", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "lunarch_whelp.png" },
+  { key: "shardhopper", name: "Shardhopper", icon: "💎", habitat: "Glasswaste", rarity: "Common", ability: "capture", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "shardhopper.png" },
+  { key: "glassback", name: "Glassback", icon: "🪲", habitat: "Glasswaste", rarity: "Rare", ability: "eggFinder", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "glassback.png" },
+  { key: "dune_gnawer", name: "Dune Gnawer", icon: "🦷", habitat: "Glasswaste", rarity: "Epic", ability: "itemFinder", baseBonus: 6, description: "A new-season Monster Hunt companion.", image: "dune_gnawer.png" },
+  { key: "prismwing", name: "Prismwing", icon: "🌈", habitat: "Glasswaste", rarity: "Legendary", ability: "shiny", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "prismwing.png" },
+  { key: "tumblebud", name: "Tumblebud", icon: "🌱", habitat: "Gloamwood", rarity: "Common", ability: "capture", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "tumblebud.png" },
+  { key: "wispwing", name: "Wispwing", icon: "🦋", habitat: "Gloamwood", rarity: "Rare", ability: "eggFinder", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "wispwing.png" },
+  { key: "knotmaw", name: "Knotmaw", icon: "🪵", habitat: "Gloamwood", rarity: "Epic", ability: "itemFinder", baseBonus: 6, description: "A new-season Monster Hunt companion.", image: "knotmaw.png" },
+  { key: "twilight_cervid", name: "Twilight Cervid", icon: "🌙", habitat: "Gloamwood", rarity: "Legendary", ability: "shiny", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "twilight_cervid.png" },
+  { key: "puffle", name: "Puffle", icon: "☁️", habitat: "Stormreach", rarity: "Common", ability: "points", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "puffle.png" },
+  { key: "zephyr_beak", name: "Zephyr Beak", icon: "🪽", habitat: "Stormreach", rarity: "Rare", ability: "cooldown", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "zephyr_beak.png" },
+  { key: "voltgrin", name: "Voltgrin", icon: "⚡", habitat: "Stormreach", rarity: "Epic", ability: "capture", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "voltgrin.png" },
+  { key: "stormcrown", name: "Stormcrown", icon: "⛈️", habitat: "Stormreach", rarity: "Legendary", ability: "cooldown", baseBonus: 5, description: "A new-season Monster Hunt companion.", image: "stormcrown.png" },
+  { key: "cinderpip", name: "Cinderpip", icon: "🔥", habitat: "Emberdeep", rarity: "Common", ability: "points", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "cinderpip.png" },
+  { key: "glowgill", name: "Glowgill", icon: "✨", habitat: "Emberdeep", rarity: "Rare", ability: "itemFinder", baseBonus: 5, description: "A new-season Monster Hunt companion.", image: "glowgill.png" },
+  { key: "clinker", name: "Clinker", icon: "⚒️", habitat: "Emberdeep", rarity: "Epic", ability: "eggFinder", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "clinker.png" },
+  { key: "pyremane", name: "Pyremane", icon: "🔥", habitat: "Emberdeep", rarity: "Legendary", ability: "shiny", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "pyremane.png" },
+  { key: "snowpod", name: "Snowpod", icon: "❄️", habitat: "Frostgrave", rarity: "Common", ability: "cooldown", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "snowpod.png" },
+  { key: "shiverquill", name: "Shiverquill", icon: "🧊", habitat: "Frostgrave", rarity: "Rare", ability: "capture", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "shiverquill.png" },
+  { key: "coffinrawl", name: "Coffinrawl", icon: "⚰️", habitat: "Frostgrave", rarity: "Epic", ability: "points", baseBonus: 5, description: "A new-season Monster Hunt companion.", image: "coffinrawl.png" },
+  { key: "auroralynx", name: "Auroralynx", icon: "🌌", habitat: "Frostgrave", rarity: "Legendary", ability: "capture", baseBonus: 4, description: "A new-season Monster Hunt companion.", image: "auroralynx.png" },
+  { key: "buttoncap", name: "Buttoncap", icon: "🍄", habitat: "Sporewilds", rarity: "Common", ability: "eggFinder", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "buttoncap.png" },
+  { key: "lumenslug", name: "Lumenslug", icon: "✨", habitat: "Sporewilds", rarity: "Rare", ability: "cooldown", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "lumenslug.png" },
+  { key: "sporemaw", name: "Sporemaw", icon: "🦷", habitat: "Sporewilds", rarity: "Epic", ability: "itemFinder", baseBonus: 7, description: "A new-season Monster Hunt companion.", image: "sporemaw.png" },
+  { key: "bloomwarden", name: "Bloomwarden", icon: "🌺", habitat: "Sporewilds", rarity: "Legendary", ability: "points", baseBonus: 7, description: "A new-season Monster Hunt companion.", image: "bloomwarden.png" },
+  { key: "orblet", name: "Orblet", icon: "⭐", habitat: "Starfall Basin", rarity: "Common", ability: "eggFinder", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "orblet.png" },
+  { key: "shardtail", name: "Shardtail", icon: "🌠", habitat: "Starfall Basin", rarity: "Rare", ability: "shiny", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "shardtail.png" },
+  { key: "gazeling", name: "Gazeling", icon: "👁️", habitat: "Starfall Basin", rarity: "Epic", ability: "eggFinder", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "gazeling.png" },
+  { key: "astrael", name: "Astrael", icon: "🌌", habitat: "Starfall Basin", rarity: "Legendary", ability: "shiny", baseBonus: 4, description: "A new-season Monster Hunt companion.", image: "astrael.png" },
+  { key: "mixlet", name: "Mixlet", icon: "🎧", habitat: "Special", rarity: "Legendary", ability: "shiny", baseBonus: 5, description: "A new-season Monster Hunt companion.", image: "mixlet.png" },
 
   // 🌀 WORLD DISTORTION COMPANIONS
   { key: "ember_imp", name: "Ember Imp", icon: "🔥", habitat: "Infernal Rift", rarity: "Rare", ability: "points", baseBonus: 4, signatureAbility: "kindled_hunt", signatureName: "Kindled Hunt", description: "A naturally tiny infernal familiar whose anger kindles the next capture after a failure.", image: "ember_imp.png" },
@@ -713,61 +700,51 @@ if (!sqliteHasState()) {
 }
 
 const monsters = [
-  // 🌲 FOREST
-  { name: "Bramble Creeper", habitat: "Forest", rarity: "Common", points: 1, chance: 85, image: "bramble_creeper.png", description: "A twisted mass of thorn-covered vines that drags itself silently across the forest floor. Its tangled body blends perfectly into thick undergrowth until jagged wooden jaws suddenly snap shut. Many hunters mistake it for an ordinary bush—only once." },
-  { name: "Hollow Stalker", habitat: "Forest", rarity: "Common", points: 1, chance: 82, image: "hollow_stalker.png", description: "A walking shell of ancient bark with glowing amber eyes burning deep inside its hollow chest. It wanders forgotten forests searching for lost travelers, leaving eerie wooden footprints that vanish by sunrise." },
-  { name: "Rotfang Beast", habitat: "Forest", rarity: "Rare", points: 3, chance: 55, image: "rotfang_beast.png", description: "A savage predator whose body is fused with twisted roots, sharpened bone, and jagged bark. Its terrifying roar causes birds to flee miles before the beast ever appears." },
-  { name: "Ancient Thornlord", habitat: "Forest", rarity: "Epic", points: 5, chance: 32, image: "ancient_thornlord.png", description: "A towering guardian born from cursed forests. Massive branches serve as its arms while razor-sharp thorns constantly grow across its body. Entire villages have vanished after disturbing one of these ancient protectors." },
-  { name: "Verdant Colossus", habitat: "Forest", rarity: "Legendary", points: 10, chance: 12, image: "verdant_colossus.png", description: "A mountain-sized forest titan said to awaken only when nature itself is threatened. Entire trees grow from its shoulders, and rivers change course beneath its thunderous footsteps." },
+  // ===== NEW SEASON STANDARD MONSTERS =====
+  { name: "Mireclaw", habitat: "Moonfen", rarity: "Common", points: 1, chance: 85, image: "mireclaw.png", description: "A common creature of Moonfen." },
+  { name: "Lantern Toad", habitat: "Moonfen", rarity: "Common", points: 1, chance: 85, image: "lantern_toad.png", description: "A common creature of Moonfen." },
+  { name: "Bogskin Mimic", habitat: "Moonfen", rarity: "Rare", points: 3, chance: 55, image: "bogskin_mimic.png", description: "A rare creature of Moonfen." },
+  { name: "Drowned Bellower", habitat: "Moonfen", rarity: "Epic", points: 5, chance: 32, image: "drowned_bellower.png", description: "A epic creature of Moonfen." },
+  { name: "The Moonfen Hydra", habitat: "Moonfen", rarity: "Legendary", points: 10, chance: 12, image: "moonfen_hydra.png", description: "A legendary creature of Moonfen." },
+  { name: "Shardskitter", habitat: "Glasswaste", rarity: "Common", points: 1, chance: 85, image: "shardskitter.png", description: "A common creature of Glasswaste." },
+  { name: "Mirage Lurker", habitat: "Glasswaste", rarity: "Common", points: 1, chance: 85, image: "mirage_lurker.png", description: "A common creature of Glasswaste." },
+  { name: "Reliquary Devourer", habitat: "Glasswaste", rarity: "Rare", points: 3, chance: 55, image: "reliquary_devourer.png", description: "A rare creature of Glasswaste." },
+  { name: "Prismatic Ravager", habitat: "Glasswaste", rarity: "Epic", points: 5, chance: 32, image: "prismatic_ravager.png", description: "A epic creature of Glasswaste." },
+  { name: "The Buried Emperor", habitat: "Glasswaste", rarity: "Legendary", points: 10, chance: 12, image: "the_buried_emperor.png", description: "A legendary creature of Glasswaste." },
+  { name: "Wickling", habitat: "Gloamwood", rarity: "Common", points: 1, chance: 85, image: "wickling.png", description: "A common creature of Gloamwood." },
+  { name: "Crookhorn", habitat: "Gloamwood", rarity: "Common", points: 1, chance: 85, image: "crookhorn.png", description: "A common creature of Gloamwood." },
+  { name: "Hollowdouble", habitat: "Gloamwood", rarity: "Rare", points: 3, chance: 55, image: "hollowdouble.png", description: "A rare creature of Gloamwood." },
+  { name: "Gloamstalker", habitat: "Gloamwood", rarity: "Epic", points: 5, chance: 32, image: "gloamstalker.png", description: "A epic creature of Gloamwood." },
+  { name: "The Crowned Widow", habitat: "Gloamwood", rarity: "Legendary", points: 10, chance: 12, image: "the_crowned_widow.png", description: "A legendary creature of Gloamwood." },
+  { name: "Thundermite", habitat: "Stormreach", rarity: "Common", points: 1, chance: 85, image: "thundermite.png", description: "A common creature of Stormreach." },
+  { name: "Galemaw", habitat: "Stormreach", rarity: "Common", points: 1, chance: 85, image: "galemaw.png", description: "A common creature of Stormreach." },
+  { name: "Cloudshepherd", habitat: "Stormreach", rarity: "Rare", points: 3, chance: 55, image: "cloudshepherd.png", description: "A rare creature of Stormreach." },
+  { name: "Skybreaker", habitat: "Stormreach", rarity: "Epic", points: 5, chance: 32, image: "skybreaker.png", description: "A epic creature of Stormreach." },
+  { name: "The Tempest Sovereign", habitat: "Stormreach", rarity: "Legendary", points: 10, chance: 12, image: "the_tempest_sovereign.png", description: "A legendary creature of Stormreach." },
+  { name: "Coalcrawler", habitat: "Emberdeep", rarity: "Common", points: 1, chance: 85, image: "coalcrawler.png", description: "A common creature of Emberdeep." },
+  { name: "Cinderveil", habitat: "Emberdeep", rarity: "Common", points: 1, chance: 85, image: "cinderveil.png", description: "A common creature of Emberdeep." },
+  { name: "Forgehaunt", habitat: "Emberdeep", rarity: "Rare", points: 3, chance: 55, image: "forgehaunt.png", description: "A rare creature of Emberdeep." },
+  { name: "Magma Gorger", habitat: "Emberdeep", rarity: "Epic", points: 5, chance: 32, image: "magma_gorger.png", description: "A epic creature of Emberdeep." },
+  { name: "The First Flame", habitat: "Emberdeep", rarity: "Legendary", points: 10, chance: 12, image: "the_first_flame.png", description: "A legendary creature of Emberdeep." },
+  { name: "Pale Lantern", habitat: "Frostgrave", rarity: "Common", points: 1, chance: 85, image: "pale_lantern.png", description: "A common creature of Frostgrave." },
+  { name: "Rimegnasher", habitat: "Frostgrave", rarity: "Common", points: 1, chance: 85, image: "rimegnasher.png", description: "A common creature of Frostgrave." },
+  { name: "Tombbound", habitat: "Frostgrave", rarity: "Rare", points: 3, chance: 55, image: "tombbound.png", description: "A rare creature of Frostgrave." },
+  { name: "Winter Revenant", habitat: "Frostgrave", rarity: "Epic", points: 5, chance: 32, image: "winterrevenant.png", description: "A epic creature of Frostgrave." },
+  { name: "The King Beneath the Ice", habitat: "Frostgrave", rarity: "Legendary", points: 10, chance: 12, image: "the_king_beneath_the_ice.png", description: "A legendary creature of Frostgrave." },
+  { name: "Capscrabbler", habitat: "Sporewilds", rarity: "Common", points: 1, chance: 85, image: "capscrabbler.png", description: "A common creature of Sporewilds." },
+  { name: "Bloombeetle", habitat: "Sporewilds", rarity: "Common", points: 1, chance: 85, image: "bloombeetle.png", description: "A common creature of Sporewilds." },
+  { name: "Huskbloom", habitat: "Sporewilds", rarity: "Rare", points: 3, chance: 55, image: "huskbloom.png", description: "A rare creature of Sporewilds." },
+  { name: "Mycelial Reaver", habitat: "Sporewilds", rarity: "Epic", points: 5, chance: 32, image: "mycelial_reaver.png", description: "A epic creature of Sporewilds." },
+  { name: "The One Beneath", habitat: "Sporewilds", rarity: "Legendary", points: 10, chance: 12, image: "the_one_beneath.png", description: "A legendary creature of Sporewilds." },
+  { name: "Starskipper", habitat: "Starfall Basin", rarity: "Common", points: 1, chance: 85, image: "starskipper.png", description: "A common creature of Starfall Basin." },
+  { name: "Cratermaw", habitat: "Starfall Basin", rarity: "Common", points: 1, chance: 85, image: "cratermaw.png", description: "A common creature of Starfall Basin." },
+  { name: "Orbital Watcher", habitat: "Starfall Basin", rarity: "Rare", points: 3, chance: 55, image: "orbital_watcher.png", description: "A rare creature of Starfall Basin." },
+  { name: "Gravity Reaver", habitat: "Starfall Basin", rarity: "Epic", points: 5, chance: 32, image: "gravity_reaver.png", description: "A epic creature of Starfall Basin." },
+  { name: "The Fallen Constellation", habitat: "Starfall Basin", rarity: "Legendary", points: 10, chance: 12, image: "the_fallen_constellation.png", description: "A legendary creature of Starfall Basin." },
+];
 
-  // 🌊 OCEAN
-  { name: "Reef Maw", habitat: "Ocean", rarity: "Common", points: 1, chance: 85, image: "reef_maw.png", description: "A living coral predator whose brightly colored shell disguises rows of razor-sharp teeth. Divers often mistake it for a harmless reef formation until the ocean floor suddenly lunges upward." },
-  { name: "Inkfiend", habitat: "Ocean", rarity: "Common", points: 1, chance: 82, image: "inkfiend.png", description: "A many-eyed abyssal horror that fills the surrounding waters with magical black ink. Entire schools of fish disappear whenever one drifts through the deep." },
-  { name: "Razorclaw Crusher", habitat: "Ocean", rarity: "Rare", points: 3, chance: 55, image: "razorclaw_crusher.png", description: "A hulking crustacean horror with obsidian claws powerful enough to shatter solid stone. Ancient shipwrecks often bear massive claw marks left behind by these relentless monsters." },
-  { name: "Abyss Serpent", habitat: "Ocean", rarity: "Epic", points: 5, chance: 32, image: "abyss_serpent.png", description: "A colossal sea serpent whose glowing scales illuminate the deepest trenches. Legends claim its body stretches for miles beneath the waves." },
-  { name: "Tidemaw Leviathan", habitat: "Ocean", rarity: "Legendary", points: 10, chance: 12, image: "tidemaw_leviathan.png", description: "A legendary ocean behemoth capable of swallowing entire ships whole. Violent tidal waves are often blamed on nothing more than the creature changing direction beneath the sea." },
-
-  // 🏔️ MOUNTAIN
-  { name: "Stone Maw", habitat: "Mountain", rarity: "Common", points: 1, chance: 85, image: "stone_maw.png", description: "A rock-covered ambush predator that remains perfectly motionless until prey wanders within striking distance. By then, escape is rarely possible." },
-  { name: "Crystal Burrower", habitat: "Mountain", rarity: "Common", points: 1, chance: 82, image: "crystal_burrower.png", description: "A heavily armored tunneling monster whose crystalline shell slices effortlessly through solid mountains. The tunnels it leaves behind glitter with razor-sharp gemstones." },
-  { name: "Cliff Reaper", habitat: "Mountain", rarity: "Rare", points: 3, chance: 55, image: "cliff_reaper.png", description: "A terrifying winged hunter that silently dives from towering cliffs. Victims often hear nothing more than rushing wind before it strikes." },
-  { name: "Ironhide Ravager", habitat: "Mountain", rarity: "Epic", points: 5, chance: 32, image: "ironhide_ravager.png", description: "A colossal beast covered in metallic scales harder than forged steel. Even seasoned hunters struggle to leave a scratch upon its armored hide." },
-  { name: "Titan of the Peaks", habitat: "Mountain", rarity: "Legendary", points: 10, chance: 12, image: "titan_of_the_peaks.png", description: "A living mountain awakened by forgotten magic. Every step triggers avalanches, while entire cliffs crumble from the sheer weight of its ancient body." },
-
-  // 🌋 VOLCANO
-  { name: "Cinderling", habitat: "Volcano", rarity: "Common", points: 1, chance: 85, image: "cinderling.png", description: "A lava-born horror with burning claws and molten cracks glowing across its rocky body. It scurries through volcanic tunnels and swarms anything that disturbs its nest." },
-  { name: "Magma Maw", habitat: "Volcano", rarity: "Common", points: 1, chance: 82, image: "magma_maw.png", description: "A molten predator that swims beneath rivers of lava as though they were water. Only its blazing eyes break the fiery surface before it attacks." },
-  { name: "Ashfang Brute", habitat: "Volcano", rarity: "Rare", points: 3, chance: 55, image: "ashfang_brute.png", description: "A heavily muscled monster with obsidian tusks and burning horns. Each furious charge scatters molten rock across the battlefield." },
-  { name: "Infernal Drake", habitat: "Volcano", rarity: "Epic", points: 5, chance: 32, image: "infernal_drake.png", description: "A volcanic dragon constantly dripping molten lava from its wings. Every beat of those wings fills the sky with burning ash." },
-  { name: "World Furnace", habitat: "Volcano", rarity: "Legendary", points: 10, chance: 12, image: "world_furnace.png", description: "A colossal magma titan believed to sleep beneath the world's largest volcanoes. Entire eruptions are thought to be nothing more than the beast turning in its endless slumber." },
-
-  // ❄️ ARCTIC
-  { name: "Ice Crawler", habitat: "Arctic", rarity: "Common", points: 1, chance: 85, image: "ice_crawler.png", description: "A six-legged predator perfectly adapted to frozen wastelands. Its icy shell reflects the snow, making it nearly invisible until it lunges." },
-  { name: "Frost Wretch", habitat: "Arctic", rarity: "Common", points: 1, chance: 82, image: "frost_wretch.png", description: "A frozen horror whose brittle body constantly sheds razor-sharp shards of enchanted ice. The air around it is painfully cold." },
-  { name: "Glacier Horror", habitat: "Arctic", rarity: "Rare", points: 3, chance: 55, image: "glacier_horror.png", description: "A massive beast imprisoned within ancient blue ice. Each movement causes enormous frozen spikes to erupt from the ground." },
-  { name: "Blizzard Reaper", habitat: "Arctic", rarity: "Epic", points: 5, chance: 32, image: "blizzard_reaper.png", description: "A towering monster hidden inside endless blizzards. Hunters often realize too late that the storm itself is alive." },
-  { name: "The White Tyrant", habitat: "Arctic", rarity: "Legendary", points: 10, chance: 12, image: "the_white_tyrant.png", description: "An ancient ruler of eternal winter whose frozen breath buries entire kingdoms beneath endless snow. Few have seen it and lived to tell the tale." },
-
-  // 🌌 VOID
-  { name: "Void Watcher", habitat: "Void", rarity: "Common", points: 1, chance: 85, image: "void_watcher.png", description: "A floating nightmare covered in blinking eyes that never seem to look in the same direction. Staring back for too long fills the mind with unsettling whispers." },
-  { name: "Night Skitter", habitat: "Void", rarity: "Common", points: 1, chance: 82, image: "night_skitter.png", description: "A spider-like horror capable of slipping between shadows. Victims often discover its presence only after glowing eyes appear behind them." },
-  { name: "Null Reaver", habitat: "Void", rarity: "Rare", points: 3, chance: 55, image: "null_reaver.png", description: "A terrifying predator that consumes light itself. Torches extinguish as it approaches, leaving only endless darkness behind." },
-  { name: "Cosmic Wraith", habitat: "Void", rarity: "Epic", points: 5, chance: 32, image: "cosmic_wraith.png", description: "A ghostly entity forged from shattered stars and endless darkness. Its haunting cries echo across the empty void between worlds." },
-  { name: "Star Devourer", habitat: "Void", rarity: "Legendary", points: 10, chance: 12, image: "star_devourer.png", description: "A celestial horror of unimaginable size said to consume dying stars. Entire civilizations blame vanished constellations upon its endless hunger." },
-
-  // ☁️ SKY
-  { name: "Storm Imp", habitat: "Sky", rarity: "Common", points: 1, chance: 85, image: "storm_imp.png", description: "A crackling elemental born inside thunderclouds. Though smaller than most sky monsters, its wild bolts can scorch entire hunting parties." },
-  { name: "Cloud Ripper", habitat: "Sky", rarity: "Common", points: 1, chance: 82, image: "cloud_ripper.png", description: "A winged predator that slices through storm clouds with bladed wings. The skies grow strangely silent before one appears." },
-  { name: "Thunder Reaver", habitat: "Sky", rarity: "Rare", points: 3, chance: 55, image: "thunder_reaver.png", description: "A fearsome aerial hunter constantly surrounded by arcs of blue lightning. Every screech rolls across the heavens like thunder." },
-  { name: "Tempest Tyrant", habitat: "Sky", rarity: "Epic", points: 5, chance: 32, image: "tempest_tyrant.png", description: "A massive dragon that commands hurricanes with every beat of its wings. Entire fleets have disappeared beneath storms it created." },
-  { name: "Storm Sovereign", habitat: "Sky", rarity: "Legendary", points: 10, chance: 12, image: "storm_sovereign.png", description: "The ancient ruler of every storm ever born. It rides towering thunderheads while lightning dances endlessly across its colossal wings." },
-
-  // 🪦 UNDEAD
-  { name: "Bone Gnawer", habitat: "Undead", rarity: "Common", points: 1, chance: 85, image: "bone_gnawer.png", description: "A relentless skeletal scavenger that searches forgotten battlefields for fresh bones to add to its ever-growing body." },
-  { name: "Grave Whisper", habitat: "Undead", rarity: "Common", points: 1, chance: 82, image: "grave_whisper.png", description: "A wandering spirit that lures unsuspecting travelers toward abandoned graveyards with distant whispers carried on the wind." },
-  { name: "Crypt Fiend", habitat: "Undead", rarity: "Rare", points: 3, chance: 55, image: "crypt_fiend.png", description: "A monstrous undead lurking beneath ancient tombs. It waits in absolute silence until intruders disturb its eternal resting place." },
-  { name: "Dread Sentinel", habitat: "Undead", rarity: "Epic", points: 5, chance: 32, image: "dread_sentinel.png", description: "A cursed knight bound forever to defend a kingdom that no longer exists. Its rusted armor echoes through forgotten ruins long after midnight." },
-  { name: "The Hollow King", habitat: "Undead", rarity: "Legendary", points: 10, chance: 12, image: "the_hollow_king.png", description: "An immortal monarch whose shattered throne commands an endless army of the dead. Though his kingdom has crumbled into dust, his reign is said to continue until the last living soul falls." }
+const SPECIAL_MONSTERS = [
+  { name: "The Mixer", habitat: "Special", rarity: "Mixed", points: 25, chance: 10, image: "the_mixer.png", description: "The signature cosmic mascot of Monster Hunt." }
 ];
 
 const ultraRareMonsters = [
@@ -3136,7 +3113,7 @@ function dailySeed(date = new Date()) {
 const DAILY_EVENT_POOL = [
   { id: "shinyStorm", name: "✨ Shiny Storm Day", description: "Shiny odds are tripled today!", shinyBoost: true },
   { id: "legendaryRift", name: "🐉 Legendary Rift Day", description: "Legendary monsters are easier to find today!", legendaryBoost: true },
-  { id: "forestFrenzy", name: "🌲 Forest Frenzy Day", description: "Forest monsters are much more common today!", habitatBoost: "Forest" },
+  { id: "moonfenFrenzy", name: "🌙 Moonfen Frenzy Day", description: "Moonfen monsters are much more common today!", habitatBoost: "Moonfen" },
   { id: "baitBonanza", name: "🪤 Bait Bonanza", description: "All bait rewards are doubled today!", doubleBait: true },
   { id: "treasureDay", name: "💎 Treasure Hunter Day", description: "Treasure drops are three times more likely today!", treasureBoost: true },
   { id: "hunterLuck", name: "🍀 Lucky Hunter Day", description: "All normal capture chances are increased by 10% today!", captureBoost: true },
