@@ -11206,7 +11206,8 @@ function activityFullInventoryPayload(player) {
       icon:def.icon || "🎒",
       qty,
       type:def.kind === "collectible" ? "Collectible" : "Merchant",
-      effect:def.effectDescription || def.description || "Merchant item."
+      effect:def.effectDescription || def.description || "Merchant item.",
+      usable:def.kind !== "egg" && !(def.kind === "collectible" && !def.usable)
     });
   }
 
@@ -11522,6 +11523,71 @@ function activityMerchantPayload(data, userId) {
   };
 }
 
+
+function activityUseMerchantItem(data, player, key) {
+  const item=MERCHANT_ITEMS[key];
+  if(!item || collectionCount(player,key)<=0) return {ok:false,error:"You do not own that merchant item."};
+  if(item.kind==="egg") return {ok:false,error:`${item.name} remains sealed and cannot be used.`};
+  if(item.kind==="collectible" && !item.usable) return {ok:false,error:`${item.name} is a permanent collectible and is not consumed.`};
+
+  removeCollectionItem(player,key,1);
+  let result="The item was used.";
+
+  if(key==="hunters_compass"){player.merchantEffects.huntersCompass=true;result="The compass locks onto a powerful trail. Your next ordinary encounter will be Rare or better.";}
+  else if(key==="golden_lure"){player.merchantEffects.goldenLure=true;result="Golden light spills across the trail. Your next ordinary encounter will be Legendary.";}
+  else if(key==="fresh_tracks"){player.lastHunt=0;player.reminderState.huntDueAt=0;result="Fresh tracks cross your path. Your hunt cooldown has been cleared.";}
+  else if(key==="strange_map"){player.lastHunt=0;player.merchantEffects.huntersCompass=true;result="The map redraws itself. Your cooldown is cleared and your next ordinary encounter will be Rare or better.";}
+  else if(key==="mystery_sack"){
+    const roll=Math.random()*100;
+    if(roll<30){player.captureItems.berry+=2;result=`The sack contained 2 ${CAPTURE_ITEMS.berry.name}s.`;}
+    else if(roll<55){player.huntTokens+=5;player.lifetimeTokens+=5;result="The sack contained 5 Hunt Tokens.";}
+    else if(roll<75){player.bait.epic++;result="The sack contained Epic Bait.";}
+    else if(roll<92){player.captureItems.net++;result=`The sack contained ${CAPTURE_ITEMS.net.name}.`;}
+    else{player.captureItems.masterCharm++;result=`The sack contained ${CAPTURE_ITEMS.masterCharm.name}!`;}
+  }
+  else if(key==="sealed_bottle"){
+    const rewards=["berry","honey","net"];const rewardKey=rewards[Math.floor(Math.random()*rewards.length)];
+    player.captureItems[rewardKey]++;result=`The seal breaks in a flash. Inside was ${CAPTURE_ITEMS[rewardKey].name}.`;
+  }
+  else if(key==="merchants_dice"){
+    const roll=Math.floor(Math.random()*6)+1;
+    if(roll===1) result="The weighted die rolls off the table. Nothing happens.";
+    if(roll===2){player.captureItems.berry++;result=`Roll 2: ${CAPTURE_ITEMS.berry.name}.`;}
+    if(roll===3){player.huntTokens+=3;player.lifetimeTokens+=3;result="Roll 3: 3 Hunt Tokens.";}
+    if(roll===4){player.captureItems.net++;result=`Roll 4: ${CAPTURE_ITEMS.net.name}.`;}
+    if(roll===5){player.huntTokens+=8;player.lifetimeTokens+=8;result="Roll 5: 8 Hunt Tokens!";}
+    if(roll===6){addCollectionItem(player,"mystery_relic");result="Roll 6: Mystery Relic!";}
+  }
+  else if(key==="do_not_open"){
+    const roll=Math.random()*100;
+    if(roll<25){player.huntTokens+=20;player.lifetimeTokens+=20;result="The chains snap. Inside: 20 Hunt Tokens.";}
+    else if(roll<50){player.captureItems.masterCharm++;result=`The darkness releases ${CAPTURE_ITEMS.masterCharm.name}.`;}
+    else if(roll<75){player.points+=25;result="Something marks your shadow. +25 Hunter Points.";}
+    else{addCollectionItem(player,"unidentified_object");result="The box was empty. A moment later, an Unidentified Object appeared behind you.";}
+  }
+  else if(key==="rusted_key"){const tokens=5+Math.floor(Math.random()*6);player.huntTokens+=tokens;player.lifetimeTokens+=tokens;result=`The rusted key opens a hidden hunter cache. Inside: ${tokens} Hunt Tokens.`;}
+  else if(key==="monster_whistle"){player.lastHunt=0;player.reminderState.huntDueAt=0;player.merchantEffects.huntersCompass=true;result="The whistle clears your hunt cooldown, and your next ordinary encounter will be Rare or better.";}
+  else if(key==="mystery_relic"){const relicKey=RELIC_KEYS[Math.floor(Math.random()*RELIC_KEYS.length)];player.relics[relicKey]=(player.relics[relicKey]||0)+1;const relicMonster=ultraRareMonsters.find(monster=>monster.relicKey===relicKey);result=`The relic transforms into ${relicMonster?.relicName||relicKey}.`;}
+  else if(key==="impossible_key"){player.lastHunt=0;player.reminderState.huntDueAt=0;player.merchantEffects.goldenLure=true;result="The key opens an impossible path. Your hunt cooldown is cleared, and your next ordinary encounter is guaranteed Legendary.";}
+  else if(key==="torn_page"){player.bait.rare++;player.huntTokens+=3;player.lifetimeTokens+=3;result="The page reveals a supply route: 1 Rare Bait and 3 Hunt Tokens.";}
+  else if(key==="watchers_eye"){player.captureItems.masterCharm++;result=`The eye reveals a perfect weakness. You receive ${CAPTURE_ITEMS.masterCharm.name}.`;}
+  else if(key==="broken_compass"){if(Math.random()<0.25){player.merchantEffects.goldenLure=true;result="The broken compass points toward something enormous. Your next ordinary encounter is guaranteed Legendary!";}else{player.merchantEffects.huntersCompass=true;result="The compass finds a trail. Your next ordinary encounter will be Rare or better.";}}
+  else if(key==="fractured_compass"){player.lastHunt=0;player.reminderState.huntDueAt=0;player.merchantEffects.huntersCompass=true;result="Your hunt cooldown is cleared, and your next ordinary encounter will be Rare or better.";}
+  else if(key==="reality_anchor"){player.lastHunt=0;player.reminderState.huntDueAt=0;player.captureItems.masterCharm++;result=`Reality locks into place. Your hunt cooldown is cleared, and you receive ${CAPTURE_ITEMS.masterCharm.name}.`;}
+  else if(key==="unmarked_relic"){const relicKey=RELIC_KEYS[Math.floor(Math.random()*RELIC_KEYS.length)];player.relics[relicKey]=(player.relics[relicKey]||0)+1;player.huntTokens+=5;player.lifetimeTokens+=5;const relicMonster=ultraRareMonsters.find(monster=>monster.relicKey===relicKey);result=`The relic fractures, revealing ${relicMonster?.relicName||relicKey} and 5 Hunt Tokens.`;}
+  else if(key==="voidglass_shard"){player.merchantEffects.goldenLure=true;player.huntTokens+=5;player.lifetimeTokens+=5;result="Your next ordinary encounter is guaranteed Legendary, and you gain 5 Hunt Tokens.";}
+  else if(key==="unidentified_object"){
+    const roll=Math.floor(Math.random()*4);
+    if(roll===0){player.points+=25;result="The object becomes a crown-shaped shadow. +25 Hunter Points.";}
+    else if(roll===1){player.huntTokens+=20;player.lifetimeTokens+=20;result="The object collapses into impossible currency. +20 Hunt Tokens.";}
+    else if(roll===2){player.captureItems.masterCharm++;result=`The object becomes ${CAPTURE_ITEMS.masterCharm.name}.`;}
+    else{player.merchantEffects.goldenLure=true;result="The object shows you impossible prey. Your next ordinary encounter is guaranteed Legendary.";}
+  }
+
+  saveData(data);
+  return {ok:true,item:{key,name:item.name,icon:item.icon||"🎒"},result};
+}
+
 async function activityMerchantPurchase(user, itemKey) {
   const data=loadData();
   ensureBigGameMerchantData(data);
@@ -11566,6 +11632,7 @@ async function activityMerchantPurchase(user, itemKey) {
       ok:true,
       purchased:{key:offer.key,name:item?.name||offer.key,icon:item?.icon||"🎒"},
       merchant:activityMerchantPayload(data,user.id),
+      hunter:activityPlayerPayload(data,user).hunter,
       inventory:activityFullInventoryPayload(player)
     };
   } finally {
@@ -12051,6 +12118,20 @@ const activityServer = http.createServer(async (req, res) => {
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/merchant") {
         const data=loadData();
         return activityJson(res,{ok:true,...activityMerchantPayload(data,user.id)});
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/inventory/use") {
+        const body=await readRequestJson(req);
+        const data=loadData();
+        const player=getPlayer(data,user.id);
+        const result=activityUseMerchantItem(data,player,String(body.itemKey||""));
+        if(!result.ok) return activityJson(res,result,400);
+        const refreshed=activityPlayerPayload(data,user);
+        return activityJson(res,{
+          ...result,
+          hunter:refreshed.hunter,
+          inventory:refreshed.phaseD.inventory
+        });
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/merchant/buy") {
