@@ -1777,6 +1777,89 @@ function getPetBonus(player, ability) {
   return total;
 }
 
+
+// ==================== H.3.2 LIVE PET ABILITY RUNTIME ====================
+function h32Runtime(player) {
+  if (!player.h3PetRuntime || typeof player.h3PetRuntime !== "object") player.h3PetRuntime = {};
+  const r=player.h3PetRuntime;
+  if (!Number.isFinite(r.successStreak)) r.successStreak=0;
+  if (!Number.isFinite(r.trailProgress)) r.trailProgress=0;
+  if (!Number.isFinite(r.tokenProgress)) r.tokenProgress=0;
+  if (!Number.isFinite(r.treasureProgress)) r.treasureProgress=0;
+  if (!Number.isFinite(r.failureProgress)) r.failureProgress=0;
+  return r;
+}
+function h32AbilityEntry(player,key){ return getPetAbilityEntries(getEquippedPet(player)).find(e=>e.ability===key)||null; }
+function h32AbilityRank(player,key){ return Math.max(0,Number(h32AbilityEntry(player,key)?.level||0)); }
+function h32DateKey(){ return new Date().toISOString().slice(0,10); }
+function h32RecentPackCatch(data,userId){
+  const cutoff=Date.now()-15*60*1000;
+  return (data?.recentHunts||[]).some(h=>h.userId!==userId && Number(h.at||0)>=cutoff);
+}
+function h32PrepareHunt(player,data,userId){
+  const r=h32Runtime(player), effects={capture:0,rare:0,egg:0,item:0,shiny:0,messages:[]};
+  const trailRank=h32AbilityRank(player,'trailSniffer');
+  if(trailRank){ const needed=[0,8,7,6,5,5][trailRank]; if(r.trailProgress>=needed){ effects.rare+=h3AbilityValue('trailSniffer',trailRank); r.trailProgress=0; effects.messages.push(`👣 Trail Sniffer activated: +${h3AbilityValue('trailSniffer',trailRank)}% Rare+ weighting.`); } }
+  const firstRank=h32AbilityRank(player,'firstLight'), today=h32DateKey();
+  if(firstRank && r.firstLightDate!==today){ effects.rare+=h3AbilityValue('firstLight',firstRank); r.firstLightDate=today; effects.messages.push(`🌕 First Light activated: +${h3AbilityValue('firstLight',firstRank)}% Rare+ weighting.`); }
+  const packRank=h32AbilityRank(player,'packHunter');
+  if(packRank && h32RecentPackCatch(data,userId)){ effects.capture+=h3AbilityValue('packHunter',packRank); effects.messages.push(`🤝 Pack Hunter activated: another hunter caught prey recently.`); }
+  const eventRank=h32AbilityRank(player,'eventborn');
+  if(eventRank && (getActiveEvent() || isBigGameActive(data) || getDistortionForPlayer(data,userId))){ const v=h3AbilityValue('eventborn',eventRank); effects.capture+=v; effects.item+=Math.max(1,Math.floor(v/2)); effects.messages.push(`⚡ Eventborn activated during the live event.`); }
+  const cosmicRank=h32AbilityRank(player,'cosmicFortune');
+  if(cosmicRank){ const v=h3AbilityValue('cosmicFortune',cosmicRank); effects.capture+=v; effects.egg+=v; effects.item+=v; effects.shiny+=v/10; }
+  const mixedRank=h32AbilityRank(player,'mixedResults');
+  if(mixedRank){
+    const choices=['capture','egg','item','rare','shiny']; const count=(mixedRank>=5 && Math.random()*100<10)?2:1;
+    const picked=[]; while(picked.length<count){ const k=choices[Math.floor(Math.random()*choices.length)]; if(!picked.includes(k)) picked.push(k); }
+    for(const k of picked){ const v=Math.max(1,mixedRank); if(k==='shiny') effects[k]+=v*.25; else effects[k]+=v*2; }
+    effects.messages.push(`🎲 Mixed Results rolled: ${picked.map(k=>k.toUpperCase()).join(' + ')}${count===2?' JACKPOT!':''}`);
+  }
+  r.currentHunt=effects;
+  return effects;
+}
+function h32Current(player){ return h32Runtime(player).currentHunt || {capture:0,rare:0,egg:0,item:0,shiny:0,messages:[]}; }
+function h32ClearCurrent(player){ delete h32Runtime(player).currentHunt; }
+function h32CaptureDynamicBonus(player,monster,data,userId){
+  const r=h32Runtime(player), cur=h32Current(player); let bonus=Number(cur.capture||0);
+  const bloodRank=h32AbilityRank(player,'bloodhound');
+  if(bloodRank && r.bloodhoundSpecies && r.bloodhoundSpecies===cleanMonsterName(monster.name)) bonus+=h3AbilityValue('bloodhound',bloodRank);
+  const hotRank=h32AbilityRank(player,'hotStreak'); if(hotRank) bonus+=Math.min(h3AbilityValue('hotStreak',hotRank),Math.max(0,r.successStreak));
+  const trophyRank=h32AbilityRank(player,'trophyHunter'); if(trophyRank && isBigGameActive(data||loadData())) bonus+=h3AbilityValue('trophyHunter',trophyRank);
+  return Math.min(H3_GLOBAL_CAPS.capture,Math.max(0,bonus));
+}
+function h32UpgradeEggRarity(rarity){ const order=['Common','Rare','Epic','Legendary']; const i=order.indexOf(rarity); return i>=0&&i<order.length-1?order[i+1]:rarity; }
+function h32MaybeUpgradeEgg(player,rarity){ const rank=h32AbilityRank(player,'nestGuardian'); if(!rank||rarity==='Legendary') return {rarity,upgraded:false}; const chance=h3AbilityValue('nestGuardian',rank); return Math.random()*100<chance?{rarity:h32UpgradeEggRarity(rarity),upgraded:true}:{rarity,upgraded:false}; }
+function h32SuccessEffects(player,data,userId,monster){
+  const r=h32Runtime(player), messages=[]; r.successStreak++;
+  if(h32AbilityRank(player,'trailSniffer')) r.trailProgress++;
+  const tokenRank=h32AbilityRank(player,'tokenFinder'); if(tokenRank && Math.random()*100<h3AbilityValue('tokenFinder',tokenRank)){ const amt=Math.min(H3_GLOBAL_CAPS.tokenBonus,tokenRank>=4?(1+Math.floor(Math.random()*2)):1); player.huntTokens+=amt; player.lifetimeTokens=(player.lifetimeTokens||0)+amt; messages.push(`🪙 Token Finder discovered +${amt} Hunt Token${amt===1?'':'s'}.`); }
+  const hoardRank=h32AbilityRank(player,'tokenHoarder'); if(hoardRank){ r.tokenProgress++; const needed=h3AbilityValue('tokenHoarder',hoardRank); if(r.tokenProgress>=needed){ r.tokenProgress=0; const amt=Math.min(H3_GLOBAL_CAPS.tokenBonus,hoardRank>=3?3:2); player.huntTokens+=amt; player.lifetimeTokens=(player.lifetimeTokens||0)+amt; messages.push(`💰 Token Hoarder triggered: +${amt} Hunt Tokens.`); } }
+  const itemChance=Math.min(H3_GLOBAL_CAPS.itemFinder,getPetBonus(player,'itemFinder')+Number(h32Current(player).item||0));
+  if(itemChance>0 && Math.random()*100<itemChance){ const roll=Math.random()*100; if(roll<55){player.captureItems.berry++;messages.push(`🎒 Treasure Finder discovered a Hunter Berry.`);}else if(roll<80){player.captureItems.honey++;messages.push(`🎒 Treasure Finder discovered Sticky Honey.`);}else if(roll<94){player.bait.rare++;messages.push(`🎒 Treasure Finder discovered Rare Bait.`);}else{player.captureItems.net++;messages.push(`🎒 Treasure Finder discovered an Enchanted Net.`);} }
+  const noseRank=h32AbilityRank(player,'treasureNose'); if(noseRank){ r.treasureProgress++; const needed=h3AbilityValue('treasureNose',noseRank); if(r.treasureProgress>=needed){ r.treasureProgress=0; player.captureItems.berry++; messages.push(`🎁 Treasure Nose guaranteed a Hunter Berry.`); } }
+  const luckyRank=h32AbilityRank(player,'luckyHunter'); if(luckyRank && Math.random()*100<h3AbilityValue('luckyHunter',luckyRank)){ const extra=Math.max(1,Number(monster.points||0)); player.points+=extra; addWeeklyProgress(data,player,extra); messages.push(`🎲 Lucky Hunter doubled ${extra} base Hunter Points.`); }
+  h32ClearCurrent(player); return messages;
+}
+function h32FailureEffects(player,itemKey,monster){
+  const r=h32Runtime(player), messages=[]; r.successStreak=0;
+  const bloodRank=h32AbilityRank(player,'bloodhound'); if(bloodRank){ r.bloodhoundSpecies=cleanMonsterName(monster.name); messages.push(`🐾 Bloodhound marked ${cleanMonsterName(monster.name)} for your next encounter.`); }
+  if(itemKey){
+    let save=false;
+    const trapRank=h32AbilityRank(player,'trapMaster'); if(trapRank && Math.random()*100<h3AbilityValue('trapMaster',trapRank)) save=true;
+    const secondRank=h32AbilityRank(player,'secondChance'); if(secondRank){ r.failureProgress++; const needed=h3AbilityValue('secondChance',secondRank); if(r.failureProgress>=needed){ r.failureProgress=0; save=true; } }
+    if(save){ player.captureItems[itemKey]=(player.captureItems[itemKey]||0)+1; messages.push(`🪤 Your companion preserved the ${CAPTURE_ITEMS[itemKey].name}.`); }
+  }
+  const persistRank=h32AbilityRank(player,'persistence'); let persist=false;
+  if(persistRank && !monster.persistenceRetried && Math.random()*100<h3AbilityValue('persistence',persistRank)){ persist=true; monster.persistenceRetried=true; messages.push(`👻 Persistence! The monster remains for one immediate second attempt.`); }
+  h32ClearCurrent(player); return {messages,persist};
+}
+function h32BaitSave(player,usedBait){ if(!usedBait) return ''; const rank=h32AbilityRank(player,'baitSaver'); if(rank && Math.random()*100<h3AbilityValue('baitSaver',rank)){ player.bait[usedBait]=(player.bait[usedBait]||0)+1; return `\n🧲 **Bait Saver:** Your ${usedBait} bait was preserved!`; } return ''; }
+function h32AbilitySummary(player){
+  const pet=getEquippedPet(player); if(!pet) return [];
+  return getPetAbilityEntries(pet).map(e=>({key:e.ability,name:h3AbilityDef(e.ability).name,icon:h3AbilityDef(e.ability).icon,rank:h3RankRoman(e.level),effect:h3AbilityEffectText(e.ability,e.level),natural:Boolean(e.natural)}));
+}
+
 function getPlayerPetIcon(player) {
   const ownedPet = getEquippedPet(player);
   const definition = getOwnedPetDefinition(ownedPet);
@@ -2077,7 +2160,7 @@ function rollEggRarity(player, data = null) {
   const nestBonus = Math.min(8, emptySlots * 2);
   const blessing = getActiveCommunityBlessing(data || loadData(), "eggs");
   const blessingBonus = blessing?.definition?.eggBonus || 0;
-  const bonus = petBonus + nestBonus + blessingBonus;
+  const bonus = Math.min(H3_GLOBAL_CAPS.eggFinder, petBonus + Number(h32Current(player).egg || 0)) + nestBonus + blessingBonus;
   // A modest global increase keeps unlocked incubators useful without flooding inventories.
   if (Math.random() * 100 < 12 + Math.floor(bonus / 4)) return "Legendary";
   if (Math.random() * 100 < 24 + Math.floor(bonus / 3)) return "Epic";
@@ -2087,9 +2170,11 @@ function rollEggRarity(player, data = null) {
 }
 
 function maybeFindEgg(player, data = null) {
-  const rarity = rollEggRarity(player, data);
-  if (!rarity) return null;
-  player.eggs.push({ rarity, foundAt: Date.now() });
+  const rolled = rollEggRarity(player, data);
+  if (!rolled) return null;
+  const upgrade=h32MaybeUpgradeEgg(player,rolled);
+  const rarity=upgrade.rarity;
+  player.eggs.push({ rarity, foundAt: Date.now(), nestGuardianUpgraded:Boolean(upgrade.upgraded) });
   player.titleProgress.eggsFound = (player.titleProgress.eggsFound || 0) + 1;
   return rarity;
 }
@@ -2652,7 +2737,7 @@ function calculateCaptureChance(player, monster, itemKey = null, data = null, us
   const runeReaderBonus = isMixerMonster ? 0 : getRuneReaderKnowledgeBonus(player, monster);
   const knowledgeBonus = isMixerMonster ? 0 : getKnowledgeBonus(encounters) + runeReaderBonus;
   const eventBonus = isMixerMonster ? 0 : (event?.captureBoost ? 10 : 0);
-  const petBonus = isMixerMonster ? 0 : getPetBonus(player, "capture") + getSignatureCaptureBonus(player);
+  const petBonus = isMixerMonster ? 0 : Math.min(H3_GLOBAL_CAPS.capture, getPetBonus(player, "capture") + h32CaptureDynamicBonus(player, monster, data || loadData(), userId) + getSignatureCaptureBonus(player));
   const comebackBonus = isMixerMonster ? 0 : comeback.catchBonus;
   const item = itemKey ? CAPTURE_ITEMS[itemKey] : null;
 
@@ -2933,6 +3018,9 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
     if (perfectCatch) addSeasonMoment(data, { type: "perfect_catch", playerId: userId, icon: "🎯", text: `${hunterName} rolled a Natural 1 and made a Perfect Catch on ${cleanMonsterName(monster.name)}!` });
     recordPointMilestoneMoments(data, message.author.id, previousPoints, player.points);
     const huntTokenText = awardHuntTokens(data, player, userId, monster);
+    const h3AbilityMessages = h32SuccessEffects(player,data,userId,monster);
+    // A successful catch consumes any Bloodhound mark for this species.
+    if (h32Runtime(player).bloodhoundSpecies === cleanMonsterName(monster.name)) h32Runtime(player).bloodhoundSpecies = null;
     if (unwrittenBonusMonster) {
       player.currentMonster = unwrittenBonusMonster;
       player.lastHunt = 0;
@@ -2964,6 +3052,7 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
         `${comebackExtra > 0 ? `🔥 **Comeback Bonus: +${comebackExtra} points**\n` : ""}` +
         `**+${pointsEarned} points**` +
         `${huntTokenText}` +
+        `${h3AbilityMessages.length ? `\n\n🐾 **PET ABILITIES**\n${h3AbilityMessages.join("\n")}` : ""}` +
         `${signatureAttemptText}` +
         `${signatureMessages.length ? `\n\n❖ **SIGNATURE ABILITY**\n${signatureMessages.join("\n\n")}` : ""}` +
         `${distortionEggFound ? `\n\n🌀 **DISTORTION EGG FOUND!**\n${distortionEggFound.icon} You discovered a **${distortionEggFound.name}**!` : ""}` +
@@ -3005,7 +3094,9 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
 
   const failureSig = getSignaturePet(player);
   const failureMessages = [];
-  let keepEncounter = false;
+  const h3Failure = h32FailureEffects(player,itemKey,monster);
+  failureMessages.push(...h3Failure.messages);
+  let keepEncounter = Boolean(h3Failure.persist);
   if (failureSig?.definition.signatureAbility === "kindled_hunt") { ensureSignatureState(failureSig.owned).kindledReady = true; failureMessages.push(`🔥 **KINDLED HUNT!** Your failed catch fuels Ember Imp. Your next capture attempt gains **+${signatureTier(failureSig.level,5,7,10)}%**.`); }
   if (failureSig?.definition.signatureAbility === "veilwalk" && ensureSignatureState(failureSig.owned).veilwalkReady) { ensureSignatureState(failureSig.owned).veilwalkReady=false; keepEncounter=true; failureMessages.push(`👻 **VEILWALK!** The monster starts to escape, but Veilkin pulls it back through the Veil. **The encounter remains active — use \`!catch\` to try again.**`); }
   player.currentMonster = keepEncounter ? monster : null;
@@ -3167,6 +3258,7 @@ function applyShiny(monster, player = null, data = null) {
   const chance =
     (event?.shinyBoost ? SHINY_CHANCE * 3 : SHINY_CHANCE) +
     getPetBonus(player, "shiny") +
+    Math.min(H3_GLOBAL_CAPS.shiny, Number(h32Current(player).shiny || 0)) +
     blessingBonus;
 
   const shinyRoll =
@@ -3283,6 +3375,16 @@ function getRandomMonster(player) {
   }
 
   let monster = null;
+
+  const h3RareBoost = Math.min(H3_GLOBAL_CAPS.rareTracker, getPetBonus(player,"rareTracker") + Number(h32Current(player).rare || 0));
+  if (h3RareBoost > 0 && Math.random()*100 < h3RareBoost) {
+    const rarePlus = monsters.filter(m => ["Rare","Epic","Legendary"].includes(m.rarity));
+    if (rarePlus.length) {
+      const weighted=[];
+      for (const m of rarePlus) { const w=m.rarity==="Rare"?7:m.rarity==="Epic"?3:1; for(let i=0;i<w;i++) weighted.push(m); }
+      return applyShiny({ ...weighted[Math.floor(Math.random()*weighted.length)] }, player);
+    }
+  }
 
   if (
     event?.eventMonsterChance &&
@@ -8765,6 +8867,7 @@ ${captureChoicesText(choices)}
 
     const usedBait = player.activeBait;
     const signatureHuntText = prepareSignatureForHunt(player);
+    const h3HuntEffects = h32PrepareHunt(player,data,message.author.id);
     let monster = getRandomMonsterForPlayer(player, data, message.author.id);
     const merchantEncounter = applyMerchantEncounterEffect(player, monster);
     monster = merchantEncounter.monster;
@@ -8773,6 +8876,7 @@ ${captureChoicesText(choices)}
 
     player.currentMonster = monster;
     player.activeBait = null;
+    const h3BaitSaveText = h32BaitSave(player,usedBait);
     player.lastHunt = now;
     const huntSig = getSignaturePet(player);
     if (huntSig?.definition.signatureAbility === "frozen_time" && ensureSignatureState(huntSig.owned).frozenTimeReady) ensureSignatureState(huntSig.owned).frozenTimeReady = false;
@@ -8802,6 +8906,8 @@ ${captureChoicesText(choices)}
         `${usedBait ? `**Bait Used:** ${usedBait.toUpperCase()} (improved encounter odds)\n` : ""}` +
         `${merchantEncounter.text}` +
         `${signatureHuntText}` +
+        `${h3BaitSaveText}` +
+        `${h3HuntEffects.messages?.length ? `\n🐾 **Pet Abilities:** ${h3HuntEffects.messages.join("\n")}\n` : ""}` +
         `\n**Choose how to catch it:**\n${captureChoicesText(choices)}\n\n` +
         `Reply with **${validNumbers.join(", ")}** within 5 minutes.\n` +
         `Only items you currently own are shown.`
@@ -12314,6 +12420,7 @@ async function activityStartNormalHunt(user) {
 
   const usedBait = player.activeBait;
   prepareSignatureForHunt(player);
+  const h3HuntEffects=h32PrepareHunt(player,data,user.id);
   let monster = getRandomMonsterForPlayer(player, data, user.id);
   const merchantEncounter = applyMerchantEncounterEffect(player, monster);
   monster = merchantEncounter.monster;
@@ -12322,6 +12429,7 @@ async function activityStartNormalHunt(user) {
 
   player.currentMonster = monster;
   player.activeBait = null;
+  const h3BaitSaveText=h32BaitSave(player,usedBait);
   player.lastHunt = now;
   player.reminderState.channelId = MONSTER_CHANNEL_ID;
   player.reminderState.huntDueAt = now + huntCooldown;
@@ -12349,6 +12457,7 @@ async function activityStartNormalHunt(user) {
         `**Habitat:** ${monster.habitat || "Unknown"}\n` +
         `**Current Catch Chance:** ${chanceInfo.total}%\n` +
         `${usedBait ? `**Bait Used:** ${String(usedBait).toUpperCase()}\n` : ""}` +
+        `${h3BaitSaveText}${h3HuntEffects.messages?.length ? `\n🐾 **Pet Abilities:** ${h3HuntEffects.messages.join(" | ")}\n` : ""}` +
         `\nThe hunter is choosing a capture method in the Discord Activity.`
       )
     ).catch(error => console.error("Activity encounter announcement failed:", error));
