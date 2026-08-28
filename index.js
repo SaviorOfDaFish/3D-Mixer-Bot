@@ -1107,8 +1107,155 @@ const HIDDEN_TITLE_DEFINITIONS = [
   { name: "You Were Never Here", rarity: "Mythic", check: p => ["The Misplaced","Stitchmaw","The Empty Knight","The Forgotten","NULL"].every(name => (p.caught||[]).some(m => cleanMonsterName(m.name) === name)) && ["mimicling","the_unwritten"].every(key => (p.pets||[]).some(x => x.key === key)) }
 ];
 
+
+// ==================== H.7 NEW-SEASON COLLECTION TITLES ====================
+const H7_SEASON_TITLE_DEFINITIONS = [
+  { name:"Moonfen Keeper", rarity:"Rare", requirement:"Discover all 4 Moonfen companions", check:p => ["puddlewyrm","mosscap","fen_gricklet","lunarch_whelp"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Glasswalker", rarity:"Rare", requirement:"Discover all 4 Glasswaste companions", check:p => ["shardhopper","glassback","dune_gnawer","prismwing"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Gloamwarden", rarity:"Rare", requirement:"Discover all 4 Gloamwood companions", check:p => ["tumblebud","wispwing","knotmaw","twilight_cervid"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Storm Rider", rarity:"Rare", requirement:"Discover all 4 Stormreach companions", check:p => ["puffle","zephyr_beak","voltgrin","stormcrown"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Emberbound", rarity:"Rare", requirement:"Discover all 4 Emberdeep companions", check:p => ["cinderpip","glowgill","clinker","pyremane"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Gravefrost Warden", rarity:"Rare", requirement:"Discover all 4 Frostgrave companions", check:p => ["snowpod","shiverquill","coffinrawl","auroralynx"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Sporekeeper", rarity:"Rare", requirement:"Discover all 4 Sporewilds companions", check:p => ["buttoncap","lumenslug","sporemaw","bloomwarden"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Starfall Keeper", rarity:"Rare", requirement:"Discover all 4 Starfall Basin companions", check:p => ["orblet","shardtail","gazeling","astrael"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+
+  { name:"Companion Collector", rarity:"Common", requirement:"Discover 8 PetDex companions", check:p => (p.discoveredPetKeys||[]).filter(k => H3_STANDARD_NATURAL_ABILITIES[k]).length >= 8 },
+  { name:"Menagerie Keeper", rarity:"Epic", requirement:"Discover 16 PetDex companions", check:p => (p.discoveredPetKeys||[]).filter(k => H3_STANDARD_NATURAL_ABILITIES[k]).length >= 16 },
+  { name:"Warden of Every Habitat", rarity:"Legendary", requirement:"Complete the 32-companion PetDex", check:p => (p.discoveredPetKeys||[]).filter(k => H3_STANDARD_NATURAL_ABILITIES[k] && k !== "mixlet").length >= 32 },
+
+  { name:"Shell Tender", rarity:"Common", requirement:"Hatch 3 eggs this season", check:p => Number(p.titleProgress?.eggsHatched||0) >= 3 },
+  { name:"Master of the Cradle", rarity:"Epic", requirement:"Hatch 10 eggs this season", check:p => Number(p.titleProgress?.eggsHatched||0) >= 10 },
+  { name:"Ability Weaver", rarity:"Rare", requirement:"Successfully inherit an ability", check:p => (p.pets||[]).some(x => (x.inheritedAbilities||[]).length >= 1) },
+  { name:"Many-Talented", rarity:"Epic", requirement:"Build a pet with 3 inherited abilities", check:p => (p.pets||[]).some(x => (x.inheritedAbilities||[]).length >= 3) },
+  { name:"Perfect Bond", rarity:"Legendary", requirement:"Reach Bond 5 with a companion", check:p => (p.pets||[]).some(x => getPetBondLevel(x) >= 5) },
+
+  { name:"Shimmer Chaser", rarity:"Rare", requirement:"Capture a Shiny monster", check:p => (p.caught||[]).some(m => m.shiny) },
+  { name:"Legend Stalker", rarity:"Epic", requirement:"Capture 5 Legendary monsters", check:p => (p.caught||[]).filter(m => m.rarity === "Legendary").length >= 5 },
+  { name:"Token Trader", rarity:"Rare", requirement:"Spend 25 Hunt Tokens", check:p => Number(p.tokensSpent||0) >= 25 },
+  { name:"Big Game Champion", rarity:"Legendary", requirement:"Win a Big Game Hunt", check:p => Number(p.bigGameWins||0) >= 1 }
+];
+
+function h7AllTitleDefinitions() {
+  return [...HIDDEN_TITLE_DEFINITIONS, ...H7_SEASON_TITLE_DEFINITIONS];
+}
+
+function h7SeasonBountyTrophies(data, userId) {
+  const history = Array.isArray(data?.bounty?.history) ? data.bounty.history : [];
+  const earnedKeys = new Set(
+    history
+      .filter(entry => entry?.catcherId === userId && Number(entry.completedAt||0) >= H4_PUBLIC_LAUNCH_AT)
+      .map(entry => entry.targetKey)
+  );
+  return [...earnedKeys].map(key => {
+    const def = BOUNTY_TARGETS.find(x => x.key === key);
+    if (!def) return null;
+    return {
+      key:def.key,
+      name:def.trophy,
+      icon:"🏆",
+      image:def.trophyImage || null,
+      earned:true,
+      source:"Bounty Hunt",
+      description:`Claimed after completing the ${def.name} bounty this season.`
+    };
+  }).filter(Boolean);
+}
+
+function h7SeasonTitlesPayload(player) {
+  const genuineUnlocked = new Set(player.unlockedTitles || []);
+  const seasonNames = new Set(H7_SEASON_TITLE_DEFINITIONS.map(x => x.name));
+  const season = H7_SEASON_TITLE_DEFINITIONS.map(def => ({
+    name:def.name,
+    rarity:def.rarity,
+    requirement:def.requirement,
+    unlocked:genuineUnlocked.has(def.name) || Boolean(def.check(player)),
+    secret:false,
+    legacy:false
+  }));
+
+  const legacy = [...genuineUnlocked]
+    .filter(name => !seasonNames.has(name))
+    .map(name => {
+      const def = getTitleDefinition(name);
+      return {name,rarity:def.rarity||"Epic",requirement:"Lifetime accomplishment",unlocked:true,secret:false,legacy:true};
+    });
+
+  return [...season, ...legacy];
+}
+
+function h7CurrentSeasonTrophyCount(data,userId) {
+  return h7SeasonBountyTrophies(data,userId).length;
+}
+
+const H7_COSMETICS = [
+  {key:"moonfen_mantle",name:"Moonfen Mantle",slot:"Cloak",requirement:"Discover 4 PetDex companions",unlock:{type:"petdex",amount:4}},
+  {key:"glasswaste_scarf",name:"Glasswaste Scarf",slot:"Cloak",requirement:"Discover 8 PetDex companions",unlock:{type:"petdex",amount:8}},
+  {key:"stormcloak",name:"Stormreach Cloak",slot:"Cloak",requirement:"Reach Hunter Level 5",unlock:{type:"level",amount:5}},
+  {key:"embercloak",name:"Emberdeep Cloak",slot:"Cloak",requirement:"Discover 16 PetDex companions",unlock:{type:"petdex",amount:16}},
+  {key:"frostcloak",name:"Frostgrave Cloak",slot:"Cloak",requirement:"Reach Hunter Level 8",unlock:{type:"level",amount:8}},
+  {key:"starfall_mantle",name:"Starfall Mantle",slot:"Cloak",requirement:"Discover 28 PetDex companions",unlock:{type:"petdex",amount:28}},
+
+  {key:"field_band",name:"Hunter's Field Band",slot:"Headgear",requirement:"Starter cosmetic"},
+  {key:"moonfen_circlet",name:"Moonfen Circlet",slot:"Headgear",requirement:"Discover 4 PetDex companions",unlock:{type:"petdex",amount:4}},
+  {key:"trophy_horns",name:"Trophy Horns",slot:"Headgear",requirement:"Earn 3 current-season bounty trophies",unlock:{type:"trophies",amount:3}},
+  {key:"starfall_crown",name:"Starfall Crown",slot:"Headgear",requirement:"Complete the 32-companion PetDex",unlock:{type:"petdex",amount:32}},
+
+  {key:"field_scout",name:"Field Scout Gear",slot:"Outfit",requirement:"Starter cosmetic"},
+  {key:"storm_hunter",name:"Storm Hunter Coat",slot:"Outfit",requirement:"Reach Hunter Level 5",unlock:{type:"level",amount:5}},
+  {key:"glasswaste_hunter",name:"Glasswaste Hunter Gear",slot:"Outfit",requirement:"Discover 12 PetDex companions",unlock:{type:"petdex",amount:12}},
+  {key:"ember_hunter",name:"Ember Hunter Armor",slot:"Outfit",requirement:"Discover 20 PetDex companions",unlock:{type:"petdex",amount:20}},
+
+  {key:"side_swept",name:"Side Swept",slot:"Hair Style",requirement:"Starter cosmetic"},
+  {key:"ponytail",name:"Ponytail",slot:"Hair Style",requirement:"Starter cosmetic"},
+  {key:"messy",name:"Messy",slot:"Hair Style",requirement:"Starter cosmetic"},
+  {key:"pixie",name:"Pixie Cut",slot:"Hair Style",requirement:"Starter cosmetic"},
+  {key:"undercut",name:"Undercut",slot:"Hair Style",requirement:"Reach Hunter Level 3",unlock:{type:"level",amount:3}},
+  {key:"curls",name:"Curly",slot:"Hair Style",requirement:"Reach Hunter Level 4",unlock:{type:"level",amount:4}},
+  {key:"bun",name:"Hunter Bun",slot:"Hair Style",requirement:"Reach Hunter Level 5",unlock:{type:"level",amount:5}},
+  {key:"braid",name:"Long Braid",slot:"Hair Style",requirement:"Reach Hunter Level 7",unlock:{type:"level",amount:7}},
+
+  {key:"spear",name:"Hunter Spear",slot:"Weapon",requirement:"Reach Hunter Level 3",unlock:{type:"level",amount:3}},
+  {key:"sword",name:"Hunter Sword",slot:"Weapon",requirement:"Reach Hunter Level 4",unlock:{type:"level",amount:4}},
+  {key:"rift_staff",name:"Rift Staff",slot:"Weapon",requirement:"Reach Hunter Level 10",unlock:{type:"level",amount:10}}
+];
+
+function h7CosmeticsPayload(player,data,userId) {
+  const level = h3HunterLevel(player);
+  const petdex = (player.discoveredPetKeys||[]).filter(k => H3_STANDARD_NATURAL_ABILITIES[k] && k !== "mixlet").length;
+  const trophies = h7CurrentSeasonTrophyCount(data,userId);
+  return H7_COSMETICS.map(c => {
+    let unlocked = !c.unlock;
+    if (c.unlock?.type === "level") unlocked = level >= c.unlock.amount;
+    if (c.unlock?.type === "petdex") unlocked = petdex >= c.unlock.amount;
+    if (c.unlock?.type === "trophies") unlocked = trophies >= c.unlock.amount;
+    return {...c,unlocked};
+  });
+}
+
+async function activityEquipTitle(user,titleName) {
+  const data=loadData();
+  const player=getPlayer(data,user.id);
+  const requested=String(titleName||"").trim();
+  if (!requested) {
+    player.title=null;
+    saveData(data);
+    return {ok:true,title:null,message:"Title unequipped."};
+  }
+
+  const def=h7AllTitleDefinitions().find(x => x.name.toLowerCase() === requested.toLowerCase());
+  const genuinelyUnlocked=(player.unlockedTitles||[]).some(x => x.toLowerCase() === requested.toLowerCase());
+  const eligible=Boolean(def?.check?.(player));
+  if (!genuinelyUnlocked && !eligible) return {ok:false,error:"You have not unlocked that title yet."};
+
+  const canonical=def?.name || (player.unlockedTitles||[]).find(x => x.toLowerCase() === requested.toLowerCase()) || requested;
+  if (!player.unlockedTitles.includes(canonical)) player.unlockedTitles.push(canonical);
+  player.title=canonical;
+  saveData(data);
+  return {ok:true,title:canonical,message:`Equipped title: ${canonical}`};
+}
+
 function getTitleDefinition(titleName) {
-  const builtIn = HIDDEN_TITLE_DEFINITIONS.find(title => title.name === titleName);
+  const builtIn = h7AllTitleDefinitions().find(title => title.name === titleName);
   if (builtIn) return builtIn;
 
   const specialRarity = [
@@ -1130,7 +1277,7 @@ function checkTitleUnlocks(player) {
   const newlyUnlocked = [];
   if (!Array.isArray(player.unlockedTitles)) player.unlockedTitles = [];
 
-  for (const definition of HIDDEN_TITLE_DEFINITIONS) {
+  for (const definition of h7AllTitleDefinitions()) {
     if (!player.unlockedTitles.includes(definition.name) && definition.check(player)) {
       player.unlockedTitles.push(definition.name);
       newlyUnlocked.push(definition);
@@ -12660,7 +12807,7 @@ function activityPlayerPayload(data, user) {
       stats: {
         pets: ownedPets.length,
         petDex: `${standardDex.filter(p => p.discovered).length}/32`,
-        trophies: Number((player.secretAchievements || []).length)
+        trophies: h7CurrentSeasonTrophyCount(data,user.id)
       },
       bait: { ...player.bait },
       activeBait: player.activeBait || null,
@@ -12673,9 +12820,9 @@ function activityPlayerPayload(data, user) {
       petDex: standardDex,
       beyondPets: activityPetDexPayload(player, true),
       inventory: activityFullInventoryPayload(player),
-      trophies: H1_TROPHIES,
-      titles: H1_TITLES,
-      cosmetics: H1_COSMETICS,
+      trophies: h7SeasonBountyTrophies(data,user.id),
+      titles: h7SeasonTitlesPayload(player),
+      cosmetics: h7CosmeticsPayload(player,data,user.id),
       petProgression:{hunterLevel:h3HunterLevel(player),inheritedSlots:h3InheritedSlotLimit(player),incubators:getIncubatorSlots(player),maxInherited:H3_MAX_INHERITED_ABILITIES}
     },
     eggs: activityEggInventoryPayload(player),
@@ -13027,6 +13174,12 @@ const activityServer = http.createServer(async (req, res) => {
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/fetch/start") {
         const result=await activityStartFetch(user);
         return activityJson(res,result,result.ok?200:(result.code==="cooldown"?429:400));
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/title/equip") {
+        const body=await readRequestJson(req);
+        const result=await activityEquipTitle(user,body.title);
+        return activityJson(res,result,result.ok?200:400);
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/notifications") {
