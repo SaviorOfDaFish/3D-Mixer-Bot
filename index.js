@@ -2742,6 +2742,7 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
   }
 
   const monster = player.currentMonster;
+  let bountyCaptureResult = null;
   const chanceInfo = calculateCaptureChance(player, monster, itemKey, data, userId);
   let roll = Math.floor(Math.random() * 100) + 1;
   let criticalCatch = roll === 100;
@@ -2795,6 +2796,45 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
     player.lifetimeCaught.push({ ...monster });
     recordRecentHunt(data, userId, monster, pointsEarned, "Monster Hunt");
     player.currentMonster = null;
+
+    // H.2D.6: Bounty monsters use the SAME capture roll as normal hunts.
+    // Only a successful capture changes the live Bounty into trophy-turn-in state.
+    if (monster.bountyEncounter) {
+      const liveBounty = ensureBountyData(data);
+      const target = bountyTarget(data);
+      if (
+        liveBounty.active &&
+        liveBounty.status === "hunting" &&
+        target &&
+        target.key === monster.bountyTargetKey
+      ) {
+        liveBounty.status = "awaiting_turnin";
+        liveBounty.catcherId = userId;
+        liveBounty.trophyHolderId = userId;
+        player.bountyTrophies ||= {};
+        player.bountyTrophies[target.key] = Number(player.bountyTrophies[target.key] || 0) + 1;
+        bountyCaptureResult = { targetName:target.name, trophy:target.trophy, image:target.image, target:true };
+      }
+    } else if (monster.bountyTrailEncounter) {
+      const liveBounty = ensureBountyData(data);
+      const target = bountyTarget(data);
+      if (
+        liveBounty.active &&
+        liveBounty.status === "hunting" &&
+        target &&
+        target.key === monster.bountyTargetKey
+      ) {
+        const tracker=bountyTrackingReward(data,userId);
+        liveBounty.clueLevel=Math.min(target.clues.length-1,Number(liveBounty.clueLevel||0)+1);
+        bountyCaptureResult={
+          target:false,
+          clue:bountyClue(data),
+          trackingChance:tracker.chance,
+          clues:tracker.clues
+        };
+      }
+    }
+
     updateQuestProgress(player, "catch", monster);
 
     const bonusRewards = giveCatchBonusBait(player, monster);
@@ -2953,6 +2993,21 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
     if (worldShatterCatch.reveal) {
       const freshShatterData = loadData();
       await revealUnmade(freshShatterData, false);
+    }
+    if (bountyCaptureResult?.target) {
+      await message.channel.send(
+        `📜 **BOUNTY TARGET CAPTURED!**\n\n` +
+        `${formatPlayerMention(data, userId)} successfully captured **${bountyCaptureResult.targetName}** using the normal capture system.\n` +
+        `🏆 Trophy recovered: **${bountyCaptureResult.trophy}**\n\n` +
+        `The bounty is not complete until the catcher returns the trophy with \`!turninbounty\` or the Activity **Return Trophy** button.`
+      ).catch(() => null);
+    } else if (bountyCaptureResult && !bountyCaptureResult.target) {
+      await message.channel.send(
+        `🔎 **BOUNTY CLUE FOUND!**\n\n` +
+        `${formatPlayerMention(data, userId)} caught a creature along the bounty trail and uncovered a new clue:\n` +
+        `**${bountyCaptureResult.clue}**\n\n` +
+        `🎯 Their next Bounty Hunt now has a **${bountyCaptureResult.trackingChance}%** chance to find the actual target.`
+      ).catch(() => null);
     }
     return captureReply;
   }
@@ -5779,26 +5834,39 @@ function activateBigGame(data, { weekKey = getMountainWeekKey(), eventId = `manu
 }
 
 function awardHuntTokens(data, player, userId, monster, { allowDaily = true } = {}) {
-  const now = Date.now();
-  let amount = 0;
-  let source = null;
-  if (isBigGameActive(data, now)) {
-    amount = BIG_GAME_TOKEN_REWARDS[monster.rarity] || 1;
-    source = "Big Game Hunt";
-    data.bigGame.scores[userId] = Number(data.bigGame.scores[userId] || 0) + amount;
-    data.bigGame.reachedAt[userId] = now;
-  } else if (allowDaily && getActiveEvent()?.tokenRush && !monster.distortionEncounter && !monster.worldShatterEncounter) {
-    amount = 1;
-    source = "Token Rush Day";
-  } else if (data.tokenSurge?.active && now < data.tokenSurge.endsAt && Math.random() < 0.5) {
-    amount = Math.max(1, Math.ceil((BIG_GAME_TOKEN_REWARDS[monster.rarity] || 1) / 2));
-    source = "Token Surge";
+  const now=Date.now();
+  const base=Math.max(1,Number(BIG_GAME_TOKEN_REWARDS[monster.rarity]||1));
+  const bigGame=isBigGameActive(data,now);
+
+  // Every successful capture now earns Hunt Tokens.
+  // Big Game doubles the normal rarity-based token payout.
+  let amount=bigGame ? base*2 : base;
+  const bonuses=[];
+
+  // Existing limited-time token effects remain additive rather than replacing
+  // the new universal catch reward.
+  if(allowDaily && getActiveEvent()?.tokenRush && !monster.distortionEncounter && !monster.worldShatterEncounter){
+    amount+=1;
+    bonuses.push("Token Rush +1");
   }
-  if (!amount) return "";
-  player.huntTokens += amount;
-  player.lifetimeTokens += amount;
-  const eventTotal = source === "Big Game Hunt" ? `\n🎯 **Big Game Total:** ${data.bigGame.scores[userId]} 🪙` : "";
-  return `\n\n🪙 **${source}: +${amount} Hunt Token${amount === 1 ? "" : "s"}**${eventTotal}\n💰 **Token Balance:** ${player.huntTokens} 🪙`;
+  if(data.tokenSurge?.active && now<Number(data.tokenSurge.endsAt||0) && Math.random()<0.5){
+    const surgeBonus=Math.max(1,Math.ceil(base/2));
+    amount+=surgeBonus;
+    bonuses.push(`Token Surge +${surgeBonus}`);
+  }
+
+  player.huntTokens=Number(player.huntTokens||0)+amount;
+  player.lifetimeTokens=Number(player.lifetimeTokens||0)+amount;
+
+  if(bigGame){
+    data.bigGame.scores[userId]=Number(data.bigGame.scores[userId]||0)+amount;
+    data.bigGame.reachedAt[userId]=now;
+  }
+
+  const source=bigGame ? "BIG GAME — DOUBLE TOKENS" : "Successful Catch";
+  const eventTotal=bigGame ? `\n🎯 **Big Game Total:** ${data.bigGame.scores[userId]} 🪙` : "";
+  const bonusText=bonuses.length ? `\n✨ ${bonuses.join(" • ")}` : "";
+  return `\n\n🪙 **${source}: +${amount} Hunt Token${amount===1?"":"s"}**${bonusText}${eventTotal}\n💰 **Token Balance:** ${player.huntTokens} 🪙`;
 }
 
 function applyMerchantEncounterEffect(player, monster) {
@@ -6047,7 +6115,7 @@ async function announceBigGameStart(channel, data) {
   return sendRoleImageAnnouncement(channel,
     `<@&${MONSTER_NOTIFY_ROLE}>\n\n🚨 **BIG GAME HUNT HAS BEGUN!**\n\n` +
     `For the next **2 HOURS**, monster activity has surged!\n\n` +
-    `⏱️ \`!hunt\` every **30 minutes**\n🪙 Successful catches earn **Hunt Tokens**\n` +
+    `⏱️ \`!hunt\` every **30 minutes**\n🪙 Successful catches earn **DOUBLE Hunt Tokens**\n` +
     `🥇 1st — **+50 Hunter Points**\n🥈 2nd — **+30 Hunter Points**\n🥉 3rd — **+15 Hunter Points**\n\n` +
     `Everyone can hunt **RIGHT NOW**. Tokens remain yours after the event.\n` +
     `**Ends <t:${Math.floor(data.bigGame.endsAt / 1000)}:t> Mountain Time (<t:${Math.floor(data.bigGame.endsAt / 1000)}:R>). GO!**`, BIG_GAME_IMAGE, true);
@@ -6171,7 +6239,7 @@ async function processBigGameMerchantSystem() {
         event.warningSent = true; dirty = true; saveData(data);
         await sendRoleImageAnnouncement(channel,
           `<@&${MONSTER_NOTIFY_ROLE}>\n\n⚠️ **30 MINUTES UNTIL BIG GAME HUNT**\n\n` +
-          `At <t:${Math.floor(event.startAt / 1000)}:t>, hunt cooldowns drop to 30 minutes and successful catches begin awarding Hunt Tokens.\n\nCheck your bait. Check your inventory.`, BIG_GAME_IMAGE, true);
+          `At <t:${Math.floor(event.startAt / 1000)}:t>, hunt cooldowns drop to 30 minutes and successful catches begin awarding DOUBLE Hunt Tokens.\n\nCheck your bait. Check your inventory.`, BIG_GAME_IMAGE, true);
       }
 
       // Recover a scheduled event after a short Railway restart without extending its original end time.
@@ -6978,7 +7046,7 @@ client.on("messageCreate", async (message) => {
     if (sub === "warning") {
       return sendRoleImageAnnouncement(message.channel,
         `🧪 **PRIVATE TEST — NO ROLE PING**\n\n⚠️ **30 MINUTES UNTIL BIG GAME HUNT**\n\n` +
-        `At the scheduled start time, hunt cooldowns drop to 30 minutes and successful catches begin awarding Hunt Tokens.\n\nCheck your bait. Check your inventory.`,
+        `At the scheduled start time, hunt cooldowns drop to 30 minutes and successful catches begin awarding DOUBLE Hunt Tokens.\n\nCheck your bait. Check your inventory.`,
         BIG_GAME_IMAGE, false);
     }
 
@@ -8522,8 +8590,72 @@ ${captureChoicesText(choices)}
     return message.reply("Unknown sandbox option. Use `!testhunt help`.");
   }
 
-  if(command==="!bounty"||command==="!bountystatus"){const b=ensureBountyData(data);if(!b.active)return message.reply(b.status==="cooldown"&&b.nextAt>Date.now()?`📜 No bounty is active. The next bounty is expected <t:${Math.floor(b.nextAt/1000)}:R>.`:"📜 No bounty is currently posted.");const ready=bountyReadyAt(data,message.author.id),captured=b.status==="awaiting_turnin";return message.reply(`📜 **ACTIVE BOUNTY**\n\n🧙 Posted by: **${bountyNpc(data)?.name||"Unknown Hunter"}**\n🎯 Target: **${captured?bountyTarget(data)?.name:"UNKNOWN"}**\n🔎 ${bountyClue(data)}\n👥 Participants: **${bountyCount(data)}**\n🏹 Attempts: **${b.attempts}**\n\n${captured?(b.trophyHolderId===message.author.id?"🏆 Use `!turninbounty` to return the trophy.":"🏆 Waiting for the catcher to return the trophy."):(Date.now()>=ready?"✅ Use `!bountyhunt` now.":`⏱️ Ready <t:${Math.floor(ready/1000)}:R>.`)}`)}
-  if(command==="!bountyhunt"){const r=await performBountyHunt(data,message.author.id,message.channel);if(!r.ok)return message.reply(r.code==="cooldown"?`⏱️ Your next Bounty Hunt is ready <t:${Math.floor(r.readyAt/1000)}:R>.`:`📜 ${r.error}`);if(r.result==="clue")return message.reply(`🔎 **BOUNTY TRAIL**\n\nThe target stayed hidden.\n**${r.clue}**\n\n👥 ${r.participants} participating • 🏹 ${r.attempts} attempts`);if(r.result==="escaped")return message.reply(`⚠️ **CLOSE ENCOUNTER!**\n\nYou nearly cornered the target, but it escaped.\n🔎 **New clue:** ${r.clue}`);return}
+  if(command==="!bounty"||command==="!bountystatus"){const b=ensureBountyData(data);if(!b.active)return message.reply(b.status==="cooldown"&&b.nextAt>Date.now()?`📜 No bounty is active. The next bounty is expected <t:${Math.floor(b.nextAt/1000)}:R>.`:"📜 No bounty is currently posted.");const ready=bountyReadyAt(data,message.author.id),captured=b.status==="awaiting_turnin";return message.reply(`📜 **ACTIVE BOUNTY**\n\n🧙 Posted by: **${bountyNpc(data)?.name||"Unknown Hunter"}**\n🎯 Target: **${captured?bountyTarget(data)?.name:"UNKNOWN"}**\n🔎 ${bountyClue(data)}\n🎯 Your Target Chance: **${bountyTracker(data,message.author.id).chance}%**\n🧩 Your Clues Found: **${bountyTracker(data,message.author.id).clues}**\n👥 Participants: **${bountyCount(data)}**\n🏹 Attempts: **${b.attempts}**\n\n${captured?(b.trophyHolderId===message.author.id?"🏆 Use `!turninbounty` to return the trophy.":"🏆 Waiting for the catcher to return the trophy."):(Date.now()>=ready?"✅ Use `!bountyhunt` now.":`⏱️ Ready <t:${Math.floor(ready/1000)}:R>.`)}`)}
+  if(command==="!bountyhunt"){
+    const r=await performBountyHunt(data,message.author.id,message.channel);
+    if(!r.ok){
+      return message.reply(
+        r.code==="cooldown"
+          ? `⏱️ Your next Bounty Hunt is ready <t:${Math.floor(r.readyAt/1000)}:R>.`
+          : `📜 ${r.error}`
+      );
+    }
+
+    if(r.result==="clue"){
+      return message.reply(
+        `🔎 **BOUNTY TRAIL**\n\nYou searched the trail, but did not locate the target this time.\n` +
+        `**${r.clue}**\n\n👥 ${r.participants} participating • 🏹 ${r.attempts} attempts`
+      );
+    }
+
+    // Target found: from here on this works exactly like a normal capture.
+    const freshData=loadData();
+    const freshPlayer=getPlayer(freshData,message.author.id);
+    const monster=freshPlayer.currentMonster;
+    if(!monster?.bountyEncounter)return message.reply("The bounty trail vanished before the encounter could begin.");
+
+    const choices=buildCaptureChoices(freshPlayer,monster);
+    const validNumbers=choices.map(choice=>choice.number);
+    const chanceInfo=calculateCaptureChance(freshPlayer,monster,null,freshData,message.author.id);
+
+    const encounterMessage=await message.reply(
+      buildMonsterEmbed(
+        monster,
+        `${monster.bountyEncounter ? "📜 BOUNTY TARGET FOUND" : "🐾 BOUNTY TRAIL ENCOUNTER"} — ${monster.name}`,
+        `${monster.bountyEncounter ? "You tracked down the actual bounty target!" : "This creature crossed the bounty trail. Catch it to uncover a clue and improve your odds of finding the real target."}\n\n` +
+        `**Base Capture Chance:** ${monster.chance}%\n` +
+        `**Current Catch Chance:** ${chanceInfo.total}%\n\n` +
+        `**Choose how to catch it:**\n${captureChoicesText(choices)}\n\n` +
+        `Reply with **${validNumbers.join(", ")}** within 5 minutes.\n` +
+        `Only capture items you currently own are shown.`
+      )
+    );
+
+    const filter=response=>
+      response.author.id===message.author.id &&
+      validNumbers.includes(Number(response.content.trim()));
+
+    try{
+      const collected=await message.channel.awaitMessages({
+        filter,max:1,time:5*60*1000,errors:["time"]
+      });
+      const response=collected.first();
+      const selected=choices.find(choice=>choice.number===Number(response.content.trim()));
+      await response.delete().catch(()=>null);
+      return performCaptureAttempt(message,message.author.id,selected.itemKey);
+    }catch{
+      const timeoutData=loadData();
+      const timeoutPlayer=getPlayer(timeoutData,message.author.id);
+      if(timeoutPlayer.currentMonster?.bountyEncounter){
+        timeoutPlayer.currentMonster=null;
+        saveData(timeoutData);
+      }
+      return encounterMessage.reply(
+        `⌛ **The bounty target escaped because no capture choice was made within 5 minutes.**`
+      );
+    }
+  }
+
   if(command==="!turninbounty"){const r=await turnInBounty(data,message.author.id,message.channel);if(!r.ok)return message.reply(`📜 ${r.error}`);return}
   if(command.startsWith("!startbounty")){if(!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))return message.reply("Only admins can start a bounty.");if(ensureBountyData(data).active)return message.reply("A bounty is already active.");const raw=content.slice(12).trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");const forced=BOUNTY_TARGETS.find(t=>t.key===raw||t.name.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"")===raw)?.key||null;startBounty(data,forced);saveData(data);await announceBountyStart(message.channel,data);return}
   if(command==="!endbounty"){if(!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))return message.reply("Only admins can end a bounty.");const b=ensureBountyData(data);b.active=false;b.status="idle";b.nextAt=0;b.catcherId=null;b.trophyHolderId=null;saveData(data);return message.reply("📜 Active bounty ended. No rewards awarded.")}
@@ -8605,24 +8737,13 @@ ${captureChoicesText(choices)}
 
     if(sub==="catch"){
       if(!b.active || b.status!=="hunting" || !target) return message.reply("No active hunting-stage Bounty exists.");
-      b.participants[message.author.id]=true;
-      b.lastAttempts[message.author.id]=Date.now();
-      b.attempts=Number(b.attempts||0)+1;
-      b.status="awaiting_turnin";
-      b.catcherId=message.author.id;
-      b.trophyHolderId=message.author.id;
-      player.bountyTrophies||={};
-      player.bountyTrophies[target.key]=Number(player.bountyTrophies[target.key]||0)+1;
+      b.lastAttempts[message.author.id]=0;
       saveData(data);
-
-      await sendRoleImageAnnouncement(
-        message.channel,
-        `🧪 **FORCED BOUNTY CAPTURE TEST**\n\n<@${message.author.id}> captured **${target.name}**.\n` +
-        `🏆 Trophy recovered: **${target.trophy}**\n\nNow use the real \`!turninbounty\` command or the Activity **Return Trophy** button to test rewards and completion.`,
-        target.image,
-        false
+      return message.reply(
+        `🧪 **CAPTURE TEST UPDATED**\n\n` +
+        `Bounty captures are no longer forced automatically.\n` +
+        `Your Bounty cooldown was cleared. Use \`!bountyhunt\` or the Activity Bounty Hunt button until the target is encountered, then use the real capture roll.`
       );
-      return;
     }
 
     if(sub==="next"){
@@ -11380,6 +11501,7 @@ function ensureBountyData(data){
  if(typeof b.active!=="boolean")b.active=false;if(!b.status)b.status="idle";
  b.participants=(b.participants&&typeof b.participants==="object")?b.participants:{};
  b.lastAttempts=(b.lastAttempts&&typeof b.lastAttempts==="object")?b.lastAttempts:{};
+ b.trackers=(b.trackers&&typeof b.trackers==="object")?b.trackers:{};
  b.history=Array.isArray(b.history)?b.history:[]; b.attempts=Number(b.attempts||0);b.clueLevel=Number(b.clueLevel||0);b.nextAt=Number(b.nextAt||0);
  return b;
 }
@@ -11388,26 +11510,108 @@ function bountyNpc(data){return MERCHANT_TYPE_DEFINITIONS[ensureBountyData(data)
 function bountyClue(data){const b=ensureBountyData(data),t=bountyTarget(data);return t?t.clues[Math.min(t.clues.length-1,Math.max(0,b.clueLevel||0))]:"No active trail."}
 function bountyReadyAt(data,id){return Number(ensureBountyData(data).lastAttempts[id]||0)+BOUNTY_HUNT_COOLDOWN}
 function bountyCount(data){return Object.keys(ensureBountyData(data).participants).length}
+function bountyTracker(data,userId){
+ const b=ensureBountyData(data);
+ if(!b.trackers[userId]||typeof b.trackers[userId]!=="object"){
+   b.trackers[userId]={chance:10,clues:0};
+ }
+ const tracker=b.trackers[userId];
+ tracker.chance=Math.max(10,Math.min(70,Number(tracker.chance||10)));
+ tracker.clues=Math.max(0,Number(tracker.clues||0));
+ return tracker;
+}
+function bountyTrackingReward(data,userId){
+ const tracker=bountyTracker(data,userId);
+ tracker.clues++;
+ tracker.chance=Math.min(70,tracker.chance+10);
+ return tracker;
+}
 function startBounty(data,forced=null){
  const old=ensureBountyData(data), pool=BOUNTY_TARGETS.filter(x=>x.key!==old.lastTargetKey);
  const t=BOUNTY_TARGETS.find(x=>x.key===forced)||pool[Math.floor(Math.random()*pool.length)]||BOUNTY_TARGETS[0];
  const npc=BOUNTY_NPCS[Math.floor(Math.random()*BOUNTY_NPCS.length)];
- data.bounty={...old,active:true,status:"hunting",targetKey:t.key,npcKey:npc,startedAt:Date.now(),nextAt:0,participants:{},lastAttempts:{},attempts:0,clueLevel:0,catcherId:null,trophyHolderId:null};
+ data.bounty={...old,active:true,status:"hunting",targetKey:t.key,npcKey:npc,startedAt:Date.now(),nextAt:0,participants:{},lastAttempts:{},trackers:{},attempts:0,clueLevel:0,catcherId:null,trophyHolderId:null};
  return data.bounty;
 }
 async function announceBountyStart(ch,data){
  const n=bountyNpc(data);return sendRoleImageAnnouncement(ch,`<@&${MONSTER_NOTIFY_ROLE}>\n\n📜 **A NEW BOUNTY HAS BEEN POSTED**\n\n**${n?.name||"A traveling hunter"}** needs help tracking a dangerous creature.\n\n🎯 **Target: UNKNOWN**\n🔎 ${bountyClue(data)}\n\nUse \`!bountyhunt\` once every **60 minutes**.`,n?.image||null,true);
 }
 async function performBountyHunt(data,id,ch=null){
- const b=ensureBountyData(data);if(!b.active||b.status!=="hunting")return{ok:false,code:"inactive",error:"There is no active bounty hunt."};
- const now=Date.now(),ready=bountyReadyAt(data,id);if(now<ready)return{ok:false,code:"cooldown",readyAt:ready,error:"Your Bounty Hunt is still on cooldown."};
- const p=getPlayer(data,id),t=bountyTarget(data);b.lastAttempts[id]=now;b.participants[id]=true;b.attempts++;
- if(Math.random()>=.35){if(b.attempts%2===0)b.clueLevel=Math.min(t.clues.length-1,b.clueLevel+1);saveData(data);return{ok:true,result:"clue",clue:bountyClue(data),participants:bountyCount(data),attempts:b.attempts,readyAt:now+BOUNTY_HUNT_COOLDOWN}}
- if(Math.random()>=.35){b.clueLevel=Math.min(t.clues.length-1,b.clueLevel+1);saveData(data);return{ok:true,result:"escaped",clue:bountyClue(data),participants:bountyCount(data),attempts:b.attempts,readyAt:now+BOUNTY_HUNT_COOLDOWN}}
- b.status="awaiting_turnin";b.catcherId=id;b.trophyHolderId=id;p.bountyTrophies||={};p.bountyTrophies[t.key]=Number(p.bountyTrophies[t.key]||0)+1;saveData(data);
- if(ch?.isTextBased())await sendRoleImageAnnouncement(ch,`🏹 **BOUNTY TARGET CAPTURED!**\n\n<@${id}> brought down **${t.name}**!\n🏆 Trophy: **${t.trophy}**\n\nThe catcher must return it with \`!turninbounty\`.`,t.image,false);
- return{ok:true,result:"caught",targetName:t.name,trophy:t.trophy,participants:bountyCount(data),attempts:b.attempts,readyAt:now+BOUNTY_HUNT_COOLDOWN};
+ const b=ensureBountyData(data);
+ if(!b.active||b.status!=="hunting")return{ok:false,code:"inactive",error:"There is no active bounty hunt."};
+
+ const now=Date.now(),ready=bountyReadyAt(data,id);
+ if(now<ready)return{ok:false,code:"cooldown",readyAt:ready,error:"Your Bounty Hunt is still on cooldown."};
+
+ const player=getPlayer(data,id),target=bountyTarget(data),tracker=bountyTracker(data,id);
+ b.lastAttempts[id]=now;
+ b.participants[id]=true;
+ b.attempts=Number(b.attempts||0)+1;
+
+ // Each hunter begins every new Bounty at a 10% personal target-tracking chance.
+ // Catching a non-target trail monster awards a clue and +10%, capped at 70%.
+ const targetFound=(Math.random()*100)<tracker.chance;
+ prepareSignatureForHunt(player);
+
+ let monster;
+ if(targetFound){
+   monster={
+     name:target.name,
+     habitat:"Bounty Trail",
+     rarity:"Bounty",
+     points:0,
+     chance:30,
+     image:target.image,
+     description:"The contracted target has finally been tracked down.",
+     bountyEncounter:true,
+     bountyTargetKey:target.key
+   };
+ }else{
+   // A wrong trail always produces a real normal monster encounter.
+   // It must be caught normally to earn the clue/tracking increase.
+   monster=getRandomMonsterForPlayer(player,data,id);
+   // Keep Bounty trail decoys out of Distortion/World-Shatter special pools.
+   if(monster.distortionEncounter||monster.worldShatterEncounter||monster.rarity==="Mythic"){
+     monster=getRandomMonster(player);
+   }
+   monster={
+     ...monster,
+     habitat:monster.habitat||"Hunting Grounds",
+     bountyTrailEncounter:true,
+     bountyTargetKey:target.key
+   };
+ }
+
+ const encounters=addEncounterKnowledge(player,monster);
+ const chanceInfo=calculateCaptureChance(player,monster,null,data,id);
+ player.currentMonster=monster;
+ saveData(data);
+
+ const choices=buildCaptureChoices(player,monster).map(choice=>({
+   number:choice.number,
+   itemKey:choice.itemKey,
+   label:choice.label,
+   chance:choice.chance
+ }));
+
+ return{
+   ok:true,
+   result:"encounter",
+   encountered:true,
+   isTarget:Boolean(targetFound),
+   monster:{...monster,imageUrl:monster.image?`/assets/monsters/${monster.image}`:null},
+   chance:chanceInfo.total,
+   baseChance:Number(monster.chance||0),
+   encounters,
+   choices,
+   trackingChance:tracker.chance,
+   clues:tracker.clues,
+   participants:bountyCount(data),
+   attempts:b.attempts,
+   readyAt:now+BOUNTY_HUNT_COOLDOWN
+ };
 }
+
 async function turnInBounty(data,id,ch=null){
  const b=ensureBountyData(data),t=bountyTarget(data),n=bountyNpc(data);if(!b.active||b.status!=="awaiting_turnin"||!t)return{ok:false,error:"No captured bounty is waiting for turn-in."};
  if(b.trophyHolderId!==id)return{ok:false,error:"Only the hunter carrying the trophy can turn it in."};const c=getPlayer(data,id);c.bountyTrophies||={};if(Number(c.bountyTrophies[t.key]||0)<1)return{ok:false,error:`You are not carrying the ${t.trophy}.`};c.bountyTrophies[t.key]--;
@@ -11442,7 +11646,7 @@ function activityLiveEventsPayload(data, userId) {
       key:"biggame",
       icon:"🎯",
       name:"Big Game Hunt",
-      description:"30-minute hunt cooldowns, Hunt Tokens, and Top 3 placement rewards.",
+      description:"30-minute hunt cooldowns, DOUBLE Hunt Tokens on successful catches, and Top 3 placement rewards.",
       endsAt:Number(data.bigGame?.endsAt || 0),
       type:"Live Event"
     });
@@ -11523,7 +11727,7 @@ function activityLiveEventsPayload(data, userId) {
       tokenRewards:{...BIG_GAME_TOKEN_REWARDS},
       placementRewards:[...BIG_GAME_PLACEMENT_REWARDS]
     },
-    bounty:{active:bountyActive,status:bountyState.status,npc:bountyNpc(data)?.name||"",clue:bountyActive?bountyClue(data):"",participants:bountyCount(data),attempts:Number(bountyState.attempts||0),huntReadyAt:bountyReadyAt(data,userId),cooldownMs:BOUNTY_HUNT_COOLDOWN,isCatcher:bountyState.catcherId===userId,canTurnIn:bountyState.status==="awaiting_turnin"&&bountyState.trophyHolderId===userId,targetName:bountyState.status==="awaiting_turnin"?(bountyTarget(data)?.name||""):"",trophy:bountyState.status==="awaiting_turnin"?(bountyTarget(data)?.trophy||""):"",nextAt:Number(bountyState.nextAt||0)},
+    bounty:{active:bountyActive,status:bountyState.status,npc:bountyNpc(data)?.name||"",clue:bountyActive?bountyClue(data):"",participants:bountyCount(data),attempts:Number(bountyState.attempts||0),huntReadyAt:bountyReadyAt(data,userId),cooldownMs:BOUNTY_HUNT_COOLDOWN,trackingChance:bountyTracker(data,userId).chance,cluesFound:bountyTracker(data,userId).clues,isCatcher:bountyState.catcherId===userId,canTurnIn:bountyState.status==="awaiting_turnin"&&bountyState.trophyHolderId===userId,targetName:bountyState.status==="awaiting_turnin"?(bountyTarget(data)?.name||""):"",trophy:bountyState.status==="awaiting_turnin"?(bountyTarget(data)?.trophy||""):"",nextAt:Number(bountyState.nextAt||0)},
     distortion:{
       active:Boolean(distortionDef),
       name:distortionDef?.name || "No Distortion Active",
