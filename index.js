@@ -1196,11 +1196,19 @@ const H7_COSMETICS = [
   {key:"starfall_mantle",name:"Starfall Mantle",slot:"Cloak",requirement:"Discover 28 PetDex companions",unlock:{type:"petdex",amount:28}},
 
   {key:"field_band",name:"Hunter's Field Band",slot:"Headgear",requirement:"Starter cosmetic"},
+  {key:"army_helmet",name:"Army Helmet",slot:"Headgear",requirement:"Reach Hunter Level 3",unlock:{type:"level",amount:3}},
+  {key:"ninja_mask",name:"Ninja Mask",slot:"Headgear",requirement:"Reach Hunter Level 6",unlock:{type:"level",amount:6}},
+  {key:"cowboy_hat",name:"Cowboy Hat",slot:"Headgear",requirement:"Discover 8 PetDex companions",unlock:{type:"petdex",amount:8}},
+  {key:"wizard_hat",name:"Wizard Hat",slot:"Headgear",requirement:"Discover 18 PetDex companions",unlock:{type:"petdex",amount:18}},
   {key:"moonfen_circlet",name:"Moonfen Circlet",slot:"Headgear",requirement:"Discover 4 PetDex companions",unlock:{type:"petdex",amount:4}},
   {key:"trophy_horns",name:"Trophy Horns",slot:"Headgear",requirement:"Earn 3 current-season bounty trophies",unlock:{type:"trophies",amount:3}},
   {key:"starfall_crown",name:"Starfall Crown",slot:"Headgear",requirement:"Complete the 32-companion PetDex",unlock:{type:"petdex",amount:32}},
 
   {key:"field_scout",name:"Field Scout Gear",slot:"Outfit",requirement:"Starter cosmetic"},
+  {key:"overalls",name:"Hunter Overalls",slot:"Outfit",requirement:"Reach Hunter Level 3",unlock:{type:"level",amount:3}},
+  {key:"ninja_robe",name:"Ninja Robe",slot:"Outfit",requirement:"Reach Hunter Level 6",unlock:{type:"level",amount:6}},
+  {key:"pirate_coat",name:"Pirate Coat",slot:"Outfit",requirement:"Discover 10 PetDex companions",unlock:{type:"petdex",amount:10}},
+  {key:"wizard_robe",name:"Wizard Robe",slot:"Outfit",requirement:"Discover 18 PetDex companions",unlock:{type:"petdex",amount:18}},
   {key:"storm_hunter",name:"Storm Hunter Coat",slot:"Outfit",requirement:"Reach Hunter Level 5",unlock:{type:"level",amount:5}},
   {key:"glasswaste_hunter",name:"Glasswaste Hunter Gear",slot:"Outfit",requirement:"Discover 12 PetDex companions",unlock:{type:"petdex",amount:12}},
   {key:"ember_hunter",name:"Ember Hunter Armor",slot:"Outfit",requirement:"Discover 20 PetDex companions",unlock:{type:"petdex",amount:20}},
@@ -1215,7 +1223,10 @@ const H7_COSMETICS = [
   {key:"braid",name:"Long Braid",slot:"Hair Style",requirement:"Reach Hunter Level 7",unlock:{type:"level",amount:7}},
 
   {key:"spear",name:"Hunter Spear",slot:"Weapon",requirement:"Reach Hunter Level 3",unlock:{type:"level",amount:3}},
+  {key:"pitchfork",name:"Pitchfork",slot:"Weapon",requirement:"Reach Hunter Level 3",unlock:{type:"level",amount:3}},
   {key:"sword",name:"Hunter Sword",slot:"Weapon",requirement:"Reach Hunter Level 4",unlock:{type:"level",amount:4}},
+  {key:"katana",name:"Katana",slot:"Weapon",requirement:"Reach Hunter Level 6",unlock:{type:"level",amount:6}},
+  {key:"magic_wand",name:"Magic Wand",slot:"Weapon",requirement:"Discover 12 PetDex companions",unlock:{type:"petdex",amount:12}},
   {key:"rift_staff",name:"Rift Staff",slot:"Weapon",requirement:"Reach Hunter Level 10",unlock:{type:"level",amount:10}}
 ];
 
