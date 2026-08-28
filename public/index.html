@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-h2b.css?v=1300" />
+  <link rel="stylesheet" href="/styles-phase-h2b4.css?v=1340" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">PHASE H.2B.3 • TOKEN + USE FIX</p>
+        <p class="eyebrow">PHASE H.2B.4 • LIVE WALLET + ITEM RESULTS</p>
         <h1>🏹 Monster Hunt</h1>
       </div>
       <div class="wallet">
@@ -652,6 +652,15 @@
 
     </main>
 
+    <div class="activity-result-popup hidden" id="activityResultPopup" role="status" aria-live="polite">
+      <div class="activity-result-icon" id="activityResultIcon">✨</div>
+      <div class="activity-result-copy">
+        <strong id="activityResultTitle">Item Used!</strong>
+        <p id="activityResultText"></p>
+      </div>
+      <button class="activity-result-close" id="activityResultClose" type="button" aria-label="Close">✕</button>
+    </div>
+
     <nav class="bottom-nav" aria-label="Main navigation">
       <button class="nav-active" data-nav="home"><span>🏕️</span><small>Home</small></button>
       <button data-nav="pets"><span>🐾</span><small>Pets</small></button>
@@ -730,6 +739,6 @@
   </div>
 
   <script src="/activity-auth.js?v=1220"></script>
-  <script src="/app-phase-h2b3.js?v=1330"></script>
+  <script src="/app-phase-h2b4.js?v=1340"></script>
 </body>
 </html>
