@@ -350,14 +350,14 @@ const pets = [
 ];
 
 const PET_COLLECTIONS = {
-  Forest: { icon: "🌲", achievement: "Forest Companion Collection", title: "Forest Keeper" },
-  Ocean: { icon: "🌊", achievement: "Ocean Companion Collection", title: "Tidecaller" },
-  Mountain: { icon: "🏔️", achievement: "Mountain Companion Collection", title: "Peak Walker" },
-  Volcano: { icon: "🌋", achievement: "Volcano Companion Collection", title: "Flamebound" },
-  Arctic: { icon: "❄️", achievement: "Arctic Companion Collection", title: "Winter's Chosen" },
-  Void: { icon: "🌌", achievement: "Void Companion Collection", title: "Void Touched" },
-  Sky: { icon: "☁️", achievement: "Sky Companion Collection", title: "Storm Rider" },
-  Undead: { icon: "🪦", achievement: "Undead Companion Collection", title: "Grave Warden" }
+  Moonfen: { icon: "🌙", achievement: "Moonfen Companion Collection", title: "Moonfen Keeper" },
+  Glasswaste: { icon: "🏜️", achievement: "Glasswaste Companion Collection", title: "Glasswalker" },
+  Gloamwood: { icon: "🌲", achievement: "Gloamwood Companion Collection", title: "Gloamwarden" },
+  Stormreach: { icon: "⛈️", achievement: "Stormreach Companion Collection", title: "Storm Rider" },
+  Emberdeep: { icon: "🔥", achievement: "Emberdeep Companion Collection", title: "Emberbound" },
+  Frostgrave: { icon: "🧊", achievement: "Frostgrave Companion Collection", title: "Gravefrost Warden" },
+  Sporewilds: { icon: "🍄", achievement: "Sporewilds Companion Collection", title: "Sporekeeper" },
+  "Starfall Basin": { icon: "🌌", achievement: "Starfall Basin Companion Collection", title: "Starfall Keeper" }
 };
 
 const GRAND_PET_COLLECTION_REWARD = {
@@ -11763,6 +11763,22 @@ async function activityIncubateEgg(user, inventoryIndex) {
   return {ok:true, ...activityIncubatorPayload(player), eggs:activityEggInventoryPayload(player)};
 }
 
+function activityPetHatchFlavor(definition) {
+  if (!definition) return "A new companion answers the call of the hunt.";
+  if (definition.key === "mixlet") return "Small body. Infinite chaos. Somehow, it already looks like it owns the place.";
+  const habitatFlavor = {
+    Moonfen: "Moonlit swamp magic clings to your new companion as it takes its first curious look around.",
+    Glasswaste: "Crystal dust glitters around your new companion as it emerges, alert and ready to explore.",
+    Gloamwood: "For one strange moment the room goes quiet—then your new companion decides you are safe.",
+    Stormreach: "A tiny charge dances through the air as your new companion lands beside you.",
+    Emberdeep: "Warm sparks drift from the shell as your new companion steps forward without fear.",
+    Frostgrave: "Cold mist spills away from the shell, revealing a companion that seems perfectly at home in the chill.",
+    Sporewilds: "A shimmer of harmless spores follows your new companion as it eagerly investigates its surroundings.",
+    "Starfall Basin": "Tiny points of starlight linger around your new companion before fading into the air."
+  };
+  return habitatFlavor[definition.habitat] || definition.description || "A new companion answers the call of the hunt.";
+}
+
 async function activityHatchEgg(user, slotNumber) {
   const data = loadData();
   const player = getPlayer(data,user.id);
@@ -11800,7 +11816,6 @@ async function activityHatchEgg(user, slotNumber) {
   player.points += total;
   addWeeklyProgress(data,player,total);
   player.titleProgress.eggsHatched=(player.titleProgress.eggsHatched||0)+1;
-  if (player.equippedPetId===null) player.equippedPetId=owned.id;
   evaluatePetCollectionRewards(data,player);
   checkTitleUnlocks(player);
   recordPointMilestoneMoments(data,user.id,previousPoints,player.points);
@@ -11820,7 +11835,9 @@ async function activityHatchEgg(user, slotNumber) {
     pet:{
       id:owned.id,key:definition.key,name:definition.name,nickname:null,icon:definition.icon,
       rarity:definition.rarity,habitat:definition.habitat,image:definition.image||null,
-      level:1,bond:1,xp:0,ability:definition.signatureName||definition.ability,description:definition.description
+      level:1,bond:1,xp:0,ability:definition.signatureName||abilityDisplayName(definition.ability),
+      abilityEffect:definition.signatureAbility ? definition.description : formatAbilityEffect({ability:definition.ability,baseBonus:definition.baseBonus,level:1}),
+      description:definition.description,flavor:activityPetHatchFlavor(definition)
     },
     pointsAwarded:total,
     newDex:!already
