@@ -2570,13 +2570,15 @@ function renderActivityFetch(fetchState=hunter?.fetch){
       : `<span>🐾</span><div><b>Fetch Resting</b><small>Ready again in ${h5FetchCountdown(cooldownLeft)}</small></div>`;
 
     const completedAt=Number(f.completedAt||0);
-    if(result && completedAt && completedAt>h5LastFetchReveal){
+    if(result && f.revealResult && completedAt && completedAt>h5LastFetchReveal){
       h5LastFetchReveal=completedAt;
       showActivityResult(
         result.petIcon||"🐾",
         `${result.petName||f.pet.name} Returned!`,
         `${result.flavor||"Fetch complete."}${result.rewards?.length?` Found: ${result.rewards.join(" • ")}`:""}${result.xpText?` ${result.xpText}`:""}`
       );
+      activityFetch("/api/activity/fetch/ack",{method:"POST"}).catch(()=>null);
+      if(hunter?.fetch) hunter.fetch.revealResult=false;
       refreshH2BInventory().catch(()=>null);
     }
     return;
