@@ -316,6 +316,8 @@ function navTo(screen) {
   if (screen === "inventory") refreshH2BInventory();
   if (screen === "merchant") refreshH2BMerchant();
   if (screen === "events") refreshH2CLiveEvents(true);
+  if (screen === "notifications") refreshH4NotificationPrefs();
+  if (screen === "pets") refreshActivityFetch();
   if (screen === "hunt") {
     refreshH2CLiveEvents(false).then(() => renderPhaseFHunting());
   }
@@ -669,9 +671,19 @@ document.getElementById("combineResultModal")?.addEventListener("click",e=>{if(e
 
 function renderDex() {
   if (!gameData) return;
-  const discovered = new Set(gameData.ownedPets.map(p => p.key));
-  const habitats = ["Forest","Ocean","Mountain","Volcano","Arctic","Void","Sky","Undead"];
-  const habitatIcons = {Forest:"🌲",Ocean:"🌊",Mountain:"🏔️",Volcano:"🌋",Arctic:"❄️",Void:"🌌",Sky:"☁️",Undead:"🪦"};
+  // PetDex discovery is permanent even if a pet is later sacrificed.
+  const discovered = new Set(gameData.petDex.filter(p => p.discovered).map(p => p.key));
+  const habitats = ["Moonfen","Glasswaste","Gloamwood","Stormreach","Emberdeep","Frostgrave","Sporewilds","Starfall Basin"];
+  const habitatIcons = {
+    Moonfen:"🌙",
+    Glasswaste:"🏜️",
+    Gloamwood:"🌲",
+    Stormreach:"⛈️",
+    Emberdeep:"🔥",
+    Frostgrave:"🧊",
+    Sporewilds:"🍄",
+    "Starfall Basin":"🌌"
+  };
   const host = document.getElementById("dexHabitats");
   host.innerHTML = habitats.map(h => {
     const pets = gameData.petDex.filter(p => p.habitat === h);
@@ -694,8 +706,9 @@ function renderDex() {
   }).join("");
 
   const beyond = document.getElementById("beyondGrid");
+  const beyondDiscovered = new Set(gameData.beyondPets.filter(p => p.discovered).map(p => p.key));
   beyond.innerHTML = gameData.beyondPets.map(p => {
-    const found = discovered.has(p.key);
+    const found = beyondDiscovered.has(p.key);
     return `
       <article class="pet-card ${found ? "" : "locked"}" data-rarity="${p.rarity}" ${found ? `data-pet-key="${p.key}"` : ""}>
         <div class="pet-portrait">
@@ -1974,6 +1987,8 @@ async function boot() {
     renderInventory();
     renderCollection();
     renderActivePet();
+    renderActivityFetch(hunter.fetch);
+    startH5FetchPolling();
 
     renderHomeLeaderboard();
     renderPhaseEEvents();
@@ -2390,23 +2405,8 @@ const H4_NOTIFICATION_META = [
 let h4NotificationState=null;
 
 function ensureH4NotificationPanel(){
-  const home=document.querySelector('[data-screen="home"]');
-  if(!home || document.getElementById("h4NotificationPanel")) return;
-  const quick=home.querySelector(".quick-grid");
-  const panel=document.createElement("section");
-  panel.id="h4NotificationPanel";
-  panel.className="panel h4-notification-panel";
-  panel.innerHTML=`
-    <div class="h4-notification-heading">
-      <div><p class="eyebrow">🔔 NOTIFICATIONS</p><h3>Monster Hunt Alerts</h3></div>
-      <span class="h4-notification-route" id="h4NotificationRoute">Loading…</span>
-    </div>
-    <p class="muted">Choose personal ready notifications and opt-in Discord event roles.</p>
-    <div class="h4-notification-grid" id="h4NotificationGrid">
-      <div class="empty-state">Loading notification preferences…</div>
-    </div>`;
-  if(quick) quick.insertAdjacentElement("beforebegin",panel);
-  else home.appendChild(panel);
+  // H.6: Notifications now live on their own Activity screen.
+  return Boolean(document.getElementById("h4NotificationPanel"));
 }
 
 function renderH4NotificationPanel(){
@@ -2462,4 +2462,103 @@ async function refreshH4NotificationPrefs(){
 }
 
 setTimeout(()=>refreshH4NotificationPrefs().catch(()=>null),250);
+
+// ===== H.5 ACTIVITY FETCH =====
+let h5FetchPollTimer=null;
+let h5LastFetchReveal=0;
+
+function h5FetchCountdown(ms){
+  ms=Math.max(0,Number(ms||0));
+  const s=Math.ceil(ms/1000), m=Math.floor(s/60), sec=s%60;
+  if(m>=60){const h=Math.floor(m/60), rm=m%60; return `${h}h ${rm}m`;}
+  return `${m}:${String(sec).padStart(2,"0")}`;
+}
+
+function renderActivityFetch(fetchState=hunter?.fetch){
+  const btn=document.getElementById("activityFetchBtn");
+  const status=document.getElementById("activityFetchStatus");
+  if(!btn||!status) return;
+  const f=fetchState||{};
+  const now=Date.now();
+
+  if(!f.pet){
+    btn.disabled=true;
+    btn.textContent="🐾 Equip a Pet First";
+    status.innerHTML=`<span>🐾</span><div><b>No active companion</b><small>Equip a pet before using Fetch.</small></div>`;
+    return;
+  }
+
+  if(f.active || f.returning){
+    const left=Math.max(0,Number(f.readyAt||0)-now);
+    btn.disabled=true;
+    btn.textContent=left>0?`🐾 Fetching • ${h5FetchCountdown(left)}`:"🐾 Returning…";
+    status.innerHTML=`<span>🐾</span><div><b>${escapeHtml(f.pet.name)} is Fetching</b><small>${left>0?`Returns in ${h5FetchCountdown(left)}`:"Resolving the Fetch adventure…"}</small></div>`;
+    return;
+  }
+
+  const cooldownLeft=Math.max(0,Number(f.cooldownReadyAt||0)-now);
+  if(cooldownLeft>0){
+    btn.disabled=true;
+    btn.textContent=`⏳ Fetch Ready in ${h5FetchCountdown(cooldownLeft)}`;
+    const result=f.result;
+    status.innerHTML=result
+      ? `<span>${result.petIcon||"🐾"}</span><div><b>${escapeHtml(result.petName||f.pet.name)} returned!</b><small>${(result.rewards||[]).map(escapeHtml).join(" • ")||"Fetch complete."}</small></div>`
+      : `<span>🐾</span><div><b>Fetch Resting</b><small>Ready again in ${h5FetchCountdown(cooldownLeft)}</small></div>`;
+
+    const completedAt=Number(f.completedAt||0);
+    if(result && completedAt && completedAt>h5LastFetchReveal){
+      h5LastFetchReveal=completedAt;
+      showActivityResult(
+        result.petIcon||"🐾",
+        `${result.petName||f.pet.name} Returned!`,
+        `${result.flavor||"Fetch complete."}${result.rewards?.length?` Found: ${result.rewards.join(" • ")}`:""}${result.xpText?` ${result.xpText}`:""}`
+      );
+      refreshH2BInventory().catch(()=>null);
+    }
+    return;
+  }
+
+  btn.disabled=false;
+  btn.textContent=`🐾 Send ${f.pet.name} Fetching`;
+  status.innerHTML=`<span>🐾</span><div><b>Fetch Ready</b><small>Send ${escapeHtml(f.pet.name)} adventuring for 10 minutes to search for rewards.</small></div>`;
+}
+
+async function refreshActivityFetch(){
+  try{
+    const response=await activityFetch("/api/activity/fetch");
+    const result=await response.json();
+    if(!response.ok||!result.ok) throw new Error(result.error||"Could not load Fetch.");
+    if(hunter) hunter.fetch=result.fetch;
+    renderActivityFetch(result.fetch);
+  }catch(error){
+    const status=document.getElementById("activityFetchStatus");
+    if(status) status.innerHTML=`<span>❌</span><div><b>Fetch unavailable</b><small>${escapeHtml(error.message)}</small></div>`;
+  }
+}
+
+async function startActivityFetch(){
+  const btn=document.getElementById("activityFetchBtn");
+  if(btn) btn.disabled=true;
+  try{
+    const response=await activityFetch("/api/activity/fetch/start",{method:"POST"});
+    const result=await response.json();
+    if(!response.ok||!result.ok) throw new Error(result.error||"Could not start Fetch.");
+    if(hunter) hunter.fetch=result.fetch;
+    renderActivityFetch(result.fetch);
+    showActivityResult("🐾",result.message||"Fetch Started!",`${result.flavor||""} Your companion will return in 10 minutes.`);
+  }catch(error){
+    showActivityResult("❌","Fetch Could Not Start",error.message);
+    await refreshActivityFetch();
+  }
+}
+
+document.getElementById("activityFetchBtn")?.addEventListener("click",startActivityFetch);
+
+function startH5FetchPolling(){
+  clearInterval(h5FetchPollTimer);
+  h5FetchPollTimer=setInterval(()=>{
+    if(currentScreen==="pets") refreshActivityFetch().catch(()=>null);
+    else if(hunter?.fetch?.active || hunter?.fetch?.returning) renderActivityFetch(hunter.fetch);
+  },5000);
+}
 

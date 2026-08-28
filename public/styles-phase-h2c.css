@@ -2974,3 +2974,95 @@ body { background:#050a14; }
   .h4-notification-heading { align-items:flex-start; }
 }
 
+/* ===== H.5 ACTIVITY FETCH ===== */
+.home-companion-actions {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:10px;
+}
+.home-companion-actions > button { width:100%; min-width:0; }
+.h5-fetch-btn { font-weight:800; }
+.h5-fetch-status {
+  margin-top:9px;
+  padding:9px 11px;
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  align-items:center;
+  gap:9px;
+  border:1px solid rgba(148,163,184,.15);
+  border-radius:12px;
+  background:rgba(15,23,42,.68);
+}
+.h5-fetch-status > span { font-size:1.2rem; }
+.h5-fetch-status > div { min-width:0; display:grid; gap:2px; }
+.h5-fetch-status b { font-size:.8rem; }
+.h5-fetch-status small { color:#94a3b8; line-height:1.25; }
+@media (max-width:480px) {
+  .home-companion-actions { grid-template-columns:1fr; }
+}
+
+/* ===== H.6 PET TOOLS + ALERTS MENU + NEW PETDEX ===== */
+.pet-header-tools {
+  min-width:min(100%,520px);
+  display:grid;
+  justify-items:end;
+  gap:7px;
+}
+.pet-header-actions {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  align-items:center;
+  gap:8px;
+}
+.pet-header-actions .compact-action {
+  min-width:145px;
+}
+.pet-header-fetch-status {
+  margin-top:0 !important;
+  width:min(100%,390px);
+  padding:7px 10px !important;
+  text-align:left;
+}
+.pet-header-fetch-status small {
+  white-space:normal;
+}
+[data-screen="notifications"] .h4-notification-panel {
+  margin-top:14px;
+}
+[data-screen="notifications"] .h4-notification-grid {
+  margin-top:0;
+}
+@media (max-width:680px) {
+  [data-screen="pets"] .screen-header {
+    align-items:stretch;
+    flex-direction:column;
+  }
+  .pet-header-tools {
+    width:100%;
+    justify-items:stretch;
+  }
+  .pet-header-actions {
+    justify-content:stretch;
+    display:grid;
+    grid-template-columns:1fr 1fr auto;
+  }
+  .pet-header-actions .compact-action {
+    min-width:0;
+    width:100%;
+  }
+  .pet-header-fetch-status {
+    width:100%;
+  }
+}
+@media (max-width:440px) {
+  .pet-header-actions {
+    grid-template-columns:1fr 1fr;
+  }
+  .pet-header-actions .screen-count {
+    grid-column:1 / -1;
+    justify-self:end;
+  }
+}
+
