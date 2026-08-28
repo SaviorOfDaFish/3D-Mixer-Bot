@@ -2375,3 +2375,90 @@ setInterval(()=>{
     h2dMountBountyCard();
   }
 },1000);
+
+// ===== H.4 PLAYER NOTIFICATION PREFERENCES =====
+const H4_NOTIFICATION_META = [
+  {key:"huntReady",icon:"🏹",name:"Hunt Ready",detail:"DM me when my normal Hunt cooldown ends.",kind:"DM"},
+  {key:"eggReady",icon:"🥚",name:"Egg Ready",detail:"DM me when an incubated egg is ready to hatch.",kind:"DM"},
+  {key:"huntAlerts",icon:"🏹",name:"Hunt Alerts",detail:"Give me the Discord Hunt Alerts role.",kind:"Role"},
+  {key:"merchantAlerts",icon:"🛒",name:"Merchant Alerts",detail:"Ping me when a traveling merchant arrives.",kind:"Role"},
+  {key:"bigHuntAlerts",icon:"👑",name:"Big Hunt Alerts",detail:"Ping me for Big Game warnings and starts.",kind:"Role"},
+  {key:"bountyAlerts",icon:"🎯",name:"Bounty Alerts",detail:"Ping me when a new bounty is posted.",kind:"Role"},
+  {key:"worldEventAlerts",icon:"🌌",name:"World Event Alerts",detail:"Ping me when major world events begin.",kind:"Role"}
+];
+let h4NotificationState=null;
+
+function ensureH4NotificationPanel(){
+  const home=document.querySelector('[data-screen="home"]');
+  if(!home || document.getElementById("h4NotificationPanel")) return;
+  const quick=home.querySelector(".quick-grid");
+  const panel=document.createElement("section");
+  panel.id="h4NotificationPanel";
+  panel.className="panel h4-notification-panel";
+  panel.innerHTML=`
+    <div class="h4-notification-heading">
+      <div><p class="eyebrow">🔔 NOTIFICATIONS</p><h3>Monster Hunt Alerts</h3></div>
+      <span class="h4-notification-route" id="h4NotificationRoute">Loading…</span>
+    </div>
+    <p class="muted">Choose private reminders and opt-in Discord alert roles.</p>
+    <div class="h4-notification-grid" id="h4NotificationGrid">
+      <div class="empty-state">Loading notification preferences…</div>
+    </div>`;
+  if(quick) quick.insertAdjacentElement("beforebegin",panel);
+  else home.appendChild(panel);
+}
+
+function renderH4NotificationPanel(){
+  ensureH4NotificationPanel();
+  const grid=document.getElementById("h4NotificationGrid");
+  const route=document.getElementById("h4NotificationRoute");
+  if(!grid||!h4NotificationState) return;
+  route.textContent=h4NotificationState.testing?"🧪 Test channel active":"✅ Live channels active";
+  const prefs=h4NotificationState.preferences||{};
+  grid.innerHTML=H4_NOTIFICATION_META.map(item=>`
+    <label class="h4-notification-row">
+      <span class="h4-notification-icon">${item.icon}</span>
+      <span class="h4-notification-copy"><b>${item.name}</b><small>${item.detail}</small><em>${item.kind}</em></span>
+      <input class="h4-notification-toggle" type="checkbox" data-h4-notification="${item.key}" ${prefs[item.key]?"checked":""} />
+      <span class="h4-toggle-visual" aria-hidden="true"></span>
+    </label>`).join("");
+  grid.querySelectorAll("[data-h4-notification]").forEach(input=>{
+    input.addEventListener("change",async()=>{
+      const key=input.dataset.h4Notification, enabled=input.checked;
+      input.disabled=true;
+      try{
+        const response=await activityFetch("/api/activity/notifications",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({key,enabled})
+        });
+        const result=await response.json();
+        if(!response.ok||!result.ok) throw new Error(result.error||"Could not update notification.");
+        h4NotificationState.preferences={...(h4NotificationState.preferences||{}),...(result.preferences||{})};
+        showActivityResult("🔔","Notifications Updated",enabled?"Alert enabled.":"Alert disabled.");
+      }catch(error){
+        input.checked=!enabled;
+        showActivityResult("❌","Notification Update Failed",error.message);
+      }finally{
+        input.disabled=false;
+      }
+    });
+  });
+}
+
+async function refreshH4NotificationPrefs(){
+  ensureH4NotificationPanel();
+  try{
+    const response=await activityFetch("/api/activity/notifications");
+    const result=await response.json();
+    if(!response.ok||!result.ok) throw new Error(result.error||"Could not load notifications.");
+    h4NotificationState=result;
+    renderH4NotificationPanel();
+  }catch(error){
+    const grid=document.getElementById("h4NotificationGrid");
+    if(grid) grid.innerHTML=`<div class="empty-state">❌ ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+setTimeout(()=>refreshH4NotificationPrefs().catch(()=>null),250);
+

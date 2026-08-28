@@ -2880,12 +2880,7 @@ body { background:#050a14; }
   .overview-pet-stats { justify-content:flex-start; }
 }
 
-
-/* ===== H.3.4 UNIVERSAL PET ART PROPORTIONS =====
-   Keep companion artwork visually consistent across Home, Hunt, Pets, PetDex,
-   pet detail, and hatch reveal. Home + Hunt intentionally share the exact
-   same scene footprint so switching tabs does not resize the active pet. */
-
+/* ===== H.3.4 UNIVERSAL PET ART PROPORTIONS ===== */
 :root {
   --pet-scene-width: 38%;
   --pet-scene-height: 66%;
@@ -2895,8 +2890,6 @@ body { background:#050a14; }
   --pet-detail-art-height: 205px;
   --pet-dex-art-size: 58px;
 }
-
-/* HOME scene */
 .home-pet-art-wrap {
   right: var(--pet-scene-right) !important;
   bottom: var(--pet-scene-bottom) !important;
@@ -2904,97 +2897,80 @@ body { background:#050a14; }
   height: var(--pet-scene-height) !important;
 }
 .home-pet-image {
-  width: 100% !important;
-  height: 100% !important;
-  max-width: 100% !important;
-  max-height: 100% !important;
-  object-fit: contain !important;
-  object-position: center bottom !important;
+  width:100% !important; height:100% !important; max-width:100% !important; max-height:100% !important;
+  object-fit:contain !important; object-position:center bottom !important;
 }
-
-/* HUNT scene — exact same pet footprint as Home */
 .overview-pet-wrap {
-  right: var(--pet-scene-right) !important;
-  bottom: var(--pet-scene-bottom) !important;
-  width: var(--pet-scene-width) !important;
-  height: var(--pet-scene-height) !important;
-  display: grid !important;
-  place-items: end center !important;
+  right:var(--pet-scene-right) !important; bottom:var(--pet-scene-bottom) !important;
+  width:var(--pet-scene-width) !important; height:var(--pet-scene-height) !important;
+  display:grid !important; place-items:end center !important;
 }
 .overview-pet-image {
-  width: 100% !important;
-  height: 100% !important;
-  max-width: 100% !important;
-  max-height: 100% !important;
-  object-fit: contain !important;
-  object-position: center bottom !important;
+  width:100% !important; height:100% !important; max-width:100% !important; max-height:100% !important;
+  object-fit:contain !important; object-position:center bottom !important;
 }
-
-/* PETS cards */
 .pet-card-image {
-  width: 92% !important;
-  height: var(--pet-card-art-height) !important;
-  max-width: 92% !important;
-  max-height: var(--pet-card-art-height) !important;
-  object-fit: contain !important;
-  object-position: center !important;
+  width:92% !important; height:var(--pet-card-art-height) !important;
+  max-width:92% !important; max-height:var(--pet-card-art-height) !important;
+  object-fit:contain !important; object-position:center !important;
 }
-
-/* PET detail modal */
 .detail-pet-image {
-  width: min(92%, 330px) !important;
-  height: var(--pet-detail-art-height) !important;
-  max-height: var(--pet-detail-art-height) !important;
-  object-fit: contain !important;
-  object-position: center !important;
+  width:min(92%,330px) !important; height:var(--pet-detail-art-height) !important;
+  max-height:var(--pet-detail-art-height) !important; object-fit:contain !important; object-position:center !important;
 }
-
-/* PETDEX thumbnails */
 .dex-icon:has(.dex-pet-image) {
-  width: var(--pet-dex-art-size) !important;
-  min-width: var(--pet-dex-art-size) !important;
-  height: var(--pet-dex-art-size) !important;
+  width:var(--pet-dex-art-size) !important; min-width:var(--pet-dex-art-size) !important; height:var(--pet-dex-art-size) !important;
 }
 .dex-pet-image {
-  width: var(--pet-dex-art-size) !important;
-  height: var(--pet-dex-art-size) !important;
-  max-width: var(--pet-dex-art-size) !important;
-  max-height: var(--pet-dex-art-size) !important;
-  object-fit: contain !important;
-  object-position: center !important;
+  width:var(--pet-dex-art-size) !important; height:var(--pet-dex-art-size) !important;
+  max-width:var(--pet-dex-art-size) !important; max-height:var(--pet-dex-art-size) !important;
+  object-fit:contain !important; object-position:center !important;
 }
-
-/* Hatch reveal uses the same contain rules rather than allowing the source
-   artwork dimensions to determine how large the pet appears. */
 .hatch-pet-image {
-  width: min(86%, 340px) !important;
-  height: 240px !important;
-  max-width: min(86%, 340px) !important;
-  max-height: 240px !important;
-  object-fit: contain !important;
-  object-position: center !important;
+  width:min(86%,340px) !important; height:240px !important; max-width:min(86%,340px) !important; max-height:240px !important;
+  object-fit:contain !important; object-position:center !important;
 }
-
-/* Mobile keeps Home and Hunt matched to one another too. */
 @media (max-width:720px) {
-  :root {
-    --pet-scene-width: 40%;
-    --pet-scene-height: 68%;
-    --pet-scene-right: 5%;
-    --pet-scene-bottom: 18px;
-  }
+  :root { --pet-scene-width:40%; --pet-scene-height:68%; --pet-scene-right:5%; --pet-scene-bottom:18px; }
+}
+@media (max-width:480px) {
+  :root { --pet-scene-width:42%; --pet-scene-height:66%; --pet-scene-right:3%; --pet-scene-bottom:16px; }
+  .hatch-pet-image { height:210px !important; max-height:210px !important; }
 }
 
-@media (max-width:480px) {
-  :root {
-    --pet-scene-width: 42%;
-    --pet-scene-height: 66%;
-    --pet-scene-right: 3%;
-    --pet-scene-bottom: 16px;
-  }
-  .hatch-pet-image {
-    height: 210px !important;
-    max-height: 210px !important;
-  }
+/* ===== H.4 NOTIFICATION PREFERENCES ===== */
+.h4-notification-panel { margin-top:14px; }
+.h4-notification-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.h4-notification-route {
+  padding:6px 9px; border-radius:999px; font-size:.72rem; font-weight:800;
+  background:rgba(99,102,241,.12); border:1px solid rgba(129,140,248,.26); color:#c7d2fe;
+}
+.h4-notification-grid { display:grid; gap:8px; margin-top:12px; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.h4-notification-row {
+  position:relative; min-width:0; display:grid; grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center; gap:10px; padding:11px 12px; border-radius:14px;
+  border:1px solid rgba(148,163,184,.16); background:rgba(15,23,42,.72); cursor:pointer;
+}
+.h4-notification-icon { font-size:1.35rem; }
+.h4-notification-copy { min-width:0; display:grid; gap:2px; }
+.h4-notification-copy b { font-size:.88rem; }
+.h4-notification-copy small { color:#94a3b8; line-height:1.25; }
+.h4-notification-copy em { color:#a5b4fc; font-size:.66rem; font-style:normal; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+.h4-notification-toggle { position:absolute; opacity:0; pointer-events:none; }
+.h4-toggle-visual {
+  width:44px; height:25px; border-radius:999px; background:#243047; border:1px solid rgba(148,163,184,.22);
+  position:relative; transition:.18s ease;
+}
+.h4-toggle-visual::after {
+  content:""; position:absolute; width:19px; height:19px; left:2px; top:2px; border-radius:50%;
+  background:#cbd5e1; transition:.18s ease;
+}
+.h4-notification-toggle:checked + .h4-toggle-visual { background:#4f46e5; border-color:#818cf8; }
+.h4-notification-toggle:checked + .h4-toggle-visual::after { transform:translateX(19px); background:#fff; }
+.h4-notification-toggle:focus-visible + .h4-toggle-visual { outline:3px solid rgba(129,140,248,.45); outline-offset:2px; }
+.h4-notification-toggle:disabled + .h4-toggle-visual { opacity:.5; }
+@media (max-width:680px) {
+  .h4-notification-grid { grid-template-columns:1fr; }
+  .h4-notification-heading { align-items:flex-start; }
 }
 
