@@ -4890,9 +4890,10 @@ async function checkReadyEggNotifications() {
       changed = true;
 
       await channel.send(
-        `🥚 **EGG READY!**\n\n` +
-        `${formatPlayerMention(data, userId)}, your **${incubation.rarity} Egg** has finished incubating!\n` +
-        `Use \`!hatch\` to reveal your new companion.`
+        `🥚✨ **YOUR EGG IS READY TO HATCH!**\n\n` +
+        `${formatPlayerMention(data, userId)}, your **${incubation.rarity} Egg** has finished incubating!\n\n` +
+        `🐾 Open **Monster Hunt → Eggs** and press **Hatch** to discover your new companion.\n` +
+        `You can also use \`!hatch\` here in the Eggs & Pets channel.`
       ).catch(error => {
         console.error(`Failed to send egg-ready notification for ${userId}:`, error);
         incubation.notified = false;
