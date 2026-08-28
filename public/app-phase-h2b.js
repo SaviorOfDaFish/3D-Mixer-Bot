@@ -543,6 +543,8 @@ async function refreshH2BInventory() {
     if(!response.ok || !payload.ok) throw new Error(payload.error||"Could not sync inventory.");
     hunter=payload.hunter;
     gameData=payload.phaseD;
+    document.getElementById("tokens").textContent=hunter.tokens;
+    document.getElementById("points").textContent=hunter.points;
     renderInventoryFilters();
     renderInventory();
     renderHome();
@@ -595,6 +597,11 @@ async function refreshH2BMerchant() {
           if(!response.ok || !result.ok) throw new Error(result.error||"Purchase failed.");
           const status=document.getElementById("status");
           if(status) status.textContent=`${result.purchased.icon} Purchased ${result.purchased.name}!`;
+          if(result.hunter){
+            hunter=result.hunter;
+            document.getElementById("tokens").textContent=hunter.tokens;
+            document.getElementById("points").textContent=hunter.points;
+          }
           if(gameData && Array.isArray(result.inventory)) gameData.inventory=result.inventory;
           await refreshH2BMerchant();
         }catch(error){
@@ -626,12 +633,41 @@ function renderInventory() {
   if (!gameData) return;
   let items = gameData.inventory;
   if (currentInventoryFilter !== "All") items = items.filter(i => i.type === currentInventoryFilter);
-  document.getElementById("inventoryGrid").innerHTML = items.map(i => `
-    <article class="inventory-card ${i.qty === 0 ? "zero" : ""}">
+  const grid=document.getElementById("inventoryGrid");
+  grid.innerHTML = items.map(i => `
+    <article class="inventory-card">
       <div class="inventory-top"><span class="inventory-icon">${i.icon}</span><span class="qty-badge">×${i.qty}</span></div>
-      <div class="inventory-body"><h3>${i.name}</h3><p class="card-meta">${i.type}</p><p class="card-ability">${i.effect}</p></div>
+      <div class="inventory-body">
+        <h3>${i.name}</h3><p class="card-meta">${i.type}</p><p class="card-ability">${i.effect}</p>
+        ${i.usable ? `<button class="primary-button" data-use-item="${i.key}">Use Item</button>` : ""}
+      </div>
     </article>
   `).join("");
+
+  grid.querySelectorAll("[data-use-item]").forEach(btn=>{
+    btn.onclick=async()=>{
+      const original=btn.textContent;btn.disabled=true;btn.textContent="Using...";
+      try{
+        const response=await activityFetch("/api/activity/inventory/use",{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({itemKey:btn.dataset.useItem})
+        });
+        const result=await response.json();
+        if(!response.ok || !result.ok) throw new Error(result.error||"Could not use item.");
+        hunter=result.hunter;
+        gameData.inventory=result.inventory;
+        document.getElementById("tokens").textContent=hunter.tokens;
+        document.getElementById("points").textContent=hunter.points;
+        const status=document.getElementById("status");
+        if(status) status.textContent=`${result.item.icon} ${result.result}`;
+        renderInventory();
+      }catch(error){
+        const status=document.getElementById("status");
+        if(status) status.textContent=`❌ ${error.message}`;
+        btn.disabled=false;btn.textContent=original;
+      }
+    };
+  });
 }
 
 function renderCollection() {
