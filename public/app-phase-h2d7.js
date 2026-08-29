@@ -3144,3 +3144,159 @@ document.getElementById("combinePetsBtn")?.addEventListener("click",()=>h9Tip("c
 document.getElementById("fetchPetBtn")?.addEventListener("click",()=>h9Tip("fetch","<b>🐾 Fetch</b><br>Your active companion returns later with Companion XP and possible item finds."));
 setTimeout(()=>{const s=hunter?.tutorial||gameData?.hunter?.tutorial||gameData?.player?.tutorial;if(s)h9Tutorial={...h9Tutorial,...s,seenTips:{...(s.seenTips||{})}};h9RenderSettings();if(h9Tutorial.enabled&&!h9Tutorial.completed&&!h9Tutorial.skipped)h9ShowStep(h9Tutorial.step||0,false)},1600);
 
+// ==================== H.9.1 SPOTLIGHT TUTORIAL ====================
+// Upgrades H.9 from a full-screen blocking modal into a compact corner coach
+// that keeps the actual Monster Hunt interface visible and highlights the
+// control or area being explained.
+
+const H91_TARGETS = [
+  '[data-nav="home"]',
+  '#customizeBtn',
+  '[data-nav="pets"]',
+  '[data-nav="eggs"]',
+  '[data-nav="petdex"]',
+  '[data-nav="inventory"]',
+  '[data-nav="hunt"]',
+  '.hunt-zone-card:not([disabled]), #huntZoneGrid',
+  '.hunt-flow-page.active .possible-rewards, #huntResultRewards, .possible-rewards',
+  '#activityFetchBtn, #fetchPetBtn',
+  '#openPetCombine, #combinePetsBtn',
+  '[data-nav="merchant"]',
+  '[data-nav="collection"]',
+  '[data-nav="events"]',
+  '[data-nav="notifications"]',
+  '[data-nav="tutorial"]'
+];
+
+let h91HighlightedElement = null;
+
+function h91ClearHighlight(){
+  if(h91HighlightedElement){
+    h91HighlightedElement.classList.remove("h91-tutorial-highlight");
+    h91HighlightedElement.removeAttribute("data-h91-tutorial-target");
+  }
+  h91HighlightedElement = null;
+  document.querySelectorAll(".h91-tutorial-highlight").forEach(el=>{
+    el.classList.remove("h91-tutorial-highlight");
+    el.removeAttribute("data-h91-tutorial-target");
+  });
+}
+
+function h91FindTarget(step){
+  const selector = H91_TARGETS[step];
+  if(!selector) return null;
+  const candidates = [...document.querySelectorAll(selector)];
+  return candidates.find(el => {
+    const style = window.getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+  }) || candidates[0] || null;
+}
+
+function h91HighlightStep(step){
+  h91ClearHighlight();
+  const target = h91FindTarget(step);
+  if(!target) return;
+
+  h91HighlightedElement = target;
+  target.classList.add("h91-tutorial-highlight");
+  target.setAttribute("data-h91-tutorial-target","true");
+
+  // Bring the highlighted feature into view without throwing the user to an
+  // awkward edge of the page.
+  try{
+    target.scrollIntoView({behavior:"smooth",block:"center",inline:"nearest"});
+  }catch{
+    target.scrollIntoView();
+  }
+}
+
+function h91PositionCoach(step){
+  const card = document.querySelector("#h9TutorialLayer .h9-tutorial-card");
+  const target = h91FindTarget(step);
+  if(!card) return;
+
+  card.classList.remove("h91-left","h91-right","h91-bottom","h91-top");
+
+  // Desktop: place the coach on the opposite side of the highlighted item.
+  if(window.innerWidth >= 760 && target){
+    const rect = target.getBoundingClientRect();
+    const center = rect.left + rect.width/2;
+    card.classList.add(center > window.innerWidth/2 ? "h91-left" : "h91-right");
+  }else{
+    // Mobile: keep the coach above the bottom nav so the menu stays visible.
+    card.classList.add("h91-bottom");
+  }
+}
+
+function h91ApplySpotlight(step){
+  requestAnimationFrame(()=>{
+    h91HighlightStep(step);
+    h91PositionCoach(step);
+  });
+}
+
+// Wrap the working H.9 step renderer.
+const h91OriginalShowStep = h9ShowStep;
+h9ShowStep = function(n,persist=true){
+  h91OriginalShowStep(n,persist);
+  h91ApplySpotlight(Math.max(0,Math.min(15,+n||0)));
+};
+
+// Clear spotlight whenever the tutorial closes.
+const h91OriginalClose = h9Close;
+h9Close = function(){
+  h91ClearHighlight();
+  h91OriginalClose();
+};
+
+// Rebind controls because the original callbacks captured the old h9Close / h9ShowStep.
+document.getElementById("h9TutorialNext").onclick = ()=>{
+  if(h9Tutorial.step>=15){
+    h9Tutorial.completed=true;
+    h9Save("complete");
+    h9Close();
+    document.querySelector('[data-nav="home"]')?.click();
+  }else{
+    h9ShowStep(h9Tutorial.step+1);
+  }
+};
+document.getElementById("h9TutorialBack").onclick = ()=>{
+  if(h9Tutorial.step>0) h9ShowStep(h9Tutorial.step-1);
+};
+const h91Skip = ()=>{
+  if(confirm("Skip Hunter Training? You can restart it anytime from the Tutorial menu.")){
+    h9Tutorial.enabled=false;
+    h9Save("skip");
+    h9Close();
+  }
+};
+document.getElementById("h9TutorialSkip").onclick = h91Skip;
+document.getElementById("h9TutorialClose").onclick = h91Skip;
+document.getElementById("h9StartTutorial").onclick = ()=>{
+  h9ShowStep(h9Tutorial.completed ? 0 : (h9Tutorial.step||0));
+};
+document.getElementById("h9RestartTutorial").onclick = async ()=>{
+  await h9Save("restart");
+  h9Tutorial={...h9Tutorial,enabled:true,completed:false,skipped:false,step:0};
+  h9ShowStep(0);
+};
+document.querySelectorAll("[data-h9-jump]").forEach(btn=>{
+  btn.onclick=()=>h9ShowStep(+btn.dataset.h9Jump);
+});
+
+// Keep the coach in the correct corner if the Activity window changes size.
+window.addEventListener("resize",()=>{
+  if(!document.getElementById("h9TutorialLayer")?.classList.contains("hidden")){
+    h91PositionCoach(h9Tutorial.step||0);
+  }
+});
+
+// H.9's first-login timer may already open the tutorial; apply spotlight shortly after.
+setTimeout(()=>{
+  const layer=document.getElementById("h9TutorialLayer");
+  if(layer && !layer.classList.contains("hidden")){
+    h91ApplySpotlight(h9Tutorial.step||0);
+  }
+},1900);
+
