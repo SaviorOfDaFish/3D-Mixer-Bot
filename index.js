@@ -3479,6 +3479,48 @@ function captureChoicesText(choices) {
     .join("\n");
 }
 
+
+// ==================== H.8.3 SUCCESSFUL HUNT LOOT ====================
+// Every successful standard catch has a modest chance to uncover one useful
+// hunting supply. Rarer monsters are more likely to leave something behind.
+// Companion Treasure Finder / reaction loot remains a separate bonus roll.
+function h83SuccessfulHuntSupplyDrop(player, monster) {
+  if (!player || !monster) return null;
+  if (monster.distortionEncounter || monster.worldShatterEncounter) return null;
+
+  const chanceByRarity = {
+    Common:8,
+    Rare:14,
+    Epic:22,
+    Legendary:32,
+    Mythic:40,
+    Secret:40,
+    Event:22
+  };
+  const chance=Number(chanceByRarity[monster.rarity]||8);
+  if (Math.random()*100 >= chance) return null;
+
+  const roll=Math.random()*100;
+  if (roll < 42) {
+    player.captureItems.berry=Number(player.captureItems.berry||0)+1;
+    return `🍓 Hunt Loot: 1 ${CAPTURE_ITEMS.berry.name}`;
+  }
+  if (roll < 70) {
+    player.captureItems.honey=Number(player.captureItems.honey||0)+1;
+    return `🍯 Hunt Loot: 1 ${CAPTURE_ITEMS.honey.name}`;
+  }
+  if (roll < 85) {
+    player.bait.rare=Number(player.bait.rare||0)+1;
+    return `🔵 Hunt Loot: 1 Rare Bait`;
+  }
+  if (roll < 96) {
+    player.captureItems.net=Number(player.captureItems.net||0)+1;
+    return `🕸️ Hunt Loot: 1 ${CAPTURE_ITEMS.net.name}`;
+  }
+  player.bait.epic=Number(player.bait.epic||0)+1;
+  return `🟣 Hunt Loot: 1 Epic Bait`;
+}
+
 async function performCaptureAttempt(message, userId, itemKey = null) {
   const data = loadData();
   const player = getPlayer(data, userId);
@@ -3588,6 +3630,8 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
     updateQuestProgress(player, "catch", monster);
 
     const bonusRewards = giveCatchBonusBait(player, monster);
+    const huntSupplyDrop = h83SuccessfulHuntSupplyDrop(player, monster);
+    if (huntSupplyDrop) bonusRewards.push(huntSupplyDrop);
     const perfectLoot = perfectCatch ? perfectCatchLoot(player) : null;
     if (criticalCatch) player.titleProgress.criticalCatch = true;
     if (perfectCatch) player.titleProgress.perfectCatch = true;
@@ -13406,11 +13450,16 @@ async function activityCapture(user, itemKey = null) {
   const monster = beforePlayer.currentMonster ? { ...beforePlayer.currentMonster } : null;
   if (!monster) return { ok:false, message:"No active monster. Start a hunt first." };
 
+  const beforePet=getEquippedPet(beforePlayer);
   const before = {
     caught:(beforePlayer.caught || []).length,
     points:Number(beforePlayer.points || 0),
     tokens:Number(beforePlayer.huntTokens || 0),
-    eggs:(beforePlayer.eggs || []).length
+    eggs:(beforePlayer.eggs || []).length,
+    captureItems:{...(beforePlayer.captureItems||{})},
+    bait:{...(beforePlayer.bait||{})},
+    petXp:Number(beforePet?.companionXp||0),
+    petName:beforePet?getOwnedPetName(beforePet):null
   };
 
   const channel = await getTextChannel(MONSTER_CHANNEL_ID);
@@ -13426,12 +13475,33 @@ async function activityCapture(user, itemKey = null) {
 
   const afterData = loadData();
   const afterPlayer = getPlayer(afterData, user.id);
+  const afterPet=getEquippedPet(afterPlayer);
   const after = {
     caught:(afterPlayer.caught || []).length,
     points:Number(afterPlayer.points || 0),
     tokens:Number(afterPlayer.huntTokens || 0),
-    eggs:(afterPlayer.eggs || []).length
+    eggs:(afterPlayer.eggs || []).length,
+    captureItems:{...(afterPlayer.captureItems||{})},
+    bait:{...(afterPlayer.bait||{})},
+    petXp:Number(afterPet?.companionXp||0),
+    petName:afterPet?getOwnedPetName(afterPet):null
   };
+
+  const itemRewards=[];
+  const itemDefs=[
+    ["captureItems","berry","🍓","Hunter Berry"],
+    ["captureItems","honey","🍯","Sticky Honey"],
+    ["captureItems","net","🕸️","Enchanted Net"],
+    ["captureItems","masterCharm","🌟","Master Charm"],
+    ["bait","rare","🔵","Rare Bait"],
+    ["bait","epic","🟣","Epic Bait"],
+    ["bait","legendary","🟠","Legendary Bait"]
+  ];
+  for(const [group,key,icon,label] of itemDefs){
+    const amount=Number(after[group]?.[key]||0)-Number(before[group]?.[key]||0);
+    if(amount>0) itemRewards.push({key,icon,label,amount});
+  }
+  const petXpGained=Math.max(0,after.petXp-before.petXp);
 
   let description = "";
   for (const payload of [...sent].reverse()) {
@@ -13462,7 +13532,10 @@ async function activityCapture(user, itemKey = null) {
     rewards:{
       points:after.points - before.points,
       tokens:after.tokens - before.tokens,
-      eggs:after.eggs - before.eggs
+      eggs:after.eggs - before.eggs,
+      items:itemRewards,
+      petXp:petXpGained,
+      petName:after.petName || before.petName || null
     },
     player:activityPlayerPayload(afterData, user).hunter
   };
