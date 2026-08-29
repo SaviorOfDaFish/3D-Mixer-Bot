@@ -1356,8 +1356,72 @@ const H8_HUNTER_CREATOR_OPTIONS = Object.freeze({
     {value:"mischievous",label:"Mischievous"},
     {value:"curious",label:"Curious"},
     {value:"determined",label:"Determined"}
+  ],
+  eyewear: [
+    {value:"none",label:"None"},
+    {value:"round_glasses",label:"Round Glasses"},
+    {value:"sunglasses",label:"Sunglasses",unlock:{type:"level",amount:2}},
+    {value:"aviators",label:"Aviator Sunglasses",unlock:{type:"level",amount:4}},
+    {value:"goggles",label:"Adventurer Goggles",unlock:{type:"petdex",amount:6}},
+    {value:"arcane_monocle",label:"Arcane Monocle",unlock:{type:"petdex",amount:14}}
+  ],
+  gloves: [
+    {value:"none",label:"None"},
+    {value:"leather",label:"Leather Gloves"},
+    {value:"fingerless",label:"Fingerless Gloves"},
+    {value:"armored",label:"Armored Gauntlets",unlock:{type:"level",amount:5}},
+    {value:"arcane",label:"Arcane Gloves",unlock:{type:"petdex",amount:14}}
+  ],
+  neckFace: [
+    {value:"none",label:"None"},
+    {value:"scarf",label:"Adventure Scarf"},
+    {value:"bandana",label:"Bandana",unlock:{type:"level",amount:3}},
+    {value:"ninja_wrap",label:"Ninja Face Wrap",unlock:{type:"level",amount:6}},
+    {value:"fur_collar",label:"Fur Collar",unlock:{type:"petdex",amount:12}}
+  ],
+  cloak: [
+    {value:"none",label:"None"},
+    {value:"blue",label:"Blue Hunter Cloak"},
+    {value:"green",label:"Forest Cloak",unlock:{type:"petdex",amount:4}},
+    {value:"red",label:"Red Champion Cloak",unlock:{type:"level",amount:6}},
+    {value:"black",label:"Shadow Cloak",unlock:{type:"level",amount:8}},
+    {value:"starfall",label:"Starfall Mantle",unlock:{type:"petdex",amount:28}}
+  ],
+  backItem: [
+    {value:"none",label:"None"},
+    {value:"quiver",label:"Arrow Quiver"},
+    {value:"backpack",label:"Explorer Backpack",unlock:{type:"level",amount:3}},
+    {value:"produce_basket",label:"Produce Basket",unlock:{type:"level",amount:3}},
+    {value:"spellbook",label:"Spellbook Pack",unlock:{type:"petdex",amount:10}},
+    {value:"potion_rack",label:"Potion Rack",unlock:{type:"petdex",amount:12}}
+  ],
+  beltItem: [
+    {value:"tool_pouch",label:"Tool Pouch"},
+    {value:"hunt_token_pouch",label:"Hunt Token Pouch"},
+    {value:"map_case",label:"Map Case",unlock:{type:"level",amount:3}},
+    {value:"potion_belt",label:"Potion Belt",unlock:{type:"petdex",amount:8}},
+    {value:"trophy_belt",label:"Trophy Belt",unlock:{type:"trophies",amount:2}}
+  ],
+  offhand: [
+    {value:"none",label:"None"},
+    {value:"map",label:"Treasure Map"},
+    {value:"lantern",label:"Hunter Lantern",unlock:{type:"level",amount:3}},
+    {value:"shield",label:"Knight Shield",unlock:{type:"level",amount:8}},
+    {value:"potion",label:"Glowing Potion",unlock:{type:"petdex",amount:12}},
+    {value:"spellbook",label:"Open Spellbook",unlock:{type:"petdex",amount:18}}
   ]
 });
+
+const H82_EXTRA_DETAILS = Object.freeze([
+  {value:"freckles",label:"Freckles",icon:"🙂"},
+  {value:"cheek_bandage",label:"Bandage on Cheek",icon:"🩹"},
+  {value:"wheat",label:"Wheat in Mouth",icon:"🌾",unlock:{type:"level",amount:3}},
+  {value:"scarf_tail",label:"Long Scarf Tail",icon:"🧣",unlock:{type:"level",amount:4}},
+  {value:"headphones",label:"Magical Headphones",icon:"🎧",unlock:{type:"petdex",amount:8}},
+  {value:"plants_boots",label:"Plants on Boots",icon:"🌿",unlock:{type:"petdex",amount:10}},
+  {value:"monster_fang",label:"Monster Fang Charm",icon:"🦷",unlock:{type:"trophies",amount:1}},
+  {value:"glowing_runes",label:"Glowing Runes",icon:"✨",unlock:{type:"petdex",amount:16}}
+]);
 
 const H8_ARCHETYPE_STYLE = Object.freeze({
   hunter:"rugged brown-and-forest-green professional monster-hunting gear, practical belts and tracking equipment",
@@ -1405,10 +1469,17 @@ function h8CreatorOptionsPayload(data,userId) {
   }
   return {
     categories,
+    extras:H82_EXTRA_DETAILS.map(option=>({
+      ...option,
+      unlocked:h8CreatorOptionUnlocked(option,progress),
+      requirement:h8CreatorUnlockText(option)
+    })),
     progress,
     draft:player.aiHunterCreatorDraft || {
       archetype:"hunter",body:"male",hair:"messy",hairColor:"dark_brown",
-      eyes:"blue",outfit:"hunter_armor",headgear:"none",weapon:"hunter_bow",personality:"friendly"
+      eyes:"blue",outfit:"hunter_armor",headgear:"none",weapon:"hunter_bow",personality:"friendly",
+      eyewear:"none",gloves:"leather",neckFace:"none",cloak:"blue",backItem:"quiver",
+      beltItem:"tool_pouch",offhand:"none",extras:[]
     },
     phase:"live-generation",
     generationEnabled:Boolean(process.env.OPENAI_API_KEY),
@@ -1432,6 +1503,18 @@ function h8CreatorValidateSelection(data,userId,selection) {
     }
     cleaned[category]=option.value;
   }
+
+  const requestedExtras=Array.isArray(selection?.extras)?selection.extras.slice(0,4):[];
+  cleaned.extras=[];
+  for(const value of requestedExtras){
+    const option=H82_EXTRA_DETAILS.find(x=>x.value===String(value));
+    if(!option) continue;
+    if(!h8CreatorOptionUnlocked(option,progress)) {
+      return {ok:false,error:`${option.label} is locked. ${h8CreatorUnlockText(option)}.`};
+    }
+    if(!cleaned.extras.includes(option.value)) cleaned.extras.push(option.value);
+  }
+
   return {ok:true,cleaned,progress};
 }
 
@@ -1452,7 +1535,16 @@ function h8BuildHunterPrompt(selection) {
     `ARCHETYPE VISUAL LANGUAGE: ${archetypeStyle}.`,
     `OUTFIT: ${labels.outfit}.`,
     `HEADGEAR: ${labels.headgear}.`,
+    `EYEWEAR: ${labels.eyewear}.`,
+    `GLOVES: ${labels.gloves}.`,
+    `NECK/FACE ACCESSORY: ${labels.neckFace}.`,
+    `CLOAK/CAPE: ${labels.cloak}.`,
+    `BACK ITEM: ${labels.backItem}.`,
+    `BELT/POUCH DETAIL: ${labels.beltItem}.`,
     `WEAPON: ${labels.weapon}.`,
+    `OFF-HAND ITEM: ${labels.offhand}.`,
+    `OPTIONAL PERSONAL DETAILS: ${(selection.extras||[]).map(value=>H82_EXTRA_DETAILS.find(x=>x.value===value)?.label).filter(Boolean).join(", ") || "None"}.`,
+    "Keep every selected accessory visually readable without overcrowding the face or silhouette.",
     "COMPOSITION: full body visible from head to boots; front-facing; centered; natural confident standing pose; entire weapon and accessories visible.",
     "BACKGROUND: fully transparent PNG. No environment, scenery, floor, cast shadow, text, UI, border, logo, additional characters, monsters, or pets.",
     "OUTPUT: square character portrait suitable for placement over Monster Hunt environment artwork."
