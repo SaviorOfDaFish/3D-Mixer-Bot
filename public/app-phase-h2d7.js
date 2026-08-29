@@ -1045,17 +1045,65 @@ function syncSelectedStates() {
   const map = [["bodyOptions","body"],["skinOptions","skin"],["hairOptions","hair"],["hairColorOptions","hairColor"],["eyeOptions","eyes"],["beardOptions","beard"],["outfitOptions","outfit"],["cloakOptions","cloak"],["headgearOptions","headgear"],["weaponOptions","weapon"]];
   map.forEach(([id,key]) => document.querySelectorAll(`#${id} [data-value]`).forEach(b => b.classList.toggle("selected",b.dataset.value===workingAppearance[key])));
 }
-function cloneAvatarForEditor() {
+function avatarV2Markup(a) {
+  const skin = a.skin || "#d59a72";
+  const hair = a.hairColor || "#3f2a22";
+  const eye = a.eyeColor || "#4a6d84";
+  const female = a.body === "female";
+  const outfits = {
+    ranger:["#49654b","#6f5a3f"], leather:["#754832","#a96d46"], scout:["#526657","#8a7655"], traveler:["#665548","#92785b"],
+    storm:["#40576d","#7890a8"], glass:["#6f6a55","#b7a67a"], overalls:["#315f87","#527fa6"], ninja:["#202733","#343d4c"],
+    pirate:["#71362f","#b98a55"], wizard:["#493c78","#7662b2"], rift:["#3d3475","#6b5cc4"], frost:["#537a8a","#9fc8d5"], ember:["#7b3428","#d36c35"]
+  };
+  const [o1,o2] = outfits[a.outfit] || outfits.ranger;
+  const cloakColors={forest:"#304b3a",brown:"#604838",blue:"#344f73",rift:"#40366f",ember:"#78362c",frost:"#5f8292"};
+  const cloak=cloakColors[a.cloak]||"#304b3a";
+  const hairBack = {
+    long:`<path d="M67 58 Q95 25 123 58 L126 117 Q112 126 102 105 L88 105 Q76 126 64 116Z" fill="${hair}" class="avatar-v2-outline"/>`,
+    ponytail:`<ellipse cx="121" cy="76" rx="16" ry="29" fill="${hair}" class="avatar-v2-outline"/><circle cx="128" cy="103" r="12" fill="${hair}" class="avatar-v2-outline"/>`,
+    braid:`<path d="M121 70 Q139 84 125 101 Q141 115 125 131 Q138 145 122 158" fill="none" stroke="${hair}" stroke-width="13" stroke-linecap="round"/>`,
+    bun:`<circle cx="121" cy="54" r="15" fill="${hair}" class="avatar-v2-outline"/>`
+  }[a.hair] || "";
+  const hairFront = a.hair === "bald" ? "" : a.hair === "mohawk" ? `<path d="M82 54 Q94 18 108 53Z" fill="${hair}" class="avatar-v2-outline"/>` : a.hair === "pixie" ? `<path d="M70 62 Q91 35 121 55 L112 68 Q93 56 72 73Z" fill="${hair}" class="avatar-v2-outline"/>` : a.hair === "undercut" ? `<path d="M72 61 Q91 35 121 55 L108 65 Q91 55 74 69Z" fill="${hair}" class="avatar-v2-outline"/>` : a.hair === "curls" ? `<g fill="${hair}" class="avatar-v2-soft-outline"><circle cx="76" cy="59" r="12"/><circle cx="89" cy="51" r="13"/><circle cx="104" cy="51" r="13"/><circle cx="116" cy="60" r="12"/></g>` : a.hair === "swept" ? `<path d="M69 63 Q82 37 121 51 Q111 69 82 68 Q77 76 70 80Z" fill="${hair}" class="avatar-v2-outline"/>` : a.hair === "messy" ? `<path d="M68 64 L76 43 84 51 94 35 101 50 116 40 121 63 110 68 78 70Z" fill="${hair}" class="avatar-v2-outline"/>` : `<path d="M69 64 Q77 39 96 40 Q116 40 122 63 L112 69 Q95 58 77 70Z" fill="${hair}" class="avatar-v2-outline"/>`;
+  const beard = a.beard === "full" ? `<path d="M78 91 Q95 112 112 91 L108 116 Q95 128 82 116Z" fill="${hair}" class="avatar-v2-soft-outline"/>` : a.beard === "goatee" ? `<path d="M89 101 Q95 113 101 101 L99 118 91 118Z" fill="${hair}"/>` : a.beard === "mustache" ? `<path d="M83 97 Q90 89 95 96 Q100 89 107 97 Q100 103 95 99 Q90 103 83 97Z" fill="${hair}"/>` : a.beard === "stubble" ? `<path d="M78 91 Q95 109 112 91 Q108 113 95 116 Q82 113 78 91Z" fill="${hair}" opacity=".28"/>` : "";
+  const headgear = a.headgear === "army" ? `<path d="M66 61 Q72 30 95 29 Q119 30 125 61Z" fill="#526247" class="avatar-v2-outline"/><rect x="63" y="58" width="64" height="9" rx="4" fill="#43513b" class="avatar-v2-soft-outline"/>` : a.headgear === "cowboy" ? `<ellipse cx="95" cy="57" rx="43" ry="8" fill="#7a5436" class="avatar-v2-outline"/><path d="M73 57 Q76 30 95 34 Q114 30 118 57Z" fill="#8b613e" class="avatar-v2-outline"/>` : a.headgear === "wizard_hat" ? `<path d="M72 57 L101 11 L119 58Z" fill="#55458b" class="avatar-v2-outline"/><ellipse cx="96" cy="59" rx="36" ry="8" fill="#6655a1" class="avatar-v2-outline"/>` : a.headgear === "cap" ? `<path d="M69 59 Q76 38 113 45 L119 61Z" fill="#79573d" class="avatar-v2-outline"/><path d="M110 59 L135 63 L111 68Z" fill="#79573d" class="avatar-v2-outline"/>` : a.headgear === "band" ? `<rect x="69" y="59" width="53" height="8" rx="4" fill="#c55c4c"/>` : a.headgear === "ninja_mask" ? `<path d="M72 78 Q95 67 118 78 L114 102 Q95 109 76 102Z" fill="#202733" class="avatar-v2-soft-outline"/>` : "";
+  const weapon = a.weapon === "none" ? "" : a.weapon === "sword" || a.weapon === "katana" ? `<g transform="rotate(-12 47 142)"><rect x="44" y="76" width="7" height="102" rx="3" fill="#cbd5e1" class="avatar-v2-soft-outline"/><rect x="35" y="162" width="25" height="7" rx="3" fill="#9a6b3f"/><rect x="43" y="168" width="9" height="30" rx="4" fill="#51382d"/></g>` : a.weapon === "spear" || a.weapon === "pitchfork" || a.weapon === "staff" ? `<g transform="rotate(8 43 140)"><rect x="41" y="55" width="7" height="145" rx="3" fill="#755239"/>${a.weapon==='spear'?'<path d="M44 34 L55 60 33 60Z" fill="#cbd5e1" class="avatar-v2-soft-outline"/>':a.weapon==='pitchfork'?'<path d="M30 55 L30 35 M44 55 L44 31 M58 55 L58 35 M30 48 Q44 58 58 48" fill="none" stroke="#b8c0c9" stroke-width="5"/>':'<circle cx="44" cy="43" r="10" fill="#7c5ce0" class="avatar-v2-soft-outline"/>'}</g>` : a.weapon === "wand" ? `<g transform="rotate(-18 45 145)"><rect x="42" y="95" width="6" height="100" rx="3" fill="#674832"/><text x="44" y="91" text-anchor="middle" font-size="25" fill="#fde68a">✦</text></g>` : `<path d="M42 70 Q5 130 42 195" fill="none" stroke="#9b6438" stroke-width="6" class="avatar-v2-soft-outline"/><path d="M42 70 L42 195" stroke="#d6d3d1" stroke-width="2"/>`;
+  return `<svg class="avatar-v2-svg" viewBox="0 0 190 240" role="img" aria-label="Experimental layered cartoon hunter preview">
+    <ellipse cx="95" cy="222" rx="49" ry="10" fill="rgba(0,0,0,.28)"/>
+    ${weapon}
+    ${a.cloak !== 'none' ? `<path d="M58 120 Q95 101 132 120 L142 203 Q95 219 48 203Z" fill="${cloak}" class="avatar-v2-outline"/>` : ''}
+    ${hairBack}
+    <g id="body-layer">
+      <rect x="${female?70:66}" y="117" width="${female?50:58}" height="72" rx="${female?18:14}" fill="${o1}" class="avatar-v2-outline"/>
+      ${a.outfit==='overalls'?`<path d="M76 123 H114 V181 H76Z" fill="#315f87"/><path d="M79 119 V139 M111 119 V139" stroke="#527fa6" stroke-width="8"/>`:''}
+      ${a.outfit==='ninja'?`<path d="M68 130 Q95 143 122 130" fill="none" stroke="#111827" stroke-width="12"/>`:''}
+      <rect x="73" y="174" width="44" height="9" rx="3" fill="#493329"/><rect x="91" y="172" width="9" height="12" rx="2" fill="#d5a93d"/>
+      <rect x="55" y="123" width="18" height="60" rx="9" fill="${o2}" class="avatar-v2-soft-outline"/><circle cx="63" cy="183" r="10" fill="${skin}" class="avatar-v2-soft-outline"/>
+      <rect x="117" y="123" width="18" height="60" rx="9" fill="${o2}" class="avatar-v2-soft-outline"/><circle cx="127" cy="183" r="10" fill="${skin}" class="avatar-v2-soft-outline"/>
+      <rect x="76" y="184" width="17" height="31" rx="5" fill="#344054" class="avatar-v2-soft-outline"/><rect x="98" y="184" width="17" height="31" rx="5" fill="#344054" class="avatar-v2-soft-outline"/>
+      <rect x="72" y="207" width="23" height="14" rx="5" fill="#3b2b25" class="avatar-v2-soft-outline"/><rect x="97" y="207" width="23" height="14" rx="5" fill="#3b2b25" class="avatar-v2-soft-outline"/>
+    </g>
+    <rect x="88" y="105" width="14" height="19" rx="5" fill="${skin}" class="avatar-v2-soft-outline"/>
+    <g id="head-layer">${hairBack}<ellipse cx="95" cy="79" rx="31" ry="36" fill="${skin}" class="avatar-v2-outline"/>${hairFront}
+      <ellipse cx="83" cy="80" rx="5" ry="${a.eyes==='narrow'?3:6}" fill="${eye}" class="avatar-v2-eye"/><ellipse cx="107" cy="80" rx="5" ry="${a.eyes==='narrow'?3:6}" fill="${eye}" class="avatar-v2-eye"/>
+      <circle cx="84" cy="78" r="1.6" fill="white"/><circle cx="108" cy="78" r="1.6" fill="white"/>
+      <path d="M91 91 Q95 94 99 91" fill="none" stroke="#7a4e3d" stroke-width="2" stroke-linecap="round"/><path d="M87 101 Q95 107 103 101" fill="none" stroke="#7a3e42" stroke-width="2.5" stroke-linecap="round"/>
+      ${beard}${headgear}
+    </g>
+  </svg>`;
+}
+
+function renderAvatarV2Editor() {
   const host = document.getElementById("editorAvatarHost");
-  host.innerHTML="";
-  const clone = document.getElementById("avatarPreview").cloneNode(true);
-  clone.id="editorAvatarPreview";
-  clone.querySelectorAll("[id]").forEach(el => el.removeAttribute("id"));
-  host.appendChild(clone);
-  applyAppearanceToAvatar(clone.querySelector(".avatar"),workingAppearance);
+  if (!host) return;
+  host.innerHTML = avatarV2Markup(workingAppearance);
+}
+
+function cloneAvatarForEditor() {
+  renderAvatarV2Editor();
 }
 function updateEditor() {
-  applyAppearanceToAvatar(document.querySelector("#editorAvatarHost .avatar"),workingAppearance);
+  renderAvatarV2Editor();
   syncSelectedStates();
 }
 function openCustomizer() {
@@ -2627,4 +2675,3 @@ function startH5FetchPolling(){
     else if(hunter?.fetch?.active || hunter?.fetch?.returning) renderActivityFetch(hunter.fetch);
   },5000);
 }
-

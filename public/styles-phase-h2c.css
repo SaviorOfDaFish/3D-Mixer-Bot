@@ -3356,220 +3356,29 @@ body { background:#050a14; }
 .avatar .face { box-shadow:inset 0 -3px rgba(0,0,0,.08),0 1px 0 rgba(255,255,255,.08); }
 .avatar .eyes i { transform:scale(1.06); }
 
-
-/* ===== H.7.2 CARTOON HUNTER POLISH =====
-   Keeps the existing modular avatar/cosmetic system but gives the base hunter
-   a cleaner, friendlier cartoon silhouette and better visual separation. */
-
-.avatar {
-  width:124px;
-  height:204px;
+/* ===== H.7.3 AVATAR V2 EXPERIMENT =====
+   The live Home/Hunt avatar stays on the stable pre-H.7.2 renderer.
+   Avatar V2 is isolated to the Customize Hunter preview until approved. */
+.avatar-v2-stage {
+  width: 100%;
+  height: 250px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  overflow:hidden;
 }
-
-.avatar-wrap {
-  width:164px;
-  height:224px;
+.avatar-v2-svg {
+  width:190px;
+  height:240px;
+  overflow:visible;
+  filter: drop-shadow(0 10px 10px rgba(0,0,0,.28));
 }
-
-.head {
-  width:68px;
-  height:74px;
-  left:28px;
-  top:0;
+.avatar-v2-outline { stroke:#2a211f; stroke-width:3; stroke-linejoin:round; stroke-linecap:round; }
+.avatar-v2-soft-outline { stroke:#2a211f; stroke-width:2; stroke-linejoin:round; stroke-linecap:round; }
+.avatar-v2-eye { stroke:#1c1917; stroke-width:2; }
+.avatar-v2-highlight { fill:rgba(255,255,255,.72); }
+.avatar-v2-note {
+  margin:8px 0 0; padding:7px 10px; border-radius:10px;
+  background:rgba(79,70,229,.16); border:1px solid rgba(129,140,248,.28);
+  color:#c7d2fe; font-size:.72rem; font-weight:800; letter-spacing:.04em;
 }
-
-.face {
-  left:7px;
-  top:7px;
-  width:54px;
-  height:58px;
-  border-radius:48% 48% 44% 44%;
-  border:2px solid rgba(45,34,30,.18);
-  box-shadow:
-    inset 0 -5px rgba(0,0,0,.055),
-    inset 0 4px rgba(255,255,255,.10),
-    0 2px 0 rgba(0,0,0,.10);
-}
-
-.ears::before, .ears::after {
-  top:29px;
-  width:11px;
-  height:17px;
-  border:1px solid rgba(45,34,30,.12);
-}
-.ears::before { left:0; }
-.ears::after { right:0; }
-
-.eyes {
-  top:21px;
-  left:11px;
-  width:32px;
-}
-.eyes i {
-  width:8px;
-  height:10px;
-  border-radius:50%;
-  border:1px solid rgba(0,0,0,.28);
-  box-shadow:
-    inset 0 0 0 2px rgba(255,255,255,.80),
-    0 1px 0 rgba(0,0,0,.12);
-}
-
-.brows::before, .brows::after {
-  top:16px;
-  width:12px;
-  height:2px;
-}
-.brows::before { left:9px; }
-.brows::after { right:9px; }
-
-.nose {
-  left:25px;
-  top:31px;
-  width:5px;
-  height:6px;
-  border-width:0 2px 2px 0;
-}
-
-.mouth {
-  left:20px;
-  top:44px;
-  width:15px;
-  height:7px;
-  border-bottom-width:2px;
-}
-
-/* Broader shoulders + shorter torso reads better as a game-character cartoon. */
-.torso {
-  left:27px;
-  top:78px;
-  width:70px;
-  height:69px;
-  border-radius:16px 16px 11px 11px;
-  border:2px solid rgba(0,0,0,.10);
-}
-.avatar[data-body="male"] .torso { width:72px; left:26px; }
-.avatar[data-body="female"] .torso {
-  width:64px;
-  left:30px;
-  border-radius:18px 18px 11px 11px;
-  clip-path:polygon(9% 0,91% 0,84% 100%,16% 100%);
-}
-
-.neck {
-  left:51px;
-  top:62px;
-  width:22px;
-  height:25px;
-}
-
-.arm {
-  top:84px;
-  width:21px;
-  height:62px;
-  border-radius:11px;
-  border:1px solid rgba(0,0,0,.09);
-}
-.arm-left { left:12px; }
-.arm-right { right:12px; }
-
-.hand {
-  width:18px;
-  height:18px;
-  left:1px;
-  bottom:-6px;
-  border:1px solid rgba(0,0,0,.10);
-}
-
-.legs {
-  left:34px;
-  top:141px;
-  width:56px;
-  height:43px;
-  gap:7px;
-}
-.leg {
-  width:24px;
-  height:43px;
-  border-radius:6px 6px 4px 4px;
-}
-.boots {
-  left:30px;
-  top:175px;
-  width:64px;
-}
-.boot {
-  width:29px;
-  height:17px;
-  border-radius:7px 7px 4px 4px;
-  border:1px solid rgba(0,0,0,.18);
-}
-
-/* Softer, chunkier hair shapes sit around the enlarged head more naturally. */
-.avatar[data-hair="short"] .hair-back {
-  left:8px; top:2px; width:52px; height:27px;
-}
-.avatar[data-hair="short"] .hair-front {
-  left:12px; top:4px; width:45px; height:14px;
-}
-.avatar[data-hair="long"] .hair-back {
-  left:4px; top:1px; width:59px; height:69px;
-}
-.avatar[data-hair="long"] .hair-front {
-  left:9px; top:3px; width:50px; height:20px;
-}
-
-/* Cosmetics read cleaner at the slightly larger cartoon scale. */
-.avatar[data-headgear="cap"] .headgear {
-  left:8px; top:-6px; width:54px; height:19px;
-}
-.avatar[data-headgear="hood"] .headgear {
-  left:2px; top:-3px; width:64px; height:51px;
-}
-.avatar[data-headgear="horns"] .headgear::before,
-.avatar[data-headgear="horns"] .headgear::after {
-  height:29px;
-}
-.avatar[data-headgear="horns"] .headgear::after { left:50px; }
-
-.avatar-shadow {
-  width:104px;
-  height:22px;
-  left:30px;
-  bottom:0;
-  opacity:.85;
-}
-
-/* Preview card presentation */
-.editor-preview-card {
-  background:
-    radial-gradient(circle at 50% 28%,rgba(255,255,255,.12),transparent 80px),
-    linear-gradient(180deg,#34337b,#245c74 64%,#28583b);
-}
-.mini-stage {
-  height:235px;
-}
-#editorAvatarHost {
-  width:170px;
-  height:235px;
-}
-#editorAvatarHost .avatar-wrap {
-  width:164px;
-  height:224px;
-  left:3px;
-}
-
-/* Home/Hunt hunter scene gets a touch more presence without overtaking the pet. */
-.home-hunter-wrap,
-.overview-hunter-wrap {
-  transform:scale(1.05);
-  transform-origin:center bottom;
-}
-
-@media (max-width:520px) {
-  .home-hunter-wrap,
-  .overview-hunter-wrap {
-    transform:scale(.97);
-  }
-}
-
