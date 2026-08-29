@@ -1606,8 +1606,13 @@ function getDifficulty(chance) {
 
 function getPossibleRewards(encounter) {
   const rewards = [];
-  rewards.push({icon:"⭐", label:"Hunter Points", value:`+${encounter.points || 0}`});
-  // Live tokens/items/eggs/event rewards will only appear when the real game actually generates them.
+  const tokenByRarity={Common:1,Rare:2,Epic:4,Legendary:8,Mythic:15,"Ultra Rare":15,Event:4,Secret:15};
+  const tokenBase=tokenByRarity[encounter?.rarity]||1;
+  rewards.push({icon:"⭐",label:"Hunter Points",value:`+${encounter?.points||0}`});
+  rewards.push({icon:"🪙",label:"Hunt Tokens",value:`+${tokenBase}${h2aLiveEvents?.bigGame?.active?" ×2 Big Game":""}`});
+  if((ownedPet(activePetKey)||gameData?.ownedPets?.[0])) rewards.push({icon:"🐾",label:"Companion XP",value:"+10 minimum"});
+  rewards.push({icon:"🎒",label:"Hunting Supply",value:"Possible"});
+  rewards.push({icon:"🥚",label:"Egg Discovery",value:"Possible"});
   return rewards;
 }
 
@@ -2293,7 +2298,11 @@ async function livePerformCapture() {
     const rewards = [];
     if (payload.rewards.points) rewards.push(`<div><span>⭐ Hunter Points</span><b>+${payload.rewards.points}</b></div>`);
     if (payload.rewards.tokens) rewards.push(`<div><span>🪙 Hunt Tokens</span><b>+${payload.rewards.tokens}</b></div>`);
+    if (payload.rewards.petXp) rewards.push(`<div><span>🐾 ${escapeHtml(payload.rewards.petName||"Companion")} XP</span><b>+${payload.rewards.petXp}</b></div>`);
     if (payload.rewards.eggs) rewards.push(`<div><span>🥚 Eggs Found</span><b>+${payload.rewards.eggs}</b></div>`);
+    for(const item of (payload.rewards.items||[])){
+      rewards.push(`<div><span>${item.icon||"🎒"} ${escapeHtml(item.label||"Item")}</span><b>+${Number(item.amount||1)}</b></div>`);
+    }
     if (!rewards.length) rewards.push(`<div><span>${payload.caught?"✅ Capture":"📚 Encounter"}</span><b>${payload.caught?"Recorded":"Knowledge gained"}</b></div>`);
     document.getElementById("huntResultRewards").innerHTML = rewards.join("");
     document.getElementById("huntResultDetails").innerHTML = `
@@ -2929,6 +2938,15 @@ function h81UpdateGenerationCount(){
   }
 }
 
+let h83GenerationInProgress=false;
+function h83SetGenerationGuard(active){
+  h83GenerationInProgress=Boolean(active);
+  document.getElementById("h83GenerationGuard")?.classList.toggle("hidden",!active);
+  const close=document.getElementById("closeCustomizer");
+  if(close) close.disabled=active;
+  document.querySelectorAll(".h8-creator-controls select,.h82-extra-chip,#resetAppearance,#h8ChangeOptions,#h81Regenerate,#h81UseHunter")
+    .forEach(el=>el.disabled=active);
+}
 async function h81GenerateHunter({regenerate=false}={}){
   h8ReadSelectionFromControls();
   if(!h8CreatorData?.generationEnabled){
@@ -2944,6 +2962,7 @@ async function h81GenerateHunter({regenerate=false}={}){
   const message=document.getElementById("h8CreatorMessage");
   btn.disabled=true;
   document.getElementById("h81Regenerate").disabled=true;
+  h83SetGenerationGuard(true);
   h81ShowGenerating();
   document.getElementById("h81GenerationLoadingText").textContent=
     `Creating your ${h8CurrentOption("personality")?.label||""} ${h8CurrentOption("archetype")?.label||"Hunter"}…`;
@@ -2969,6 +2988,7 @@ async function h81GenerateHunter({regenerate=false}={}){
     else document.getElementById("h8PreviewPlaceholder")?.classList.remove("hidden");
     message.textContent=`❌ ${error.message}`;
   }finally{
+    h83SetGenerationGuard(false);
     btn.disabled=false;
     document.getElementById("h81Regenerate").disabled=false;
   }
@@ -3071,3 +3091,15 @@ document.getElementById("h8ChangeOptions").onclick=()=>{
 
 
 window.setTimeout(()=>{ if(window.hunter || typeof hunter!=="undefined") { try{ renderMainAvatar(); }catch{} } },1200);
+
+// H.8.3: Do not allow the creator to close while an image request is in flight.
+const h83OriginalCloseCreator=h8CloseCreator;
+h8CloseCreator=function(){
+  if(h83GenerationInProgress) return;
+  h83OriginalCloseCreator();
+};
+document.getElementById("closeCustomizer").onclick=()=>h8CloseCreator();
+document.getElementById("customizerModal").onclick=e=>{
+  if(e.target.id==="customizerModal") h8CloseCreator();
+};
+
