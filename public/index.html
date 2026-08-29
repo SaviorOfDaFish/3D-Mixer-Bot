@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-h2c.css?v=1820" />
+  <link rel="stylesheet" href="/styles-phase-h2c.css?v=1830" />
 </head>
 <body>
   <div class="app-shell">
@@ -709,7 +709,7 @@
     <section class="customizer-sheet h8-creator-sheet">
       <header class="customizer-header">
         <div>
-          <p class="eyebrow">✨ AI HUNTER CREATOR • SAFE PREVIEW</p>
+          <p class="eyebrow">✨ AI HUNTER CREATOR</p>
           <h2>Create Your Hunter</h2>
         </div>
         <button class="icon-button" id="closeCustomizer" aria-label="Close">✕</button>
@@ -718,18 +718,30 @@
       <div class="h8-creator-body">
         <aside class="h8-creator-preview">
           <div class="h8-preview-art" id="h8CreatorArt">
-            <div class="h8-preview-sigil">✨</div>
-            <strong id="h8PreviewArchetype">Monster Hunter</strong>
-            <span id="h8PreviewBody">Male</span>
+            <img class="h81-generated-preview hidden" id="h81GeneratedPreview" alt="Generated Monster Hunt hunter" />
+            <div class="h8-preview-placeholder" id="h8PreviewPlaceholder">
+              <div class="h8-preview-sigil">✨</div>
+              <strong id="h8PreviewArchetype">Monster Hunter</strong>
+              <span id="h8PreviewBody">Male</span>
+            </div>
+            <div class="h81-generation-loading hidden" id="h81GenerationLoading">
+              <span class="h81-spinner">✨</span>
+              <strong>Creating Your Hunter…</strong>
+              <small id="h81GenerationLoadingText">Bringing your character to life.</small>
+            </div>
           </div>
           <div class="h8-preview-summary">
             <p class="eyebrow">CURRENT DESIGN</p>
             <h3 id="h8PreviewName">Your Monster Hunt Hero</h3>
             <div id="h8PreviewChips" class="h8-preview-chips"></div>
           </div>
-          <div class="h8-safe-note">
-            <b>🧪 Safe Preview Mode</b>
-            <span>No image-generation request is sent yet. We are testing selections, unlocks and the final prompt first.</span>
+          <div class="h8-safe-note h81-live-note">
+            <b>✨ AI Character Generation</b>
+            <span>Creating or regenerating a Hunter makes a real image-generation request. Your equipped Hunter is only replaced after you press <b>Use This Hunter</b>.</span>
+          </div>
+          <div class="h81-candidate-actions hidden" id="h81CandidateActions">
+            <button class="primary" type="button" id="h81UseHunter">✅ Use This Hunter</button>
+            <button class="secondary" type="button" id="h81Regenerate">🔄 Generate Again</button>
           </div>
         </aside>
 
@@ -762,9 +774,9 @@
             <div class="h8-field"><label for="h8Weapon">Weapon</label><select id="h8Weapon"></select></div>
           </div>
 
-          <section class="h8-prompt-panel hidden" id="h8PromptPanel">
+          <section class="h8-prompt-panel hidden h81-dev-prompt" id="h8PromptPanel">
             <div class="h8-prompt-heading">
-              <div><p class="eyebrow">CONTROLLED AI PROMPT</p><h3>Ready for Phase 2</h3></div>
+              <div><p class="eyebrow">GENERATION DETAILS</p><h3>Controlled Character Prompt</h3></div>
               <span>🔒 Game-controlled</span>
             </div>
             <pre id="h8PromptText"></pre>
@@ -777,7 +789,7 @@
       <footer class="customizer-footer h8-creator-footer">
         <button class="secondary" id="resetAppearance" type="button">Reset</button>
         <button class="secondary" id="h8ChangeOptions" type="button">Change Options</button>
-        <button class="primary" id="saveAppearance" type="button">✨ Create Hunter Preview</button>
+        <button class="primary" id="saveAppearance" type="button">✨ Create My Hunter</button>
       </footer>
     </section>
   </div>
@@ -890,6 +902,6 @@
   </div>
 
   <script src="/activity-auth.js?v=1220"></script>
-  <script src="/app-phase-h2d7.js?v=1820"></script>
+  <script src="/app-phase-h2d7.js?v=1830"></script>
 </body>
 </html>

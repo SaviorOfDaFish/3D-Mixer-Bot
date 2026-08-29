@@ -2838,3 +2838,184 @@ document.getElementById("h8ChangeOptions").onclick=()=>{
 };
 document.getElementById("customizerModal").onclick=e=>{if(e.target.id==="customizerModal")h8CloseCreator();};
 
+
+// ===== H.8.1 LIVE AI HUNTER GENERATION =====
+let h81Candidate=null;
+
+function h81SetCreatorImage(record){
+  const img=document.getElementById("h81GeneratedPreview");
+  const placeholder=document.getElementById("h8PreviewPlaceholder");
+  const loading=document.getElementById("h81GenerationLoading");
+  const actions=document.getElementById("h81CandidateActions");
+  loading?.classList.add("hidden");
+
+  if(record?.imageUrl){
+    img.src=activityProxyUrl(record.imageUrl);
+    img.classList.remove("hidden");
+    placeholder?.classList.add("hidden");
+    actions?.classList.remove("hidden");
+  }else{
+    img.removeAttribute("src");
+    img.classList.add("hidden");
+    placeholder?.classList.remove("hidden");
+    actions?.classList.add("hidden");
+  }
+}
+
+function h81ShowGenerating(){
+  document.getElementById("h81GeneratedPreview")?.classList.add("hidden");
+  document.getElementById("h8PreviewPlaceholder")?.classList.add("hidden");
+  document.getElementById("h81CandidateActions")?.classList.add("hidden");
+  document.getElementById("h81GenerationLoading")?.classList.remove("hidden");
+}
+
+function h81UpdateGenerationCount(){
+  const message=document.getElementById("h8CreatorMessage");
+  const remaining=Number(h8CreatorData?.generationsRemaining??0);
+  if(message && h8CreatorData?.generationEnabled){
+    message.textContent=`${remaining} AI Hunter generation${remaining===1?"":"s"} remaining in your current 24-hour window.`;
+  }
+}
+
+async function h81GenerateHunter({regenerate=false}={}){
+  h8ReadSelectionFromControls();
+  if(!h8CreatorData?.generationEnabled){
+    document.getElementById("h8CreatorMessage").textContent="❌ AI generation is not configured yet. The server needs OPENAI_API_KEY.";
+    return;
+  }
+  if(regenerate){
+    const ok=window.confirm("Generate a new version? This uses another AI Hunter generation.");
+    if(!ok) return;
+  }
+
+  const btn=document.getElementById("saveAppearance");
+  const message=document.getElementById("h8CreatorMessage");
+  btn.disabled=true;
+  document.getElementById("h81Regenerate").disabled=true;
+  h81ShowGenerating();
+  document.getElementById("h81GenerationLoadingText").textContent=
+    `Creating your ${h8CurrentOption("personality")?.label||""} ${h8CurrentOption("archetype")?.label||"Hunter"}…`;
+  message.textContent="✨ Generating a transparent 1024×1024 Hunter. This can take a little while.";
+
+  try{
+    const response=await activityFetch("/api/activity/hunter-creator/generate",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({selection:h8CreatorSelection})
+    });
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Hunter generation failed.");
+    h81Candidate=payload.candidate;
+    h8CreatorData.candidate=payload.candidate;
+    h8CreatorData.generationsRemaining=payload.generationsRemaining;
+    h81SetCreatorImage(payload.candidate);
+    message.textContent=`✅ ${payload.message} ${payload.generationsRemaining} generation${payload.generationsRemaining===1?"":"s"} remaining.`;
+    document.getElementById("saveAppearance").textContent="✨ Generate Another";
+  }catch(error){
+    document.getElementById("h81GenerationLoading")?.classList.add("hidden");
+    if(h81Candidate) h81SetCreatorImage(h81Candidate);
+    else document.getElementById("h8PreviewPlaceholder")?.classList.remove("hidden");
+    message.textContent=`❌ ${error.message}`;
+  }finally{
+    btn.disabled=false;
+    document.getElementById("h81Regenerate").disabled=false;
+  }
+}
+
+async function h81UseHunter(){
+  const btn=document.getElementById("h81UseHunter");
+  const message=document.getElementById("h8CreatorMessage");
+  btn.disabled=true;btn.textContent="Equipping…";
+  try{
+    const response=await activityFetch("/api/activity/hunter-creator/approve",{method:"POST"});
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not equip Hunter.");
+    if(hunter){
+      hunter.generatedHunterImage=payload.hunter?.imageUrl||null;
+      hunter.generatedHunter=payload.hunter||null;
+    }
+    renderMainAvatar();
+    updateHuntOverviewProfile();
+    h81Candidate=null;
+    h8CreatorData.activeHunter=payload.hunter;
+    h8CreatorData.candidate=null;
+    document.getElementById("h81CandidateActions")?.classList.add("hidden");
+    message.textContent="✅ Your new Hunter is equipped on Home and Hunt!";
+    btn.textContent="✅ Equipped!";
+    setTimeout(()=>h8CloseCreator(),700);
+  }catch(error){
+    message.textContent=`❌ ${error.message}`;
+    btn.disabled=false;btn.textContent="✅ Use This Hunter";
+  }
+}
+
+function h81ApplyGeneratedHunterToHost(host,imageUrl){
+  if(!host) return;
+  let img=host.querySelector(".h81-live-hunter-image");
+  if(imageUrl){
+    if(!img){
+      img=document.createElement("img");
+      img.className="h81-live-hunter-image";
+      img.alt="Your generated Monster Hunt hunter";
+      host.appendChild(img);
+    }
+    img.src=activityProxyUrl(imageUrl);
+    host.classList.add("h81-generated-active");
+  }else{
+    img?.remove();
+    host.classList.remove("h81-generated-active");
+  }
+}
+
+// Replace the old CSS avatar visually only when the player has approved generated art.
+const h81OriginalRenderMainAvatar=renderMainAvatar;
+renderMainAvatar=function(){
+  h81OriginalRenderMainAvatar();
+  h81ApplyGeneratedHunterToHost(document.getElementById("avatarPreview"),hunter?.generatedHunterImage||null);
+};
+
+const h81OriginalCloneHunterForHuntOverview=cloneHunterForHuntOverview;
+cloneHunterForHuntOverview=function(){
+  h81OriginalCloneHunterForHuntOverview();
+  const host=document.getElementById("huntOverviewAvatarHost");
+  const clone=host?.querySelector("#huntOverviewAvatar") || host?.firstElementChild;
+  if(clone) h81ApplyGeneratedHunterToHost(clone,hunter?.generatedHunterImage||null);
+};
+
+// Upgrade safe-preview opener after it loads server options.
+const h81SafeOpenCreator=h8OpenCreator;
+h8OpenCreator=async function(){
+  await h81SafeOpenCreator();
+  if(!h8CreatorData) return;
+  h81Candidate=h8CreatorData.candidate||null;
+  if(h81Candidate) h81SetCreatorImage(h81Candidate);
+  else h81SetCreatorImage(null);
+  document.getElementById("h8PromptPanel")?.classList.add("hidden");
+  const createBtn=document.getElementById("saveAppearance");
+  createBtn.textContent=h81Candidate?"✨ Generate Another":"✨ Create My Hunter";
+  if(!h8CreatorData.generationEnabled){
+    createBtn.disabled=true;
+    document.getElementById("h8CreatorMessage").textContent=
+      "⚠️ Character Creator is ready, but OPENAI_API_KEY must be added to Railway before images can be generated.";
+  }else{
+    createBtn.disabled=Number(h8CreatorData.generationsRemaining||0)<=0;
+    h81UpdateGenerationCount();
+  }
+};
+document.getElementById("customizeBtn").onclick=()=>h8OpenCreator();
+
+// Replace safe preview button behavior with real image generation.
+document.getElementById("saveAppearance").onclick=()=>h81GenerateHunter({regenerate:Boolean(h81Candidate)});
+document.getElementById("h81Regenerate").onclick=()=>h81GenerateHunter({regenerate:true});
+document.getElementById("h81UseHunter").onclick=h81UseHunter;
+
+// Changing options returns to the design placeholder; the existing candidate remains safe
+// until a new image is actually generated.
+document.getElementById("h8ChangeOptions").onclick=()=>{
+  document.getElementById("h8PromptPanel")?.classList.add("hidden");
+  if(!h81Candidate) h81SetCreatorImage(null);
+  document.getElementById("h8CreatorMessage").textContent="Change any unlocked option, then create your Hunter.";
+};
+
+
+window.setTimeout(()=>{ if(window.hunter || typeof hunter!=="undefined") { try{ renderMainAvatar(); }catch{} } },1200);
