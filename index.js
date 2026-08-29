@@ -202,6 +202,198 @@ const WORLD_SHATTER_IMPOSSIBLE_EGG_CHANCE = 12;
 const WORLD_SHATTER_MIN_NOTICE = 24 * 60 * 60 * 1000;
 const WORLD_SHATTER_START_GRACE_MS = 10 * 60 * 1000;
 const WORLD_STORY_PROCESS_BOOT_AT = Date.now();
+
+// ==================== H.9.2 MONTHLY SEASON RESET AUTOMATION ====================
+// Resets at midnight America/Denver on the 1st of every month.
+// Sends a 24-hour warning, a 1-hour warning, archives standings, performs the
+// same hard reset used by the admin season-reset command, then announces the
+// new season. Each stage stores a monthly execution key so Railway restarts
+// cannot duplicate messages or resets.
+
+const SEASON_TIMEZONE = process.env.SEASON_TIMEZONE || "America/Denver";
+const SEASON_ANNOUNCEMENT_CHANNEL_ID = process.env.SEASON_ANNOUNCEMENT_CHANNEL_ID || "1521536122239586456";
+const SEASON_HUNT_CHANNEL_ID = process.env.SEASON_HUNT_CHANNEL_ID || "1533218205496115471";
+const SEASON_TEST_CHANNEL_ID = process.env.SEASON_TEST_CHANNEL_ID || "1520969860765450353";
+const SEASON_LIVE_START_MONTH = process.env.SEASON_LIVE_START_MONTH || "2026-09";
+const SEASON_AUTOMATION_ENABLED = String(process.env.SEASON_AUTOMATION_ENABLED || "true").toLowerCase() !== "false";
+
+function h92SeasonAutomationData(data){
+  if(!data.seasonAutomation || typeof data.seasonAutomation !== "object"){
+    data.seasonAutomation={completedKeys:{},lastCheckedAt:0};
+  }
+  if(!data.seasonAutomation.completedKeys || typeof data.seasonAutomation.completedKeys !== "object"){
+    data.seasonAutomation.completedKeys={};
+  }
+  return data.seasonAutomation;
+}
+
+function h92DenverParts(date=new Date()){
+  const parts = new Intl.DateTimeFormat("en-US",{
+    timeZone:SEASON_TIMEZONE,
+    year:"numeric",month:"2-digit",day:"2-digit",
+    hour:"2-digit",minute:"2-digit",second:"2-digit",
+    hour12:false
+  }).formatToParts(date);
+  const out={};
+  for(const p of parts) if(p.type!=="literal") out[p.type]=p.value;
+  return {
+    year:Number(out.year), month:Number(out.month), day:Number(out.day),
+    hour:Number(out.hour), minute:Number(out.minute), second:Number(out.second)
+  };
+}
+
+function h92MonthKey(parts){
+  return `${parts.year}-${String(parts.month).padStart(2,"0")}`;
+}
+
+function h92NextMonthKey(parts){
+  let y=parts.year,m=parts.month+1;
+  if(m===13){m=1;y++;}
+  return `${y}-${String(m).padStart(2,"0")}`;
+}
+
+function h92PreviousMonthKey(parts){
+  let y=parts.year,m=parts.month-1;
+  if(m===0){m=12;y--;}
+  return `${y}-${String(m).padStart(2,"0")}`;
+}
+
+function h92UseLiveChannels(monthKey){
+  return monthKey >= SEASON_LIVE_START_MONTH;
+}
+
+async function h92SeasonChannel(monthKey,kind="announcement"){
+  const live=h92UseLiveChannels(monthKey);
+  const id = live
+    ? (kind==="hunt" ? SEASON_HUNT_CHANNEL_ID : SEASON_ANNOUNCEMENT_CHANNEL_ID)
+    : SEASON_TEST_CHANNEL_ID;
+  return getTextChannel(id);
+}
+
+async function h92PostSeasonMessage(monthKey,kind,payload){
+  try{
+    const channel=await h92SeasonChannel(monthKey,kind);
+    if(channel) await channel.send(payload);
+  }catch(error){
+    console.error("Season automation message failed:",error);
+  }
+}
+
+function h92ArchiveStandings(data,seasonKey){
+  if(!data.seasonHistory || !Array.isArray(data.seasonHistory)) data.seasonHistory=[];
+  if(data.seasonHistory.some(x=>x && x.seasonKey===seasonKey)) return;
+
+  const standings=Object.entries(data.players||{})
+    .map(([id,p])=>({
+      id,
+      username:p.discordDisplayName||p.discordUsername||p.username||"Hunter",
+      points:Number(p.points||0),
+      huntTokens:Number(p.huntTokens||0),
+      catches:Array.isArray(p.caught)?p.caught.length:0
+    }))
+    .sort((a,b)=>b.points-a.points)
+    .slice(0,100);
+
+  data.seasonHistory.push({
+    seasonKey,
+    archivedAt:Date.now(),
+    standings
+  });
+}
+
+async function h92RunSeasonAutomation(){
+  if(!SEASON_AUTOMATION_ENABLED) return;
+  const now=new Date();
+  const p=h92DenverParts(now);
+  const data=loadData();
+  const state=h92SeasonAutomationData(data);
+  state.lastCheckedAt=Date.now();
+
+  // 24-hour warning: midnight on the final calendar day of the month.
+  const tomorrow = new Date(now.getTime()+24*60*60*1000);
+  const tp=h92DenverParts(tomorrow);
+  const tomorrowStartsNewMonth = tp.day===1 && (tp.month!==p.month || tp.year!==p.year);
+  if(tomorrowStartsNewMonth && p.hour===0 && p.minute<10){
+    const nextKey=h92MonthKey(tp);
+    const key=`warn24:${nextKey}`;
+    if(!state.completedKeys[key]){
+      state.completedKeys[key]=Date.now();
+      saveData(data);
+      await h92PostSeasonMessage(nextKey,"announcement",{
+        content:"⏳ **24-HOUR SEASON WARNING**\nThe current Monster Hunt season ends in about **24 hours**.\n\nSeasonal Hunter Points, Hunt Tokens, eggs, pets, bait, capture items, active effects, cooldown state, event progress, trades, relic inventory, and other gameplay advantages will reset for the new season.\n\nPermanent accomplishment history such as PetDex/Monster Dex discoveries, permanent titles/achievements, collections, and archived season history will remain."
+      });
+      return;
+    }
+  }
+
+  // 1-hour warning: 11:00 PM on the last day.
+  if(tomorrowStartsNewMonth && p.hour===23 && p.minute<10){
+    const nextKey=h92MonthKey(tp);
+    const key=`warn1:${nextKey}`;
+    if(!state.completedKeys[key]){
+      state.completedKeys[key]=Date.now();
+      saveData(data);
+      await h92PostSeasonMessage(nextKey,"announcement",{
+        content:"⚠️ **1-HOUR SEASON WARNING**\nMonster Hunt resets in about **1 hour**.\nFinish any last hunts, hatches, purchases, or season goals now. Final standings will be archived before the reset."
+      });
+      return;
+    }
+  }
+
+  // Reset window: first 10 minutes after midnight on the 1st.
+  if(p.day===1 && p.hour===0 && p.minute<10){
+    const currentKey=h92MonthKey(p);
+    const resetKey=`reset:${currentKey}`;
+    if(!state.completedKeys[resetKey]){
+      const previousKey=h92PreviousMonthKey(p);
+
+      // Archive BEFORE resetting.
+      h92ArchiveStandings(data,previousKey);
+      saveData(data);
+
+      // Use the existing full season reset implementation.
+      if(typeof hardResetSeasonForNewCompetition!=="function"){
+        console.error("Season automation could not find hardResetSeasonForNewCompetition().");
+        return;
+      }
+
+      const result = hardResetSeasonForNewCompetition(data);
+      state.completedKeys[resetKey]=Date.now();
+      saveData(data);
+
+      await h92PostSeasonMessage(currentKey,"announcement",{
+        content:
+          `🌅 **A NEW MONSTER HUNT SEASON HAS BEGUN!**\n\n`+
+          `The previous season has been archived and all seasonal progression has been reset.\n\n`+
+          `🏹 Hunter Points: reset\n🪙 Hunt Tokens: reset\n🥚 Eggs & incubations: reset\n🐾 Seasonal pets & companion progression: reset\n🎒 Seasonal supplies/items: reset\n🌌 Event progress: reset\n\n`+
+          `📚 Permanent discovery and accomplishment history remains.\n\n`+
+          `**Good luck, Hunters. The new hunt starts now!**`
+      });
+
+      await h92PostSeasonMessage(currentKey,"hunt",{
+        content:"🏹 **The hunting grounds are open for the new season!**\nOpen Monster Hunt, choose your first hunting ground, and begin the climb."
+      });
+
+      console.log("Monthly season reset completed:",currentKey,result||"ok");
+      return;
+    }
+  }
+
+  saveData(data);
+}
+
+// Check once per minute. The persistent monthly keys make this restart-safe.
+cron.schedule("* * * * *",()=>{
+  h92RunSeasonAutomation().catch(error=>console.error("Monthly season automation failed:",error));
+});
+
+// Also run once shortly after process boot in case Railway restarted inside a
+// warning/reset window.
+setTimeout(()=>{
+  h92RunSeasonAutomation().catch(error=>console.error("Initial season automation check failed:",error));
+},15000);
+
+
 const WORLD_KNOWN_DISTORTION_KEYS = ["infernal","frost","arcane","hollow","astral"];
 
 // Startup safety: automatic Distortions never catch up events that were already due before this process started.
