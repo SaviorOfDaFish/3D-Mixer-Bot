@@ -47,6 +47,8 @@ process.on("unhandledRejection", reason => {
 
 const DATA_DIRECTORY = fs.existsSync("/data") ? "/data" : __dirname;
 const DATABASE_FILE = path.join(DATA_DIRECTORY, "monster-hunt.db");
+const GENERATED_HUNTER_DIRECTORY = path.join(DATA_DIRECTORY, "generated-hunters");
+fs.mkdirSync(GENERATED_HUNTER_DIRECTORY, { recursive:true });
 
 const db = new DatabaseSync(DATABASE_FILE);
 db.exec(`
@@ -1408,8 +1410,12 @@ function h8CreatorOptionsPayload(data,userId) {
       archetype:"hunter",body:"male",hair:"messy",hairColor:"dark_brown",
       eyes:"blue",outfit:"hunter_armor",headgear:"none",weapon:"hunter_bow",personality:"friendly"
     },
-    phase:"safe-preview",
-    generationEnabled:false
+    phase:"live-generation",
+    generationEnabled:Boolean(process.env.OPENAI_API_KEY),
+    imageModel:process.env.HUNTER_IMAGE_MODEL || "gpt-image-2",
+    generationsRemaining:h81GenerationsRemaining(player),
+    activeHunter:player.generatedHunter || null,
+    candidate:player.hunterGenerationCandidate || null
   };
 }
 
@@ -1438,7 +1444,7 @@ function h8BuildHunterPrompt(selection) {
   const archetypeStyle=H8_ARCHETYPE_STYLE[selection.archetype] || H8_ARCHETYPE_STYLE.hunter;
   return [
     "Create ONE complete player character for the fantasy RPG game Monster Hunt.",
-    "ART DIRECTION: premium polished chibi fantasy RPG/anime-cartoon game artwork; large expressive eyes; slightly oversized head; compact heroic body; clean dark outlines; detailed cel shading; soft highlights; richly rendered clothing and equipment; highly readable silhouette at small Discord Activity sizes.",
+    "ART DIRECTION: premium highly detailed polished chibi fantasy RPG/anime-cartoon game artwork matching a high-end collectible mobile RPG hero portrait; large expressive eyes; slightly oversized head; compact heroic body; dynamic but readable silhouette; clean dark ink-like outlines; rich detailed cel shading; soft highlights; ornate believable fantasy materials; layered belts, buckles, fabric folds, leather, metal and accessories; polished professional character-concept quality.",
     `CHARACTER: ${labels.body} ${labels.archetype}.`,
     `PERSONALITY/EXPRESSION: ${labels.personality}; friendly heroic game-character energy.`,
     `HAIR: ${labels.hair}, ${labels.hairColor}.`,
@@ -1474,8 +1480,173 @@ function h8CreatorPreview(data,userId,selection) {
     selection:{...check.cleaned},
     labels:Object.fromEntries(Object.keys(H8_HUNTER_CREATOR_OPTIONS).map(k => [k,h8CreatorLabel(k,check.cleaned[k])])),
     prompt:h8BuildHunterPrompt(check.cleaned),
-    message:"Hunter design validated. AI image generation is intentionally OFF in this safe preview phase."
+    message:"Hunter design validated and ready for image generation."
   };
+}
+
+
+// ==================== H.8.1 LIVE AI HUNTER GENERATION ====================
+const H81_GENERATION_LIMIT = Math.max(1, Number(process.env.HUNTER_GENERATIONS_PER_DAY || 3));
+const H81_GENERATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+const H81_GENERATION_MIN_INTERVAL_MS = 30 * 1000;
+const h81GenerationLocks = new Set();
+
+function h81GenerationHistory(player) {
+  const cutoff=Date.now()-H81_GENERATION_WINDOW_MS;
+  player.hunterGenerationHistory=Array.isArray(player.hunterGenerationHistory)
+    ? player.hunterGenerationHistory.filter(ts => Number(ts||0)>=cutoff)
+    : [];
+  return player.hunterGenerationHistory;
+}
+function h81GenerationsRemaining(player) {
+  return Math.max(0,H81_GENERATION_LIMIT-h81GenerationHistory(player).length);
+}
+function h81PublicHunterRecord(record) {
+  if (!record) return null;
+  return {
+    imageUrl:record.imageUrl||null,
+    createdAt:Number(record.createdAt||0),
+    selection:record.selection||null,
+    labels:record.labels||null
+  };
+}
+function h81SafeGeneratedFilename(userId) {
+  const safe=String(userId||"hunter").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,40)||"hunter";
+  return `${safe}-${Date.now()}-${Math.random().toString(36).slice(2,9)}.png`;
+}
+function h81DeleteGeneratedFile(record) {
+  try {
+    if (!record?.filename) return;
+    const safe=path.basename(record.filename);
+    const target=path.join(GENERATED_HUNTER_DIRECTORY,safe);
+    if (fs.existsSync(target)) fs.unlinkSync(target);
+  } catch(error) {
+    console.warn("Generated hunter cleanup failed:",error.message);
+  }
+}
+async function h81GenerateOpenAIImage(prompt) {
+  const apiKey=String(process.env.OPENAI_API_KEY||"").trim();
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured on Railway.");
+
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),150000);
+  try {
+    const response=await fetch("https://api.openai.com/v1/images/generations",{
+      method:"POST",
+      headers:{
+        "Authorization":`Bearer ${apiKey}`,
+        "Content-Type":"application/json"
+      },
+      body:JSON.stringify({
+        model:process.env.HUNTER_IMAGE_MODEL || "gpt-image-2",
+        prompt,
+        size:"1024x1024",
+        quality:process.env.HUNTER_IMAGE_QUALITY || "medium",
+        background:"transparent",
+        output_format:"png",
+        n:1
+      }),
+      signal:controller.signal
+    });
+
+    const payload=await response.json().catch(()=>null);
+    if (!response.ok) {
+      const detail=payload?.error?.message || `Image API returned HTTP ${response.status}.`;
+      throw new Error(detail);
+    }
+    const b64=payload?.data?.[0]?.b64_json;
+    if (!b64) throw new Error("The Image API did not return PNG image data.");
+    return Buffer.from(b64,"base64");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function h81GenerateHunter(user,selection) {
+  const userId=String(user.id);
+  if (h81GenerationLocks.has(userId)) return {ok:false,code:"busy",error:"Your Hunter is already being created. Please wait for it to finish."};
+
+  const data=loadData();
+  const player=getPlayer(data,userId);
+  const check=h8CreatorValidateSelection(data,userId,selection);
+  if (!check.ok) return check;
+  if (!process.env.OPENAI_API_KEY) return {ok:false,code:"not_configured",error:"AI Hunter generation is not configured yet. Add OPENAI_API_KEY to Railway."};
+
+  const history=h81GenerationHistory(player);
+  const remaining=h81GenerationsRemaining(player);
+  if (remaining<=0) return {ok:false,code:"limit",error:`You have used today's ${H81_GENERATION_LIMIT} Hunter generations. Try again after your oldest generation expires.`};
+  const last=history.length?Math.max(...history):0;
+  const wait=H81_GENERATION_MIN_INTERVAL_MS-(Date.now()-last);
+  if (wait>0) return {ok:false,code:"cooldown",error:`Please wait ${Math.ceil(wait/1000)} seconds before generating again.`,timeLeft:wait};
+
+  h81GenerationLocks.add(userId);
+  try {
+    const prompt=h8BuildHunterPrompt(check.cleaned);
+    const imageBuffer=await h81GenerateOpenAIImage(prompt);
+    const filename=h81SafeGeneratedFilename(userId);
+    fs.writeFileSync(path.join(GENERATED_HUNTER_DIRECTORY,filename),imageBuffer);
+
+    // Remove an abandoned prior candidate, but never delete the equipped art.
+    if (player.hunterGenerationCandidate?.filename &&
+        player.hunterGenerationCandidate.filename !== player.generatedHunter?.filename) {
+      h81DeleteGeneratedFile(player.hunterGenerationCandidate);
+    }
+
+    const labels=Object.fromEntries(
+      Object.keys(H8_HUNTER_CREATOR_OPTIONS).map(k => [k,h8CreatorLabel(k,check.cleaned[k])])
+    );
+    const record={
+      filename,
+      imageUrl:`/generated-hunters/${encodeURIComponent(filename)}`,
+      createdAt:Date.now(),
+      selection:{...check.cleaned},
+      labels
+    };
+    player.aiHunterCreatorDraft={...check.cleaned};
+    player.hunterGenerationCandidate=record;
+    h81GenerationHistory(player).push(record.createdAt);
+    saveData(data);
+    return {
+      ok:true,
+      candidate:h81PublicHunterRecord(record),
+      generationsRemaining:h81GenerationsRemaining(player),
+      message:"Your new Hunter has been created!"
+    };
+  } catch(error) {
+    console.error("AI Hunter generation failed:",error);
+    return {ok:false,code:"generation_failed",error:error.name==="AbortError"?"Hunter generation timed out. Please try again.":error.message};
+  } finally {
+    h81GenerationLocks.delete(userId);
+  }
+}
+
+function h81ApproveHunter(userId) {
+  const data=loadData();
+  const player=getPlayer(data,userId);
+  const candidate=player.hunterGenerationCandidate;
+  if (!candidate?.filename || !fs.existsSync(path.join(GENERATED_HUNTER_DIRECTORY,path.basename(candidate.filename)))) {
+    return {ok:false,error:"There is no generated Hunter waiting to be equipped."};
+  }
+  const previous=player.generatedHunter;
+  player.generatedHunter={...candidate,equippedAt:Date.now()};
+  player.hunterGenerationCandidate=null;
+  saveData(data);
+  if (previous?.filename && previous.filename !== player.generatedHunter.filename) h81DeleteGeneratedFile(previous);
+  return {
+    ok:true,
+    hunter:h81PublicHunterRecord(player.generatedHunter),
+    message:"Your generated Hunter is now equipped!"
+  };
+}
+
+function h81DiscardCandidate(userId) {
+  const data=loadData();
+  const player=getPlayer(data,userId);
+  const candidate=player.hunterGenerationCandidate;
+  if (candidate?.filename && candidate.filename !== player.generatedHunter?.filename) h81DeleteGeneratedFile(candidate);
+  player.hunterGenerationCandidate=null;
+  saveData(data);
+  return {ok:true};
 }
 
 function getTitleDefinition(titleName) {
@@ -13050,7 +13221,9 @@ function activityPlayerPayload(data, user) {
       activeBait: player.activeBait || null,
       captureItems: { ...player.captureItems },
       huntReadyAt: Number(player.lastHunt || 0) + getPlayerHuntCooldown(player, data, user.id),
-      fetch: activityFetchPayload(player)
+      fetch: activityFetchPayload(player),
+      generatedHunterImage: player.generatedHunter?.imageUrl || null,
+      generatedHunter: h81PublicHunterRecord(player.generatedHunter)
     },
     phaseD: {
       ownedPets,
@@ -13263,6 +13436,23 @@ const activityServer = http.createServer(async (req, res) => {
       : rawRequestUrl;
     const requestUrl = new URL(normalizedRequestUrl || "/", "http://activity.local");
 
+    if (req.method === "GET" && requestUrl.pathname.startsWith("/generated-hunters/")) {
+      const requested=decodeURIComponent(requestUrl.pathname.slice("/generated-hunters/".length));
+      const safe=path.basename(requested);
+      if (!safe || safe !== requested || !safe.endsWith(".png")) {
+        res.writeHead(400,{"Content-Type":"text/plain"}); return res.end("Bad request");
+      }
+      const target=path.join(GENERATED_HUNTER_DIRECTORY,safe);
+      if (!fs.existsSync(target)) {
+        res.writeHead(404,{"Content-Type":"text/plain"}); return res.end("Not found");
+      }
+      res.writeHead(200,{
+        "Content-Type":"image/png",
+        "Cache-Control":"public, max-age=31536000, immutable"
+      });
+      return fs.createReadStream(target).pipe(res);
+    }
+
     if (req.method === "GET" && requestUrl.pathname === "/api/activity/config") {
       return activityJson(res, { clientId:process.env.DISCORD_CLIENT_ID || client.user?.id || null, phase:"H.1" });
     }
@@ -13365,6 +13555,23 @@ const activityServer = http.createServer(async (req, res) => {
         const data=loadData();
         const result=h8CreatorPreview(data,user.id,body.selection||{});
         return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter-creator/generate") {
+        const body=await readRequestJson(req);
+        const result=await h81GenerateHunter(user,body.selection||{});
+        const status=result.ok?200:(result.code==="cooldown"?429:400);
+        return activityJson(res,result,status);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter-creator/approve") {
+        const result=h81ApproveHunter(user.id);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter-creator/discard") {
+        const result=h81DiscardCandidate(user.id);
+        return activityJson(res,result,200);
       }
 
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/merchant") {
