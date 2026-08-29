@@ -2675,3 +2675,166 @@ function startH5FetchPolling(){
     else if(hunter?.fetch?.active || hunter?.fetch?.returning) renderActivityFetch(hunter.fetch);
   },5000);
 }
+
+
+// ===== H.8 AI HUNTER CREATOR — SAFE PHASE 1 =====
+let h8CreatorData=null;
+let h8CreatorSelection=null;
+const H8_SELECT_IDS={
+  archetype:"h8Archetype",
+  body:"h8Body",
+  hair:"h8Hair",
+  hairColor:"h8HairColor",
+  eyes:"h8Eyes",
+  outfit:"h8Outfit",
+  headgear:"h8Headgear",
+  weapon:"h8Weapon",
+  personality:"h8Personality"
+};
+
+function h8CreatorOptionLabel(option){
+  return option.unlocked ? option.label : `🔒 ${option.label} — ${option.requirement||"Locked"}`;
+}
+
+function h8BuildSelect(category){
+  const select=document.getElementById(H8_SELECT_IDS[category]);
+  const options=h8CreatorData?.categories?.[category]||[];
+  if(!select) return;
+  select.innerHTML=options.map(option=>
+    `<option value="${escapeHtml(option.value)}" ${option.unlocked?"":"disabled"}>${escapeHtml(h8CreatorOptionLabel(option))}</option>`
+  ).join("");
+  const desired=h8CreatorSelection?.[category];
+  const valid=options.find(x=>x.value===desired && x.unlocked) || options.find(x=>x.unlocked);
+  if(valid){
+    select.value=valid.value;
+    h8CreatorSelection[category]=valid.value;
+  }
+}
+
+function h8CurrentOption(category){
+  const value=h8CreatorSelection?.[category];
+  return h8CreatorData?.categories?.[category]?.find(x=>x.value===value)||null;
+}
+
+function h8RenderCreatorPreview(){
+  if(!h8CreatorData||!h8CreatorSelection) return;
+  const archetype=h8CurrentOption("archetype");
+  const body=h8CurrentOption("body");
+  const personality=h8CurrentOption("personality");
+  document.getElementById("h8PreviewArchetype").textContent=`${archetype?.icon||"✨"} ${archetype?.label||"Hunter"}`;
+  document.getElementById("h8PreviewBody").textContent=body?.label||"";
+  document.getElementById("h8PreviewName").textContent=`${personality?.label||"Custom"} ${archetype?.label||"Hunter"}`;
+
+  const chipCategories=["hair","hairColor","eyes","outfit","headgear","weapon"];
+  document.getElementById("h8PreviewChips").innerHTML=chipCategories.map(category=>{
+    const option=h8CurrentOption(category);
+    return `<span>${escapeHtml(option?.label||"—")}</span>`;
+  }).join("");
+
+  document.getElementById("h8ArchetypeHelp").textContent=archetype?.description||"";
+  const p=h8CreatorData.progress||{};
+  document.getElementById("h8CreatorProgress").innerHTML=
+    `<span>🏹 Level <b>${Number(p.level||1)}</b></span>`+
+    `<span>📖 PetDex <b>${Number(p.petdex||0)}/32</b></span>`+
+    `<span>🏆 Bounty Trophies <b>${Number(p.trophies||0)}</b></span>`;
+}
+
+function h8ReadSelectionFromControls(){
+  const next={};
+  for(const [category,id] of Object.entries(H8_SELECT_IDS)){
+    next[category]=document.getElementById(id)?.value||"";
+  }
+  h8CreatorSelection=next;
+  h8RenderCreatorPreview();
+  document.getElementById("h8PromptPanel")?.classList.add("hidden");
+}
+
+async function h8SaveCreatorDraft(){
+  try{
+    await activityFetch("/api/activity/hunter-creator/draft",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({selection:h8CreatorSelection})
+    });
+  }catch{}
+}
+
+async function h8OpenCreator(){
+  const modal=document.getElementById("customizerModal");
+  modal.classList.remove("hidden");
+  const message=document.getElementById("h8CreatorMessage");
+  message.textContent="Loading your unlocked character options…";
+  try{
+    const response=await activityFetch("/api/activity/hunter-creator/options");
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not load Hunter Creator.");
+    h8CreatorData=payload;
+    h8CreatorSelection={...payload.draft};
+    Object.keys(H8_SELECT_IDS).forEach(h8BuildSelect);
+    Object.values(H8_SELECT_IDS).forEach(id=>{
+      const el=document.getElementById(id);
+      el.onchange=()=>{h8ReadSelectionFromControls();h8SaveCreatorDraft();};
+    });
+    h8RenderCreatorPreview();
+    document.getElementById("h8PromptPanel").classList.add("hidden");
+    message.textContent="Choose from your unlocked options, then create a safe preview.";
+  }catch(error){
+    message.textContent=`❌ ${error.message}`;
+  }
+}
+
+async function h8CreateHunterPreview(){
+  h8ReadSelectionFromControls();
+  const btn=document.getElementById("saveAppearance");
+  const message=document.getElementById("h8CreatorMessage");
+  btn.disabled=true;
+  btn.textContent="✨ Building Preview…";
+  message.textContent="Validating unlocks and building the controlled image prompt…";
+  try{
+    const response=await activityFetch("/api/activity/hunter-creator/preview",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({selection:h8CreatorSelection})
+    });
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not create preview.");
+    document.getElementById("h8PromptText").textContent=payload.prompt||"";
+    document.getElementById("h8PromptPanel").classList.remove("hidden");
+    message.textContent="✅ Hunter design is valid. No AI image was generated or charged in this safe preview.";
+    document.getElementById("h8PromptPanel").scrollIntoView({behavior:"smooth",block:"nearest"});
+  }catch(error){
+    message.textContent=`❌ ${error.message}`;
+  }finally{
+    btn.disabled=false;
+    btn.textContent="✨ Create Hunter Preview";
+  }
+}
+
+function h8ResetCreator(){
+  if(!h8CreatorData) return;
+  h8CreatorSelection={
+    archetype:"hunter",body:"male",hair:"messy",hairColor:"dark_brown",
+    eyes:"blue",outfit:"hunter_armor",headgear:"none",weapon:"hunter_bow",personality:"friendly"
+  };
+  Object.keys(H8_SELECT_IDS).forEach(h8BuildSelect);
+  h8RenderCreatorPreview();
+  document.getElementById("h8PromptPanel").classList.add("hidden");
+  document.getElementById("h8CreatorMessage").textContent="Reset to the starter Monster Hunter design.";
+  h8SaveCreatorDraft();
+}
+
+function h8CloseCreator(){
+  document.getElementById("customizerModal")?.classList.add("hidden");
+}
+
+// Override the old CSS-avatar editor entry points without touching Home/Hunt.
+document.getElementById("customizeBtn").onclick=h8OpenCreator;
+document.getElementById("closeCustomizer").onclick=h8CloseCreator;
+document.getElementById("saveAppearance").onclick=h8CreateHunterPreview;
+document.getElementById("resetAppearance").onclick=h8ResetCreator;
+document.getElementById("h8ChangeOptions").onclick=()=>{
+  document.getElementById("h8PromptPanel")?.classList.add("hidden");
+  document.getElementById("h8CreatorMessage").textContent="Change any unlocked option, then build another preview.";
+};
+document.getElementById("customizerModal").onclick=e=>{if(e.target.id==="customizerModal")h8CloseCreator();};
+

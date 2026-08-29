@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-h2c.css?v=1810" />
+  <link rel="stylesheet" href="/styles-phase-h2c.css?v=1820" />
 </head>
 <body>
   <div class="app-shell">
@@ -706,33 +706,78 @@
   </div>
 
   <div class="modal-backdrop hidden" id="customizerModal" role="dialog" aria-modal="true">
-    <section class="customizer-sheet">
+    <section class="customizer-sheet h8-creator-sheet">
       <header class="customizer-header">
-        <div><p class="eyebrow">APPEARANCE EDITOR</p><h2>Customize Hunter</h2></div>
+        <div>
+          <p class="eyebrow">✨ AI HUNTER CREATOR • SAFE PREVIEW</p>
+          <h2>Create Your Hunter</h2>
+        </div>
         <button class="icon-button" id="closeCustomizer" aria-label="Close">✕</button>
       </header>
-      <div class="customizer-body">
-        <div class="editor-preview-card">
-          <div class="mini-stage avatar-v2-stage"><div id="editorAvatarHost"></div></div><p class="avatar-v2-note">🧪 AVATAR V2 PREVIEW — Home & Hunt stay unchanged until approved.</p>
-          <p class="preview-name">Activity Test Hunter</p>
-          <p class="muted mini-note">Progression-locked cosmetics stay visible so players know what they can earn next.</p>
-        </div>
-        <div class="editor-controls">
-          <div class="control-section"><label>Body</label><div class="choice-grid" id="bodyOptions"></div></div>
-          <div class="control-section"><label>Skin Tone</label><div class="swatch-row" id="skinOptions"></div></div>
-          <div class="control-section"><label>Hair Style</label><div class="choice-grid" id="hairOptions"></div></div>
-          <div class="control-section"><label>Hair Color</label><div class="swatch-row" id="hairColorOptions"></div></div>
-          <div class="control-section"><label>Eyes</label><div class="choice-grid compact" id="eyeOptions"></div></div>
-          <div class="control-section"><label>Facial Hair</label><div class="choice-grid" id="beardOptions"></div></div>
-          <div class="control-section"><label>Outfit</label><div class="choice-grid" id="outfitOptions"></div></div>
-          <div class="control-section"><label>Cloak</label><div class="choice-grid" id="cloakOptions"></div></div>
-          <div class="control-section"><label>Headgear</label><div class="choice-grid" id="headgearOptions"></div></div>
-          <div class="control-section"><label>Weapon Display</label><div class="choice-grid" id="weaponOptions"></div></div>
+
+      <div class="h8-creator-body">
+        <aside class="h8-creator-preview">
+          <div class="h8-preview-art" id="h8CreatorArt">
+            <div class="h8-preview-sigil">✨</div>
+            <strong id="h8PreviewArchetype">Monster Hunter</strong>
+            <span id="h8PreviewBody">Male</span>
+          </div>
+          <div class="h8-preview-summary">
+            <p class="eyebrow">CURRENT DESIGN</p>
+            <h3 id="h8PreviewName">Your Monster Hunt Hero</h3>
+            <div id="h8PreviewChips" class="h8-preview-chips"></div>
+          </div>
+          <div class="h8-safe-note">
+            <b>🧪 Safe Preview Mode</b>
+            <span>No image-generation request is sent yet. We are testing selections, unlocks and the final prompt first.</span>
+          </div>
+        </aside>
+
+        <div class="h8-creator-controls">
+          <div class="h8-progress-row" id="h8CreatorProgress"></div>
+
+          <div class="h8-field">
+            <label for="h8Archetype">Archetype</label>
+            <select id="h8Archetype"></select>
+            <small id="h8ArchetypeHelp"></small>
+          </div>
+
+          <div class="h8-field-grid">
+            <div class="h8-field"><label for="h8Body">Body</label><select id="h8Body"></select></div>
+            <div class="h8-field"><label for="h8Personality">Personality</label><select id="h8Personality"></select></div>
+          </div>
+
+          <div class="h8-field-grid">
+            <div class="h8-field"><label for="h8Hair">Hair</label><select id="h8Hair"></select></div>
+            <div class="h8-field"><label for="h8HairColor">Hair Color</label><select id="h8HairColor"></select></div>
+          </div>
+
+          <div class="h8-field-grid">
+            <div class="h8-field"><label for="h8Eyes">Eye Color</label><select id="h8Eyes"></select></div>
+            <div class="h8-field"><label for="h8Outfit">Outfit</label><select id="h8Outfit"></select></div>
+          </div>
+
+          <div class="h8-field-grid">
+            <div class="h8-field"><label for="h8Headgear">Headgear</label><select id="h8Headgear"></select></div>
+            <div class="h8-field"><label for="h8Weapon">Weapon</label><select id="h8Weapon"></select></div>
+          </div>
+
+          <section class="h8-prompt-panel hidden" id="h8PromptPanel">
+            <div class="h8-prompt-heading">
+              <div><p class="eyebrow">CONTROLLED AI PROMPT</p><h3>Ready for Phase 2</h3></div>
+              <span>🔒 Game-controlled</span>
+            </div>
+            <pre id="h8PromptText"></pre>
+          </section>
+
+          <div class="h8-creator-message" id="h8CreatorMessage" aria-live="polite"></div>
         </div>
       </div>
-      <footer class="customizer-footer">
+
+      <footer class="customizer-footer h8-creator-footer">
         <button class="secondary" id="resetAppearance" type="button">Reset</button>
-        <button class="primary" id="saveAppearance" type="button">Save Appearance</button>
+        <button class="secondary" id="h8ChangeOptions" type="button">Change Options</button>
+        <button class="primary" id="saveAppearance" type="button">✨ Create Hunter Preview</button>
       </footer>
     </section>
   </div>
@@ -845,6 +890,6 @@
   </div>
 
   <script src="/activity-auth.js?v=1220"></script>
-  <script src="/app-phase-h2d7.js?v=1810"></script>
+  <script src="/app-phase-h2d7.js?v=1820"></script>
 </body>
 </html>
