@@ -13908,7 +13908,7 @@ const activityServer = http.createServer(async (req, res) => {
 
       if(req.method==="POST"&&requestUrl.pathname==="/api/activity/tutorial"){
         const body=await readRequestJson(req),data=loadData(),player=getPlayer(data,user.id),t=h9TutorialState(player);
-        if(body.action==="toggle"){t.enabled=!!body.enabled;if(!t.enabled)t.skipped=true;}
+        if(body.action==="toggle"){t.enabled=!!body.enabled;if(!t.enabled)t.skipped=true;else if(!t.completed)t.skipped=false;}
         else if(body.action==="progress")t.step=Math.max(0,Math.min(15,+body.step||0));
         else if(body.action==="complete"){t.completed=true;t.skipped=false;t.step=15;}
         else if(body.action==="skip"){t.skipped=true;t.completed=false;t.enabled=false;}
