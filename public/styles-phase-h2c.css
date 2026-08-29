@@ -3770,3 +3770,20 @@ body { background:#050a14; }
   }
 }
 
+
+/* ==================== H.9.3 TUTORIAL STATE FIX ==================== */
+[data-nav="tutorial"].h93-tutorial-complete,
+[data-nav="tutorial"].h93-tutorial-skipped{
+  outline:none !important;
+  box-shadow:none !important;
+  animation:none !important;
+}
+[data-nav="tutorial"].h93-tutorial-complete::after{
+  content:"✓";
+  position:absolute;
+  top:4px;
+  right:10px;
+  font-size:.68rem;
+  font-weight:900;
+  color:#86efac;
+}

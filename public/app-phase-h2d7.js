@@ -3125,10 +3125,26 @@ const H9_STEPS=[
 ["🔔","Alerts & Notifications","notifications","Choose Hunt Ready, Egg Ready and Fetch Ready alerts plus Discord roles for Merchants, Big Hunts, Bounties and World Events."],
 ["🎓","Hunter Training Complete!",null,"You know the essentials! Explore habitats, strengthen companions, build your collection and climb the leaderboard.<br><br>Replay training anytime from <b>Tutorial</b>.<br><br><b>Good hunting!</b>"]
 ];
-async function h9Save(action,extra={}){try{const r=await activityFetch("/api/activity/tutorial",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,...extra})});const p=await r.json();if(p?.tutorial)h9Tutorial=p.tutorial}catch(e){console.warn(e)}h9RenderSettings()}
+async function h9Save(action,extra={}){
+  try{
+    const r=await activityFetch("/api/activity/tutorial",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,...extra})});
+    if(!r.ok) throw new Error(`Tutorial save failed (${r.status})`);
+    const p=await r.json();
+    if(p?.tutorial){
+      h9Tutorial={...p.tutorial,seenTips:{...(p.tutorial.seenTips||{})}};
+      if(hunter) hunter.tutorial={...h9Tutorial,seenTips:{...(h9Tutorial.seenTips||{})}};
+    }
+    h9RenderSettings();
+    return true;
+  }catch(e){
+    console.error("Tutorial save failed",e);
+    h9RenderSettings();
+    return false;
+  }
+}
 function h9RenderSettings(){const t=document.getElementById("h9TutorialToggle");if(t)t.checked=!!h9Tutorial.enabled;const n=h9Tutorial.completed?16:Math.min(16,(+h9Tutorial.step||0)+1);const x=document.getElementById("h9ProgressText");if(x)x.textContent=`${n} / 16`;const b=document.getElementById("h9ProgressBar");if(b)b.style.width=`${h9Tutorial.completed?100:Math.round(n/16*100)}%`}
 function h9ShowStep(n,persist=true){n=Math.max(0,Math.min(15,+n||0));const s=H9_STEPS[n];h9Tutorial.step=n;if(s[2])document.querySelector(`[data-nav="${s[2]}"]`)?.click();document.getElementById("h9TutorialLayer").classList.remove("hidden");document.getElementById("h9TutorialCounter").textContent=`${n+1} / 16`;document.getElementById("h9TutorialIcon").textContent=s[0];document.getElementById("h9TutorialTitle").textContent=s[1];document.getElementById("h9TutorialCopy").innerHTML=s[3];document.getElementById("h9TutorialBack").disabled=n===0;document.getElementById("h9TutorialNext").textContent=n===15?"🏹 Finish Training":"Next →";if(persist)h9Save("progress",{step:n})}
-const h9Close=()=>document.getElementById("h9TutorialLayer").classList.add("hidden");
+function h9Close(){document.getElementById("h9TutorialLayer").classList.add("hidden");}
 document.getElementById("h9TutorialNext").onclick=()=>{if(h9Tutorial.step>=15){h9Tutorial.completed=true;h9Save("complete");h9Close();document.querySelector('[data-nav="home"]')?.click()}else h9ShowStep(h9Tutorial.step+1)};
 document.getElementById("h9TutorialBack").onclick=()=>h9Tutorial.step>0&&h9ShowStep(h9Tutorial.step-1);
 const h9Skip=()=>{if(confirm("Skip Hunter Training? You can restart it anytime from the Tutorial menu.")){h9Tutorial.enabled=false;h9Save("skip");h9Close()}};
@@ -3299,4 +3315,91 @@ setTimeout(()=>{
     h91ApplySpotlight(h9Tutorial.step||0);
   }
 },1900);
+
+// ==================== H.9.3 TUTORIAL COMPLETION/PERSISTENCE FIX ====================
+function h93SetTutorialNavCompleteState(){
+  const nav=document.querySelector('[data-nav="tutorial"]');
+  if(!nav) return;
+  nav.classList.toggle("h93-tutorial-complete",!!h9Tutorial.completed);
+  nav.classList.toggle("h93-tutorial-skipped",!!h9Tutorial.skipped && !h9Tutorial.completed);
+  if(h9Tutorial.completed || h9Tutorial.skipped){
+    nav.classList.remove("h91-tutorial-highlight");
+    nav.removeAttribute("data-h91-tutorial-target");
+  }
+}
+
+async function h93FinishTutorial(){
+  h9Tutorial.completed=true;
+  h9Tutorial.skipped=false;
+  h9Tutorial.enabled=true;
+  h9Tutorial.step=15;
+  h91ClearHighlight?.();
+  h9Close();
+  document.querySelector('[data-nav="home"]')?.click();
+
+  const ok=await h9Save("complete");
+  h93SetTutorialNavCompleteState();
+  if(ok && typeof showToast==="function") showToast("🎓 Hunter Training Complete!");
+}
+
+async function h93SkipTutorial(){
+  if(!confirm("Skip Hunter Training? You can restart it anytime from the Tutorial menu.")) return;
+  h9Tutorial.enabled=false;
+  h9Tutorial.skipped=true;
+  h9Tutorial.completed=false;
+  h91ClearHighlight?.();
+  h9Close();
+
+  const ok=await h9Save("skip");
+  h93SetTutorialNavCompleteState();
+  if(ok && typeof showToast==="function") showToast("Tutorial skipped. You can restart it anytime.");
+}
+
+document.getElementById("h9TutorialNext").onclick=async()=>{
+  if(h9Tutorial.step>=15) await h93FinishTutorial();
+  else h9ShowStep(h9Tutorial.step+1);
+};
+document.getElementById("h9TutorialSkip").onclick=h93SkipTutorial;
+document.getElementById("h9TutorialClose").onclick=h93SkipTutorial;
+
+const h93OldRenderSettings=h9RenderSettings;
+h9RenderSettings=function(){
+  h93OldRenderSettings();
+  h93SetTutorialNavCompleteState();
+  const start=document.getElementById("h9StartTutorial");
+  if(start){
+    start.textContent=h9Tutorial.completed
+      ? "🎓 Replay Hunter Training"
+      : h9Tutorial.skipped
+        ? "🎓 Start Hunter Training"
+        : "🎓 Start / Continue Hunter Training";
+  }
+};
+
+// Fetch the authoritative tutorial state after normal boot has populated hunter.
+// This avoids relying on timing between the original 1.6s tutorial timer and Discord auth/data loading.
+async function h93LoadAuthoritativeTutorialState(){
+  try{
+    const r=await activityFetch("/api/test-hunter");
+    if(!r.ok) return;
+    const fresh=await r.json();
+    if(fresh?.tutorial){
+      if(hunter) hunter.tutorial=fresh.tutorial;
+      h9Tutorial={...h9Tutorial,...fresh.tutorial,seenTips:{...(fresh.tutorial.seenTips||{})}};
+      h9RenderSettings();
+
+      // Persisted completion/skip always wins over an old locally-open tutorial.
+      if(h9Tutorial.completed || h9Tutorial.skipped || !h9Tutorial.enabled){
+        h91ClearHighlight?.();
+        h9Close();
+      }else{
+        const layer=document.getElementById("h9TutorialLayer");
+        if(layer?.classList.contains("hidden")) h9ShowStep(h9Tutorial.step||0,false);
+      }
+    }
+  }catch(e){
+    console.warn("Tutorial state refresh failed",e);
+  }
+}
+setTimeout(h93LoadAuthoritativeTutorialState,2300);
 
