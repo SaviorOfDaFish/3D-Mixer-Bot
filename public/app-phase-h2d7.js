@@ -3103,3 +3103,44 @@ document.getElementById("customizerModal").onclick=e=>{
   if(e.target.id==="customizerModal") h8CloseCreator();
 };
 
+
+
+// ==================== H.9 HUNTER TRAINING ====================
+let h9Tutorial={enabled:true,completed:false,skipped:false,step:0,seenTips:{}};
+const H9_STEPS=[
+["🏹","Welcome to Monster Hunt!",null,"Become a Hunter, catch monsters, raise companions and compete through the season.<br><br><b>⭐ Hunter Points</b> drive the leaderboard. <b>🪙 Hunt Tokens</b> are spendable currency."],
+["🧑‍🎨","Your Hunter","home","Hunter levels unlock incubators, inherited ability slots and customization. Use <b>Customize</b> to create your AI-generated Hunter."],
+["🐾","Your Active Companion","pets","Companions adventure beside you. Their abilities improve hunts and rewards. They gain <b>Companion XP</b>, Bond and ability progress."],
+["🥚","Eggs & Incubators","eggs","Put eggs into incubators and return when they are ready. Higher Hunter levels unlock more incubator slots. Hatching discovers new companions."],
+["📖","The PetDex","petdex","Explore <b>8 habitats</b> and discover all <b>32 standard companions</b>. PetDex milestones unlock progression rewards."],
+["🎒","Gear & Inventory","inventory","<b>Bait/Lures</b> affect the monster you encounter. <b>Capture Items</b> are chosen after the monster appears to improve catch chance."],
+["🏹","Choose a Hunting Ground","hunt","Pick a lure, choose an available habitat and begin hunting. Each habitat has its own monster roster."],
+["🎯","Monster Encounters","hunt","Check rarity and catch chance, then choose a Capture Item if desired. Rarer monsters award more Hunter Points and Hunt Tokens."],
+["🎁","Hunt Rewards","hunt","Successful catches can award <b>Hunter Points, Hunt Tokens, Companion XP, eggs and hunting supplies</b>. Companion abilities can add more."],
+["🐾","Fetch Adventures","pets","Send your equipped companion on <b>Fetch</b>. It returns later with Companion XP and may find useful items."],
+["🧬","Combining Companions","pets","Combining permanently sacrifices one companion. Sacrifice for distributed Ability XP or attempt <b>Inheritance</b> using the displayed chance meter."],
+["🛒","Traveling Merchants","merchant","Limited-time merchants sell unusual goods for Hunt Tokens or trades. Merchant Alerts can notify you when one arrives."],
+["🏆","Your Collection","collection","Collection tracks accomplishments, titles, trophies and progression cosmetics."],
+["🌌","Events & Special Hunts","events","Watch for <b>Big Game Hunts, Bounties and World Events</b>, with special rules and rewards."],
+["🔔","Alerts & Notifications","notifications","Choose Hunt Ready, Egg Ready and Fetch Ready alerts plus Discord roles for Merchants, Big Hunts, Bounties and World Events."],
+["🎓","Hunter Training Complete!",null,"You know the essentials! Explore habitats, strengthen companions, build your collection and climb the leaderboard.<br><br>Replay training anytime from <b>Tutorial</b>.<br><br><b>Good hunting!</b>"]
+];
+async function h9Save(action,extra={}){try{const r=await activityFetch("/api/activity/tutorial",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,...extra})});const p=await r.json();if(p?.tutorial)h9Tutorial=p.tutorial}catch(e){console.warn(e)}h9RenderSettings()}
+function h9RenderSettings(){const t=document.getElementById("h9TutorialToggle");if(t)t.checked=!!h9Tutorial.enabled;const n=h9Tutorial.completed?16:Math.min(16,(+h9Tutorial.step||0)+1);const x=document.getElementById("h9ProgressText");if(x)x.textContent=`${n} / 16`;const b=document.getElementById("h9ProgressBar");if(b)b.style.width=`${h9Tutorial.completed?100:Math.round(n/16*100)}%`}
+function h9ShowStep(n,persist=true){n=Math.max(0,Math.min(15,+n||0));const s=H9_STEPS[n];h9Tutorial.step=n;if(s[2])document.querySelector(`[data-nav="${s[2]}"]`)?.click();document.getElementById("h9TutorialLayer").classList.remove("hidden");document.getElementById("h9TutorialCounter").textContent=`${n+1} / 16`;document.getElementById("h9TutorialIcon").textContent=s[0];document.getElementById("h9TutorialTitle").textContent=s[1];document.getElementById("h9TutorialCopy").innerHTML=s[3];document.getElementById("h9TutorialBack").disabled=n===0;document.getElementById("h9TutorialNext").textContent=n===15?"🏹 Finish Training":"Next →";if(persist)h9Save("progress",{step:n})}
+const h9Close=()=>document.getElementById("h9TutorialLayer").classList.add("hidden");
+document.getElementById("h9TutorialNext").onclick=()=>{if(h9Tutorial.step>=15){h9Tutorial.completed=true;h9Save("complete");h9Close();document.querySelector('[data-nav="home"]')?.click()}else h9ShowStep(h9Tutorial.step+1)};
+document.getElementById("h9TutorialBack").onclick=()=>h9Tutorial.step>0&&h9ShowStep(h9Tutorial.step-1);
+const h9Skip=()=>{if(confirm("Skip Hunter Training? You can restart it anytime from the Tutorial menu.")){h9Tutorial.enabled=false;h9Save("skip");h9Close()}};
+document.getElementById("h9TutorialSkip").onclick=h9Skip;document.getElementById("h9TutorialClose").onclick=h9Skip;
+document.getElementById("h9StartTutorial").onclick=()=>h9ShowStep(h9Tutorial.completed?0:h9Tutorial.step||0);
+document.getElementById("h9RestartTutorial").onclick=async()=>{await h9Save("restart");h9Tutorial={...h9Tutorial,enabled:true,completed:false,skipped:false,step:0};h9ShowStep(0)};
+document.getElementById("h9ResetTips").onclick=async()=>{await h9Save("reset-tips");h9Tutorial.seenTips={}};
+document.getElementById("h9TutorialToggle").onchange=e=>{h9Tutorial.enabled=!!e.target.checked;h9Save("toggle",{enabled:h9Tutorial.enabled})};
+document.querySelectorAll("[data-h9-jump]").forEach(b=>b.onclick=()=>h9ShowStep(+b.dataset.h9Jump));
+document.getElementById("h9TipClose").onclick=()=>document.getElementById("h9TipToast").classList.add("hidden");
+async function h9Tip(k,body){if(!h9Tutorial.enabled||h9Tutorial.seenTips?.[k])return;h9Tutorial.seenTips={...h9Tutorial.seenTips,[k]:true};document.getElementById("h9TipBody").innerHTML=body;document.getElementById("h9TipToast").classList.remove("hidden");await h9Save("tip",{key:k})}
+document.getElementById("combinePetsBtn")?.addEventListener("click",()=>h9Tip("combine","<b>🧬 Combining Companions</b><br>The sacrificed companion is permanently lost. Review XP distribution or inheritance chance before committing."));
+document.getElementById("fetchPetBtn")?.addEventListener("click",()=>h9Tip("fetch","<b>🐾 Fetch</b><br>Your active companion returns later with Companion XP and possible item finds."));
+setTimeout(()=>{const s=hunter?.tutorial||gameData?.hunter?.tutorial||gameData?.player?.tutorial;if(s)h9Tutorial={...h9Tutorial,...s,seenTips:{...(s.seenTips||{})}};h9RenderSettings();if(h9Tutorial.enabled&&!h9Tutorial.completed&&!h9Tutorial.skipped)h9ShowStep(h9Tutorial.step||0,false)},1600);
+

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-h2c.css?v=1850" />
+  <link rel="stylesheet" href="/styles-phase-h2c.css?v=1900" />
 </head>
 <body>
   <div class="app-shell">
@@ -208,7 +208,20 @@
         </section>
       </section>
 
-      <section class="screen" data-screen="notifications">
+      <section class="screen" data-screen="tutorial">
+  <div class="screen-header"><div><p class="eyebrow">🎓 HUNTER TRAINING</p><h2>Tutorial & Help</h2></div><span class="screen-count">?</span></div>
+  <p class="muted intro-copy">Learn Monster Hunt at your own pace. Your progress is saved automatically.</p>
+  <section class="panel h9-settings-shell">
+    <div class="h9-settings-card"><div><strong>Tutorial Tips</strong><p>Show first-time explanations while you explore Monster Hunt.</p></div><label class="h9-switch"><input id="h9TutorialToggle" type="checkbox" checked><span></span></label></div>
+    <div class="h9-progress-card"><div class="h9-progress-head"><span>Hunter Training Progress</span><strong id="h9ProgressText">1 / 16</strong></div><div class="h9-progress-track"><i id="h9ProgressBar"></i></div><button class="primary" id="h9StartTutorial">🎓 Start / Continue Hunter Training</button></div>
+    <div class="h9-help-grid">
+      <button data-h9-jump="3"><b>🥚 Eggs & Incubators</b><span>Hatching and companions.</span></button><button data-h9-jump="5"><b>🎒 Gear & Items</b><span>Bait and capture items.</span></button><button data-h9-jump="6"><b>🏹 Hunting</b><span>Encounters and rewards.</span></button><button data-h9-jump="9"><b>🐾 Fetch</b><span>Companion adventures.</span></button><button data-h9-jump="10"><b>🧬 Combining</b><span>XP and inheritance.</span></button><button data-h9-jump="13"><b>🌌 Events</b><span>Special hunts and events.</span></button>
+    </div>
+    <div class="h9-settings-actions"><button class="secondary" id="h9RestartTutorial">↻ Restart Full Tutorial</button><button class="secondary" id="h9ResetTips">💡 Reset Tutorial Tips</button></div>
+  </section>
+</section>
+
+<section class="screen" data-screen="notifications">
         <div class="screen-header">
           <div><p class="eyebrow">🔔 NOTIFICATIONS</p><h2>Monster Hunt Alerts</h2></div>
           <span class="h4-notification-route" id="h4NotificationRoute">Loading…</span>
@@ -702,10 +715,13 @@
       <button data-nav="hunt"><span>🏹</span><small>Hunt</small></button>
       <button data-nav="events"><span>🌀</span><small>Events</small></button>
       <button data-nav="notifications"><span>🔔</span><small>Alerts</small></button>
+      <button data-nav="tutorial"><span>🎓</span><small>Tutorial</small></button>
     </nav>
   </div>
 
-  <div class="modal-backdrop hidden" id="customizerModal" role="dialog" aria-modal="true">
+  <div class="h9-tutorial-layer hidden" id="h9TutorialLayer"><div class="h9-tutorial-backdrop"></div><div class="h9-tutorial-card"><div class="h9-tutorial-top"><span id="h9TutorialCounter">1 / 16</span><button id="h9TutorialClose">×</button></div><div class="h9-tutorial-icon" id="h9TutorialIcon">🏹</div><p class="eyebrow">HUNTER TRAINING</p><h2 id="h9TutorialTitle"></h2><div class="h9-tutorial-copy" id="h9TutorialCopy"></div><div class="h9-tutorial-nav"><button class="secondary" id="h9TutorialBack">← Back</button><button class="secondary" id="h9TutorialSkip">Skip Tutorial</button><button class="primary" id="h9TutorialNext">Next →</button></div></div></div>
+<div class="h9-tip-toast hidden" id="h9TipToast"><button id="h9TipClose">×</button><div id="h9TipBody"></div></div>
+<div class="modal-backdrop hidden" id="customizerModal" role="dialog" aria-modal="true">
     <section class="customizer-sheet h8-creator-sheet">
       <header class="customizer-header">
         <div>
@@ -938,6 +954,6 @@
   </div>
 
   <script src="/activity-auth.js?v=1220"></script>
-  <script src="/app-phase-h2d7.js?v=1850"></script>
+  <script src="/app-phase-h2d7.js?v=1900"></script>
 </body>
 </html>
