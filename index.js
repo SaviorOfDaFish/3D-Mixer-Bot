@@ -13333,6 +13333,16 @@ async function activityStartFetch(user) {
   };
 }
 
+// ==================== H.9 HUNTER TRAINING ====================
+function h9TutorialState(player){
+  if(!player.tutorial||typeof player.tutorial!=="object") player.tutorial={enabled:true,completed:false,skipped:false,step:0,seenTips:{}};
+  if(typeof player.tutorial.enabled!=="boolean") player.tutorial.enabled=true;
+  if(!Number.isInteger(player.tutorial.step)||player.tutorial.step<0) player.tutorial.step=0;
+  if(!player.tutorial.seenTips||typeof player.tutorial.seenTips!=="object") player.tutorial.seenTips={};
+  return player.tutorial;
+}
+function h9TutorialPayload(player){const t=h9TutorialState(player);return {enabled:t.enabled,completed:!!t.completed,skipped:!!t.skipped,step:+t.step||0,seenTips:{...t.seenTips}};}
+
 function activityPlayerPayload(data, user) {
   const player = getPlayer(data, user.id);
   const profile = ensureActivityProfile(player, user);
@@ -13359,7 +13369,8 @@ function activityPlayerPayload(data, user) {
       huntReadyAt: Number(player.lastHunt || 0) + getPlayerHuntCooldown(player, data, user.id),
       fetch: activityFetchPayload(player),
       generatedHunterImage: player.generatedHunter?.imageUrl || null,
-      generatedHunter: h81PublicHunterRecord(player.generatedHunter)
+      generatedHunter: h81PublicHunterRecord(player.generatedHunter),
+      tutorial:h9TutorialPayload(player)
     },
     phaseD: {
       ownedPets,
@@ -13701,6 +13712,19 @@ const activityServer = http.createServer(async (req, res) => {
           activityWritesEnabled:true,
           botReady:Boolean(client.user)
         });
+      }
+
+      if(req.method==="POST"&&requestUrl.pathname==="/api/activity/tutorial"){
+        const body=await readRequestJson(req),data=loadData(),player=getPlayer(data,user.id),t=h9TutorialState(player);
+        if(body.action==="toggle"){t.enabled=!!body.enabled;if(!t.enabled)t.skipped=true;}
+        else if(body.action==="progress")t.step=Math.max(0,Math.min(15,+body.step||0));
+        else if(body.action==="complete"){t.completed=true;t.skipped=false;t.step=15;}
+        else if(body.action==="skip"){t.skipped=true;t.completed=false;t.enabled=false;}
+        else if(body.action==="restart"){t.enabled=true;t.completed=false;t.skipped=false;t.step=0;}
+        else if(body.action==="reset-tips")t.seenTips={};
+        else if(body.action==="tip"){const k=String(body.key||"").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,64);if(k)t.seenTips[k]=true;}
+        else return activityJson(res,{ok:false,error:"Unknown tutorial action."},400);
+        saveData(data);return activityJson(res,{ok:true,tutorial:h9TutorialPayload(player)});
       }
 
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/hunter-creator/options") {
