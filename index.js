@@ -1265,6 +1265,219 @@ async function activityEquipTitle(user,titleName) {
   return {ok:true,title:canonical,message:`Equipped title: ${canonical}`};
 }
 
+
+// ==================== H.8 AI HUNTER CREATOR — SAFE PHASE 1 ====================
+// Phase 1 deliberately does NOT call an image-generation API.
+// It validates progression-gated selections, stores a draft on the player,
+// and builds the exact controlled prompt that Phase 2 will send to the image model.
+
+const H8_HUNTER_CREATOR_OPTIONS = Object.freeze({
+  archetype: [
+    {value:"hunter",label:"Monster Hunter",icon:"🏹",description:"Classic wilderness tracker with leather armor and professional hunting gear."},
+    {value:"farmer",label:"Farmer",icon:"🌾",description:"Cheerful field hand turned monster hunter.",unlock:{type:"level",amount:3}},
+    {value:"teacher",label:"Adventuring Teacher",icon:"📚",description:"Book-smart adventurer with magical classroom gear.",unlock:{type:"petdex",amount:5}},
+    {value:"wizard",label:"Arcane Wizard",icon:"🧙",description:"Rune-covered spellcaster who studies magical creatures.",unlock:{type:"level",amount:3}},
+    {value:"ninja",label:"Shadow Ninja",icon:"🥷",description:"Stealthy precision hunter with dark fantasy equipment.",unlock:{type:"level",amount:6}},
+    {value:"knight",label:"Kingdom Knight",icon:"⚔️",description:"Armored protector with sword-and-shield styling.",unlock:{type:"level",amount:8}},
+    {value:"pirate",label:"Treasure Pirate",icon:"🏴‍☠️",description:"Treasure-seeking hunter with a flamboyant pirate look.",unlock:{type:"petdex",amount:10}},
+    {value:"alchemist",label:"Monster Alchemist",icon:"🧪",description:"Potion-carrying field scientist fascinated by monsters.",unlock:{type:"petdex",amount:12}}
+  ],
+  body: [
+    {value:"male",label:"Male"},
+    {value:"female",label:"Female"}
+  ],
+  hair: [
+    {value:"messy",label:"Messy"},
+    {value:"short",label:"Short"},
+    {value:"side_swept",label:"Side Swept"},
+    {value:"ponytail",label:"Ponytail"},
+    {value:"long",label:"Long"},
+    {value:"pixie",label:"Pixie Cut"},
+    {value:"undercut",label:"Undercut",unlock:{type:"level",amount:3}},
+    {value:"curly",label:"Curly",unlock:{type:"level",amount:4}},
+    {value:"hunter_bun",label:"Hunter Bun",unlock:{type:"level",amount:5}},
+    {value:"braid",label:"Long Braid",unlock:{type:"level",amount:7}},
+    {value:"bald",label:"Bald"}
+  ],
+  hairColor: [
+    {value:"dark_brown",label:"Dark Brown",swatch:"#3f2a22"},
+    {value:"black",label:"Black",swatch:"#16181d"},
+    {value:"warm_brown",label:"Warm Brown",swatch:"#6a402e"},
+    {value:"blonde",label:"Blonde",swatch:"#d9a84e",unlock:{type:"level",amount:3}},
+    {value:"red",label:"Red",swatch:"#9e352e",unlock:{type:"level",amount:4}},
+    {value:"white",label:"White",swatch:"#dce3ed",unlock:{type:"petdex",amount:8}},
+    {value:"blue",label:"Arcane Blue",swatch:"#2368c4",unlock:{type:"petdex",amount:12}},
+    {value:"violet",label:"Starfall Violet",swatch:"#7041a8",unlock:{type:"petdex",amount:20}}
+  ],
+  eyes: [
+    {value:"blue",label:"Blue",swatch:"#2f8ee5"},
+    {value:"green",label:"Green",swatch:"#3aa56a"},
+    {value:"brown",label:"Brown",swatch:"#8c5a32"},
+    {value:"amber",label:"Amber",swatch:"#d18b2e",unlock:{type:"level",amount:3}},
+    {value:"violet",label:"Violet",swatch:"#7857c5",unlock:{type:"petdex",amount:12}}
+  ],
+  outfit: [
+    {value:"hunter_armor",label:"Hunter Armor"},
+    {value:"overalls",label:"Overalls",unlock:{type:"level",amount:3}},
+    {value:"storm_hunter",label:"Storm Hunter Coat",unlock:{type:"level",amount:5}},
+    {value:"ninja_robe",label:"Ninja Robe",unlock:{type:"level",amount:6}},
+    {value:"pirate_coat",label:"Pirate Coat",unlock:{type:"petdex",amount:10}},
+    {value:"glasswaste_gear",label:"Glasswaste Hunter Gear",unlock:{type:"petdex",amount:12}},
+    {value:"wizard_robe",label:"Wizard Robe",unlock:{type:"petdex",amount:18}},
+    {value:"ember_armor",label:"Ember Hunter Armor",unlock:{type:"petdex",amount:20}}
+  ],
+  headgear: [
+    {value:"none",label:"None"},
+    {value:"field_band",label:"Field Headband"},
+    {value:"army_helmet",label:"Army Helmet",unlock:{type:"level",amount:3}},
+    {value:"moonfen_circlet",label:"Moonfen Circlet",unlock:{type:"petdex",amount:4}},
+    {value:"ninja_mask",label:"Ninja Mask",unlock:{type:"level",amount:6}},
+    {value:"cowboy_hat",label:"Cowboy Hat",unlock:{type:"petdex",amount:8}},
+    {value:"wizard_hat",label:"Wizard Hat",unlock:{type:"petdex",amount:18}},
+    {value:"trophy_horns",label:"Trophy Horns",unlock:{type:"trophies",amount:3}},
+    {value:"starfall_crown",label:"Starfall Crown",unlock:{type:"petdex",amount:32}}
+  ],
+  weapon: [
+    {value:"hunter_bow",label:"Hunter Bow"},
+    {value:"pitchfork",label:"Pitchfork",unlock:{type:"level",amount:3}},
+    {value:"spear",label:"Spear",unlock:{type:"level",amount:3}},
+    {value:"sword",label:"Sword",unlock:{type:"level",amount:4}},
+    {value:"katana",label:"Katana",unlock:{type:"level",amount:6}},
+    {value:"magic_wand",label:"Magic Wand",unlock:{type:"petdex",amount:12}},
+    {value:"rift_staff",label:"Rift Staff",unlock:{type:"level",amount:10}}
+  ],
+  personality: [
+    {value:"friendly",label:"Friendly"},
+    {value:"confident",label:"Confident"},
+    {value:"cheerful",label:"Cheerful"},
+    {value:"serious",label:"Serious"},
+    {value:"mischievous",label:"Mischievous"},
+    {value:"curious",label:"Curious"},
+    {value:"determined",label:"Determined"}
+  ]
+});
+
+const H8_ARCHETYPE_STYLE = Object.freeze({
+  hunter:"rugged brown-and-forest-green professional monster-hunting gear, practical belts and tracking equipment",
+  farmer:"charming blue overalls, rolled work sleeves, rugged boots, practical field gear",
+  teacher:"smart fantasy educator clothing, fitted vest, rolled sleeves, book satchel and field notes",
+  wizard:"elaborate midnight-blue and violet arcane clothing with tasteful rune and star details",
+  ninja:"layered black and charcoal stealth gear with subtle violet accents",
+  knight:"polished silver fantasy plate armor with blue cloth and restrained gold trim",
+  pirate:"deep-red and gold fantasy pirate clothing with belts, map pouches and adventurous detailing",
+  alchemist:"cream field-alchemist coat with potion bandolier, sample satchel and brass utility details"
+});
+
+function h8CreatorProgress(player,data,userId) {
+  return {
+    level:h3HunterLevel(player),
+    petdex:(player.discoveredPetKeys||[]).filter(k => H3_STANDARD_NATURAL_ABILITIES[k] && k !== "mixlet").length,
+    trophies:h7CurrentSeasonTrophyCount(data,userId)
+  };
+}
+
+function h8CreatorOptionUnlocked(option,progress) {
+  if (!option?.unlock) return true;
+  const value=Number(progress?.[option.unlock.type]||0);
+  return value >= Number(option.unlock.amount||0);
+}
+
+function h8CreatorUnlockText(option) {
+  if (!option?.unlock) return null;
+  if (option.unlock.type === "level") return `Reach Hunter Level ${option.unlock.amount}`;
+  if (option.unlock.type === "petdex") return `Discover ${option.unlock.amount} PetDex companions`;
+  if (option.unlock.type === "trophies") return `Earn ${option.unlock.amount} current-season bounty trophies`;
+  return "Complete the required progression milestone";
+}
+
+function h8CreatorOptionsPayload(data,userId) {
+  const player=getPlayer(data,userId);
+  const progress=h8CreatorProgress(player,data,userId);
+  const categories={};
+  for (const [category,options] of Object.entries(H8_HUNTER_CREATOR_OPTIONS)) {
+    categories[category]=options.map(option => ({
+      ...option,
+      unlocked:h8CreatorOptionUnlocked(option,progress),
+      requirement:h8CreatorUnlockText(option)
+    }));
+  }
+  return {
+    categories,
+    progress,
+    draft:player.aiHunterCreatorDraft || {
+      archetype:"hunter",body:"male",hair:"messy",hairColor:"dark_brown",
+      eyes:"blue",outfit:"hunter_armor",headgear:"none",weapon:"hunter_bow",personality:"friendly"
+    },
+    phase:"safe-preview",
+    generationEnabled:false
+  };
+}
+
+function h8CreatorValidateSelection(data,userId,selection) {
+  const player=getPlayer(data,userId);
+  const progress=h8CreatorProgress(player,data,userId);
+  const cleaned={};
+  for (const [category,options] of Object.entries(H8_HUNTER_CREATOR_OPTIONS)) {
+    const requested=String(selection?.[category]||"");
+    const option=options.find(x => x.value === requested);
+    if (!option) return {ok:false,error:`Unknown ${category} option.`};
+    if (!h8CreatorOptionUnlocked(option,progress)) {
+      return {ok:false,error:`${option.label} is locked. ${h8CreatorUnlockText(option)}.`};
+    }
+    cleaned[category]=option.value;
+  }
+  return {ok:true,cleaned,progress};
+}
+
+function h8CreatorLabel(category,value) {
+  return H8_HUNTER_CREATOR_OPTIONS[category]?.find(x => x.value === value)?.label || value;
+}
+
+function h8BuildHunterPrompt(selection) {
+  const labels=Object.fromEntries(Object.keys(H8_HUNTER_CREATOR_OPTIONS).map(k => [k,h8CreatorLabel(k,selection[k])]));
+  const archetypeStyle=H8_ARCHETYPE_STYLE[selection.archetype] || H8_ARCHETYPE_STYLE.hunter;
+  return [
+    "Create ONE complete player character for the fantasy RPG game Monster Hunt.",
+    "ART DIRECTION: premium polished chibi fantasy RPG/anime-cartoon game artwork; large expressive eyes; slightly oversized head; compact heroic body; clean dark outlines; detailed cel shading; soft highlights; richly rendered clothing and equipment; highly readable silhouette at small Discord Activity sizes.",
+    `CHARACTER: ${labels.body} ${labels.archetype}.`,
+    `PERSONALITY/EXPRESSION: ${labels.personality}; friendly heroic game-character energy.`,
+    `HAIR: ${labels.hair}, ${labels.hairColor}.`,
+    `EYES: ${labels.eyes}.`,
+    `ARCHETYPE VISUAL LANGUAGE: ${archetypeStyle}.`,
+    `OUTFIT: ${labels.outfit}.`,
+    `HEADGEAR: ${labels.headgear}.`,
+    `WEAPON: ${labels.weapon}.`,
+    "COMPOSITION: full body visible from head to boots; front-facing; centered; natural confident standing pose; entire weapon and accessories visible.",
+    "BACKGROUND: fully transparent PNG. No environment, scenery, floor, cast shadow, text, UI, border, logo, additional characters, monsters, or pets.",
+    "OUTPUT: square character portrait suitable for placement over Monster Hunt environment artwork."
+  ].join("\n");
+}
+
+function h8CreatorSaveDraft(data,userId,selection) {
+  const check=h8CreatorValidateSelection(data,userId,selection);
+  if (!check.ok) return check;
+  const player=getPlayer(data,userId);
+  player.aiHunterCreatorDraft={...check.cleaned};
+  saveData(data);
+  return {ok:true,draft:{...player.aiHunterCreatorDraft}};
+}
+
+function h8CreatorPreview(data,userId,selection) {
+  const check=h8CreatorValidateSelection(data,userId,selection);
+  if (!check.ok) return check;
+  const player=getPlayer(data,userId);
+  player.aiHunterCreatorDraft={...check.cleaned};
+  saveData(data);
+  return {
+    ok:true,
+    generationEnabled:false,
+    selection:{...check.cleaned},
+    labels:Object.fromEntries(Object.keys(H8_HUNTER_CREATOR_OPTIONS).map(k => [k,h8CreatorLabel(k,check.cleaned[k])])),
+    prompt:h8BuildHunterPrompt(check.cleaned),
+    message:"Hunter design validated. AI image generation is intentionally OFF in this safe preview phase."
+  };
+}
+
 function getTitleDefinition(titleName) {
   const builtIn = h7AllTitleDefinitions().find(title => title.name === titleName);
   if (builtIn) return builtIn;
@@ -13133,6 +13346,25 @@ const activityServer = http.createServer(async (req, res) => {
           activityWritesEnabled:true,
           botReady:Boolean(client.user)
         });
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/hunter-creator/options") {
+        const data=loadData();
+        return activityJson(res,{ok:true,...h8CreatorOptionsPayload(data,user.id)});
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter-creator/draft") {
+        const body=await readRequestJson(req);
+        const data=loadData();
+        const result=h8CreatorSaveDraft(data,user.id,body.selection||{});
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter-creator/preview") {
+        const body=await readRequestJson(req);
+        const data=loadData();
+        const result=h8CreatorPreview(data,user.id,body.selection||{});
+        return activityJson(res,result,result.ok?200:400);
       }
 
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/merchant") {
