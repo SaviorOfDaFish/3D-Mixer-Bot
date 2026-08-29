@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-h2c.css?v=1830" />
+  <link rel="stylesheet" href="/styles-phase-h2c.css?v=1840" />
 </head>
 <body>
   <div class="app-shell">
@@ -774,6 +774,31 @@
             <div class="h8-field"><label for="h8Weapon">Weapon</label><select id="h8Weapon"></select></div>
           </div>
 
+          <div class="h82-section-label">
+            <p class="eyebrow">MORE CUSTOMIZATION</p>
+            <span>Mix unlocked accessories into your generated Hunter.</span>
+          </div>
+
+          <div class="h8-field-grid h82-three">
+            <div class="h8-field"><label for="h82Eyewear">Eyewear</label><select id="h82Eyewear"></select></div>
+            <div class="h8-field"><label for="h82Gloves">Gloves</label><select id="h82Gloves"></select></div>
+            <div class="h8-field"><label for="h82NeckFace">Neck / Face</label><select id="h82NeckFace"></select></div>
+          </div>
+
+          <div class="h8-field-grid h82-three">
+            <div class="h8-field"><label for="h82Cloak">Cloak / Cape</label><select id="h82Cloak"></select></div>
+            <div class="h8-field"><label for="h82BackItem">Back Item</label><select id="h82BackItem"></select></div>
+            <div class="h8-field"><label for="h82BeltItem">Belt / Pouch</label><select id="h82BeltItem"></select></div>
+          </div>
+
+          <div class="h8-field-grid">
+            <div class="h8-field"><label for="h82Offhand">Off-hand Item</label><select id="h82Offhand"></select></div>
+            <div class="h8-field">
+              <label>Optional Details <span class="h82-max-note">Choose up to 4</span></label>
+              <div class="h82-extra-grid" id="h82ExtraGrid"></div>
+            </div>
+          </div>
+
           <section class="h8-prompt-panel hidden h81-dev-prompt" id="h8PromptPanel">
             <div class="h8-prompt-heading">
               <div><p class="eyebrow">GENERATION DETAILS</p><h3>Controlled Character Prompt</h3></div>
@@ -902,6 +927,6 @@
   </div>
 
   <script src="/activity-auth.js?v=1220"></script>
-  <script src="/app-phase-h2d7.js?v=1830"></script>
+  <script src="/app-phase-h2d7.js?v=1840"></script>
 </body>
 </html>

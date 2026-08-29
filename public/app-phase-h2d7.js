@@ -2689,7 +2689,14 @@ const H8_SELECT_IDS={
   outfit:"h8Outfit",
   headgear:"h8Headgear",
   weapon:"h8Weapon",
-  personality:"h8Personality"
+  personality:"h8Personality",
+  eyewear:"h82Eyewear",
+  gloves:"h82Gloves",
+  neckFace:"h82NeckFace",
+  cloak:"h82Cloak",
+  backItem:"h82BackItem",
+  beltItem:"h82BeltItem",
+  offhand:"h82Offhand"
 };
 
 function h8CreatorOptionLabel(option){
@@ -2725,11 +2732,16 @@ function h8RenderCreatorPreview(){
   document.getElementById("h8PreviewBody").textContent=body?.label||"";
   document.getElementById("h8PreviewName").textContent=`${personality?.label||"Custom"} ${archetype?.label||"Hunter"}`;
 
-  const chipCategories=["hair","hairColor","eyes","outfit","headgear","weapon"];
-  document.getElementById("h8PreviewChips").innerHTML=chipCategories.map(category=>{
+  const chipCategories=["hair","hairColor","eyes","outfit","headgear","eyewear","cloak","weapon","offhand"];
+  const standardChips=chipCategories.map(category=>{
     const option=h8CurrentOption(category);
     return `<span>${escapeHtml(option?.label||"—")}</span>`;
-  }).join("");
+  });
+  const extraChips=(h8CreatorSelection?.extras||[]).map(value=>{
+    const option=(h8CreatorData?.extras||[]).find(x=>x.value===value);
+    return `<span>${escapeHtml(option?.label||value)}</span>`;
+  });
+  document.getElementById("h8PreviewChips").innerHTML=[...standardChips,...extraChips].join("");
 
   document.getElementById("h8ArchetypeHelp").textContent=archetype?.description||"";
   const p=h8CreatorData.progress||{};
@@ -2739,8 +2751,44 @@ function h8RenderCreatorPreview(){
     `<span>🏆 Bounty Trophies <b>${Number(p.trophies||0)}</b></span>`;
 }
 
+
+function h82RenderExtras(){
+  const grid=document.getElementById("h82ExtraGrid");
+  if(!grid) return;
+  const selected=new Set(h8CreatorSelection?.extras||[]);
+  grid.innerHTML=(h8CreatorData?.extras||[]).map(option=>`
+    <button type="button"
+      class="h82-extra-chip ${selected.has(option.value)?"selected":""} ${option.unlocked?"":"locked"}"
+      data-extra="${escapeHtml(option.value)}"
+      ${option.unlocked?"":"disabled"}
+      title="${escapeHtml(option.unlocked?option.label:(option.requirement||"Locked"))}">
+      <span>${option.icon||"✨"}</span>
+      <b>${escapeHtml(option.unlocked?option.label:"Locked")}</b>
+      ${option.unlocked?"":`<small>${escapeHtml(option.requirement||"Locked")}</small>`}
+    </button>`).join("");
+
+  grid.querySelectorAll("[data-extra]:not(:disabled)").forEach(btn=>{
+    btn.onclick=()=>{
+      const value=btn.dataset.extra;
+      const current=new Set(h8CreatorSelection?.extras||[]);
+      if(current.has(value)) current.delete(value);
+      else {
+        if(current.size>=4){
+          document.getElementById("h8CreatorMessage").textContent="Choose up to 4 optional details.";
+          return;
+        }
+        current.add(value);
+      }
+      h8CreatorSelection.extras=[...current];
+      h82RenderExtras();
+      h8RenderCreatorPreview();
+      h8SaveCreatorDraft();
+    };
+  });
+}
+
 function h8ReadSelectionFromControls(){
-  const next={};
+  const next={extras:[...(h8CreatorSelection?.extras||[])]};
   for(const [category,id] of Object.entries(H8_SELECT_IDS)){
     next[category]=document.getElementById(id)?.value||"";
   }
@@ -2769,8 +2817,9 @@ async function h8OpenCreator(){
     const payload=await response.json();
     if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not load Hunter Creator.");
     h8CreatorData=payload;
-    h8CreatorSelection={...payload.draft};
+    h8CreatorSelection={...payload.draft,extras:Array.isArray(payload.draft?.extras)?payload.draft.extras:[]};
     Object.keys(H8_SELECT_IDS).forEach(h8BuildSelect);
+    h82RenderExtras();
     Object.values(H8_SELECT_IDS).forEach(id=>{
       const el=document.getElementById(id);
       el.onchange=()=>{h8ReadSelectionFromControls();h8SaveCreatorDraft();};
@@ -2814,9 +2863,12 @@ function h8ResetCreator(){
   if(!h8CreatorData) return;
   h8CreatorSelection={
     archetype:"hunter",body:"male",hair:"messy",hairColor:"dark_brown",
-    eyes:"blue",outfit:"hunter_armor",headgear:"none",weapon:"hunter_bow",personality:"friendly"
+    eyes:"blue",outfit:"hunter_armor",headgear:"none",weapon:"hunter_bow",personality:"friendly",
+    eyewear:"none",gloves:"leather",neckFace:"none",cloak:"blue",backItem:"quiver",
+    beltItem:"tool_pouch",offhand:"none",extras:[]
   };
   Object.keys(H8_SELECT_IDS).forEach(h8BuildSelect);
+  h82RenderExtras();
   h8RenderCreatorPreview();
   document.getElementById("h8PromptPanel").classList.add("hidden");
   document.getElementById("h8CreatorMessage").textContent="Reset to the starter Monster Hunter design.";
