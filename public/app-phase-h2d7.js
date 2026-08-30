@@ -160,9 +160,24 @@ function savePetNicknames() {
   localStorage.setItem("monsterHuntDevPetNames", JSON.stringify(localPetNicknames));
 }
 
+const H102_DISTORTION_HABITATS = new Set([
+  "The Mirror Scar","The Black Bloom","The Chrono Tear","The Upside-Down Sea","The Dreaming Gate"
+]);
+const H102_DISTORTION_EGG_KEYS = new Set(["reflected","blightbloom","timelost","tidefall","dreambound"]);
+
 function petArtPath(pet) {
-  if (!pet || !pet.image) return null;
-  return `/assets/pets/${pet.image}`;
+  if (!pet) return null;
+  if (pet.imageUrl) return pet.imageUrl;
+  if (!pet.image) return null;
+  return `${H102_DISTORTION_HABITATS.has(String(pet.habitat||"")) ? "/assets/distortions" : "/assets/pets"}/${pet.image}`;
+}
+
+function eggArtPath(egg) {
+  if (!egg) return null;
+  if (egg.imageUrl) return egg.imageUrl;
+  if (!egg.image) return null;
+  const key=egg.eggKey || egg.key || egg.distortionKey || null;
+  return `${H102_DISTORTION_EGG_KEYS.has(String(key||"")) ? "/assets/distortions" : "/assets/eggs"}/${egg.image}`;
 }
 
 function assetImage(src, fallback, className="asset-icon") {
@@ -1149,7 +1164,7 @@ async function showHatchReveal(payload){
   const pet=payload?.pet;
   if(!pet) return;
   const modal=document.getElementById("hatchRevealModal");
-  document.getElementById("hatchRevealArt").innerHTML=assetImage(pet.image?`/assets/pets/${pet.image}`:null,pet.icon||"🐾","hatch-pet-image");
+  document.getElementById("hatchRevealArt").innerHTML=assetImage(petArtPath(pet),pet.icon||"🐾","hatch-pet-image");
   document.getElementById("hatchRevealName").textContent=pet.name||"New Companion";
   document.getElementById("hatchRevealMeta").textContent=`${pet.rarity||"Companion"} • ${pet.habitat||"Unknown Habitat"}`;
   document.getElementById("hatchRevealFlavor").textContent=pet.flavor||pet.description||"A new companion joins your hunt.";
@@ -1253,7 +1268,7 @@ function renderEggs() {
   grid.innerHTML=eggs.length?eggs.map((egg,index)=>`
     <button class="egg-card" data-egg-index="${egg.inventoryIndex ?? index}">
       <div class="egg-card-art">
-        ${egg.image?`<img class="egg-live-image" src="/assets/eggs/${egg.image}" onerror="this.replaceWith(document.createTextNode('${egg.icon||"🥚"}'))" alt="${egg.name}">`:(egg.icon||"🥚")}
+        ${egg.image?`<img class="egg-live-image" src="${eggArtPath(egg)}" onerror="this.replaceWith(document.createTextNode('${egg.icon||"🥚"}'))" alt="${egg.name}">`:(egg.icon||"🥚")}
       </div>
       <div class="egg-card-body">
         <span class="rarity-pill">${egg.rarity}</span>
@@ -1279,7 +1294,7 @@ function renderEggs() {
 
   const first=incubations[0];
   document.getElementById("incubatorEggName").textContent=first?first.name:"No Egg Incubating";
-  document.getElementById("incubatorEggIcon").innerHTML=first?assetImage(first.image?`/assets/eggs/${first.image}`:null,first.icon||"🥚","incubator-egg-image"):"🥚";
+  document.getElementById("incubatorEggIcon").innerHTML=first?assetImage(eggArtPath(first),first.icon||"🥚","incubator-egg-image"):"🥚";
   document.getElementById("incubatorStatus").textContent=first
     ? `${incubations.length}/${slots} incubator slot${slots===1?"":"s"} in use`
     : `${incubations.length}/${slots} incubator slots in use`;
@@ -1315,7 +1330,7 @@ function renderEggs() {
   }
   list.innerHTML=incubations.length?incubations.map(x=>`
     <div class="h2a-incubator-row ${x.ready?"ready":""}">
-      <span class="h2a-incubator-row-art">${assetImage(x.image?`/assets/eggs/${x.image}`:null,x.icon||"🥚","incubator-row-image")}</span>
+      <span class="h2a-incubator-row-art">${assetImage(eggArtPath(x),x.icon||"🥚","incubator-row-image")}</span>
       <div><b>Slot ${x.slot}: ${x.name}</b><small>${x.ready?"Ready to hatch":`${formatCountdown(Math.max(0,x.readyAt-Date.now()))} remaining`}</small></div>
       ${x.ready?`<button class="secondary h2a-hatch-slot" data-slot="${x.slot}">Hatch</button>`:""}
     </div>`).join("")
@@ -2244,7 +2259,7 @@ beginHuntFromZone = async function(zoneKey="normal") {
   currentEncounter = {
     ...payload.monster,
     baseChance:payload.baseChance,
-    image:payload.monster.imageUrl || (payload.monster.image ? `/assets/monsters/${payload.monster.image}` : null)
+    image:payload.monster.imageUrl || (payload.monster.image ? `${H102_DISTORTION_HABITATS.has(String(payload.monster.habitat||""))?"/assets/distortions":"/assets/monsters"}/${payload.monster.image}` : null)
   };
   hunter = {...hunter,...payload.player};
   phaseFHunting.captureTools = payload.choices.map(c => ({
@@ -2450,7 +2465,7 @@ async function h2dDoHunt(){
     currentEncounter={
       ...payload.monster,
       baseChance:Number(payload.baseChance||payload.monster.chance||30),
-      image:payload.monster.imageUrl || (payload.monster.image ? `/assets/monsters/${payload.monster.image}` : null)
+      image:payload.monster.imageUrl || (payload.monster.image ? `${H102_DISTORTION_HABITATS.has(String(payload.monster.habitat||""))?"/assets/distortions":"/assets/monsters"}/${payload.monster.image}` : null)
     };
     selectedHuntMethod=null;
     selectedCaptureTool=null;
