@@ -1921,8 +1921,24 @@ function syncH2CBigGameWallet(){
   if(hunter) hunter.tokens=liveTokens;
 }
 
+
+function applyH10DistortionBackground(){
+  const active = Array.isArray(h2aLiveEvents?.active) ? h2aLiveEvents.active : [];
+  const distortion = active.find(event => event.key === "distortion");
+  if(distortion?.backgroundUrl){
+    document.body.classList.add("h10-distortion-active");
+    document.body.style.setProperty("--h10-distortion-bg", `url("${distortion.backgroundUrl}")`);
+    document.body.dataset.distortionKey = distortion.distortionKey || "active";
+  }else{
+    document.body.classList.remove("h10-distortion-active");
+    document.body.style.removeProperty("--h10-distortion-bg");
+    delete document.body.dataset.distortionKey;
+  }
+}
+
 function renderPhaseEEvents() {
   if(!h2aLiveEvents) return;
+  applyH10DistortionBackground();
   setupEventNavigation();
 
   const active=Array.isArray(h2aLiveEvents.active)?h2aLiveEvents.active:[];
