@@ -410,22 +410,22 @@ const DISTORTION_EGGS = {
   blightbloom: {
     name: "Blightbloom Egg", icon: "🌑🥚", plane: "black_bloom", incubationMs: 2 * 60 * 60 * 1000,
     image: "blightbloom_egg.png", hatchingImage: "blightbloom_egg_hatching.png",
-    pets: [{key:"budkin",weight:40},{key:"sootblossom",weight:30},{key:"thornlet",weight:20},{key:"nocturn_bloomling",weight:10}]
+    pets: [{key:"buddle",weight:40},{key:"thorntail",weight:30},{key:"sporewisp",weight:20},{key:"bloomheart",weight:10}]
   },
   timelost: {
     name: "Timelost Egg", icon: "⏳🥚", plane: "chrono_tear", incubationMs: 2 * 60 * 60 * 1000,
     image: "timelost_egg.png", hatchingImage: "timelost_egg_hatching.png",
-    pets: [{key:"ticklet",weight:40},{key:"epochlet",weight:30},{key:"loopwing",weight:20},{key:"hourwyrm",weight:10}]
+    pets: [{key:"pendlet",weight:40},{key:"hourhound",weight:30},{key:"epoch_raven",weight:20},{key:"chronarch",weight:10}]
   },
   tidefall: {
     name: "Tidefall Egg", icon: "🌊🥚", plane: "upside_down_sea", incubationMs: 2 * 60 * 60 * 1000,
     image: "tidefall_egg.png", hatchingImage: "tidefall_egg_hatching.png",
-    pets: [{key:"floatfin",weight:40},{key:"bubblemaw",weight:30},{key:"cloudray",weight:20},{key:"tidewisp",weight:10}]
+    pets: [{key:"bubblefin",weight:40},{key:"riftskate",weight:30},{key:"abyssal_warden",weight:20},{key:"tideborn_seraph",weight:10}]
   },
   dreambound: {
     name: "Dreambound Egg", icon: "🌙🥚", plane: "dreaming_gate", incubationMs: 2 * 60 * 60 * 1000,
     image: "dreambound_egg.png", hatchingImage: "dreambound_egg_hatching.png",
-    pets: [{key:"dozeling",weight:40},{key:"pillowisp",weight:30},{key:"moonmoth",weight:20},{key:"dreamkin",weight:10}]
+    pets: [{key:"drowser",weight:40},{key:"veilfox",weight:30},{key:"pale_somnambulist",weight:20},{key:"oneirarch",weight:10}]
   }
 };
 
@@ -447,11 +447,11 @@ const DISTORTIONS = {
     backgroundImage: "black_bloom_background.png",
     openingImage: "black_bloom_opening.png", closingImage: "black_bloom_closing.png",
     monsters: [
-      { name:"Blightbud", habitat:"The Black Bloom", rarity:"Common", points:3, chance:75, image:"blightbud.png" },
-      { name:"Thorn Husk", habitat:"The Black Bloom", rarity:"Rare", points:5, chance:50, image:"thorn_husk.png" },
-      { name:"Gloom Pollinator", habitat:"The Black Bloom", rarity:"Rare", points:5, chance:45, image:"gloom_pollinator.png" },
-      { name:"Blackbriar Reaver", habitat:"The Black Bloom", rarity:"Epic", points:8, chance:28, image:"blackbriar_reaver.png" },
-      { name:"Heart of the Bloom", habitat:"The Black Bloom", rarity:"Legendary", points:15, chance:10, image:"heart_of_the_bloom.png" }
+      { name:"Thornbud", habitat:"The Black Bloom", rarity:"Common", points:3, chance:75, image:"thornbud.png" },
+      { name:"Bramblejaw", habitat:"The Black Bloom", rarity:"Rare", points:5, chance:50, image:"bramblejaw.png" },
+      { name:"Pollen Wraith", habitat:"The Black Bloom", rarity:"Rare", points:5, chance:45, image:"pollen_wraith.png" },
+      { name:"Nightbloom Reaver", habitat:"The Black Bloom", rarity:"Epic", points:8, chance:28, image:"nightbloom_reaver.png" },
+      { name:"The Ebon Orchard", habitat:"The Black Bloom", rarity:"Legendary", points:15, chance:10, image:"the_ebon_orchard.png" }
     ]
   },
   chrono_tear: {
@@ -459,11 +459,11 @@ const DISTORTIONS = {
     backgroundImage: "chrono_tear_background.png",
     openingImage: "chrono_tear_opening.png", closingImage: "chrono_tear_closing.png",
     monsters: [
-      { name:"Tickmite", habitat:"The Chrono Tear", rarity:"Common", points:3, chance:75, image:"tickmite.png" },
-      { name:"Epoch Hound", habitat:"The Chrono Tear", rarity:"Rare", points:5, chance:50, image:"epoch_hound.png" },
-      { name:"Rusted Tomorrow", habitat:"The Chrono Tear", rarity:"Rare", points:5, chance:45, image:"rusted_tomorrow.png" },
-      { name:"Paradox Hunter", habitat:"The Chrono Tear", rarity:"Epic", points:8, chance:28, image:"paradox_hunter.png" },
-      { name:"The Last Firstborn", habitat:"The Chrono Tear", rarity:"Legendary", points:15, chance:10, image:"the_last_firstborn.png" }
+      { name:"Tickling", habitat:"The Chrono Tear", rarity:"Common", points:3, chance:75, image:"tickling.png" },
+      { name:"Agefang", habitat:"The Chrono Tear", rarity:"Rare", points:5, chance:50, image:"agefang.png" },
+      { name:"Tomorrow's Witness", habitat:"The Chrono Tear", rarity:"Rare", points:5, chance:45, image:"tomorrows_witness.png" },
+      { name:"Epoch Devourer", habitat:"The Chrono Tear", rarity:"Epic", points:8, chance:28, image:"epoch_devourer.png" },
+      { name:"The Last Second", habitat:"The Chrono Tear", rarity:"Legendary", points:15, chance:10, image:"the_last_second.png" }
     ]
   },
   upside_down_sea: {
@@ -471,11 +471,11 @@ const DISTORTIONS = {
     backgroundImage: "upside_down_sea_background.png",
     openingImage: "upside_down_sea_opening.png", closingImage: "upside_down_sea_closing.png",
     monsters: [
-      { name:"Driftdrop", habitat:"The Upside-Down Sea", rarity:"Common", points:3, chance:75, image:"driftdrop.png" },
-      { name:"Skyshell", habitat:"The Upside-Down Sea", rarity:"Rare", points:5, chance:50, image:"skyshell.png" },
-      { name:"Tiderift Angler", habitat:"The Upside-Down Sea", rarity:"Rare", points:5, chance:45, image:"tiderift_angler.png" },
-      { name:"Gravity Leviathan", habitat:"The Upside-Down Sea", rarity:"Epic", points:8, chance:28, image:"gravity_leviathan.png" },
-      { name:"Crown of the Drowned Sky", habitat:"The Upside-Down Sea", rarity:"Legendary", points:15, chance:10, image:"crown_of_the_drowned_sky.png" }
+      { name:"Driftgill", habitat:"The Upside-Down Sea", rarity:"Common", points:3, chance:75, image:"driftgill.png" },
+      { name:"Reefstrider", habitat:"The Upside-Down Sea", rarity:"Rare", points:5, chance:50, image:"reefstrider.png" },
+      { name:"Drowned Oracle", habitat:"The Upside-Down Sea", rarity:"Rare", points:5, chance:45, image:"drowned_oracle.png" },
+      { name:"Gravity Maw", habitat:"The Upside-Down Sea", rarity:"Epic", points:8, chance:28, image:"gravity_maw.png" },
+      { name:"Leviathan Above", habitat:"The Upside-Down Sea", rarity:"Legendary", points:15, chance:10, image:"leviathan_above.png" }
     ]
   },
   dreaming_gate: {
@@ -483,14 +483,37 @@ const DISTORTIONS = {
     backgroundImage: "dreaming_gate_background.png",
     openingImage: "dreaming_gate_opening.png", closingImage: "dreaming_gate_closing.png",
     monsters: [
-      { name:"Snoozeling", habitat:"The Dreaming Gate", rarity:"Common", points:3, chance:75, image:"snoozeling.png" },
-      { name:"Murmur Hare", habitat:"The Dreaming Gate", rarity:"Rare", points:5, chance:50, image:"murmur_hare.png" },
-      { name:"Nightmare Grazer", habitat:"The Dreaming Gate", rarity:"Rare", points:5, chance:45, image:"nightmare_grazer.png" },
-      { name:"Oneiric Stalker", habitat:"The Dreaming Gate", rarity:"Epic", points:8, chance:28, image:"oneiric_stalker.png" },
-      { name:"The Sleepless Dreamer", habitat:"The Dreaming Gate", rarity:"Legendary", points:15, chance:10, image:"the_sleepless_dreamer.png" }
+      { name:"Murmurmoth", habitat:"The Dreaming Gate", rarity:"Common", points:3, chance:75, image:"murmurmoth.png" },
+      { name:"Pillowmaw", habitat:"The Dreaming Gate", rarity:"Rare", points:5, chance:50, image:"pillowmaw.png" },
+      { name:"Doorwalker", habitat:"The Dreaming Gate", rarity:"Rare", points:5, chance:45, image:"doorwalker.png" },
+      { name:"Nightmare Harvester", habitat:"The Dreaming Gate", rarity:"Epic", points:8, chance:28, image:"nightmare_harvester.png" },
+      { name:"The Sleeper Between Stars", habitat:"The Dreaming Gate", rarity:"Legendary", points:15, chance:10, image:"the_sleeper_between_stars.png" }
     ]
   }
 };
+
+// H10.2 — All Distortion-exclusive artwork lives in /public/assets/distortions/.
+// Normal season monsters, pets, and eggs continue to use their original asset folders.
+const DISTORTION_HABITATS = new Set(Object.values(DISTORTIONS).map(def => def.name));
+
+function isDistortionHabitatName(habitat) {
+  return DISTORTION_HABITATS.has(String(habitat || ""));
+}
+
+function activityMonsterImageUrl(monster) {
+  if (!monster?.image) return null;
+  return `${isDistortionHabitatName(monster.habitat) ? "/assets/distortions" : "/assets/monsters"}/${monster.image}`;
+}
+
+function activityPetImageUrl(definition) {
+  if (!definition?.image) return null;
+  return `${isDistortionHabitatName(definition.habitat) ? "/assets/distortions" : "/assets/pets"}/${definition.image}`;
+}
+
+function activityEggImageUrl(eggKey, image) {
+  if (!image) return null;
+  return `${eggKey && DISTORTION_EGGS[eggKey] ? "/assets/distortions" : "/assets/eggs"}/${image}`;
+}
 
 const MAX_INCUBATORS = 5;
 const HUNTER_POINTS_PER_LEVEL = 100;
@@ -546,25 +569,25 @@ const pets = [
   { key:"echo_sprite", name:"Echo Sprite", icon:"✨", habitat:"The Mirror Scar", rarity:"Epic", ability:"itemFinder", baseBonus:3, description:"A playful double-image spirit that retrieves things from the wrong side of mirrors.", image:"echo_sprite.png" },
   { key:"mirrormane", name:"Mirrormane", icon:"🦁", habitat:"The Mirror Scar", rarity:"Legendary", ability:"shiny", baseBonus:2, description:"A regal mirrored cub whose mane fractures light into impossible colors.", image:"mirrormane.png" },
 
-  { key:"budkin", name:"Budkin", icon:"🖤", habitat:"The Black Bloom", rarity:"Common", ability:"eggFinder", baseBonus:1, description:"A small soot-black sprout creature with an unexpectedly cheerful temperament.", image:"budkin.png" },
-  { key:"sootblossom", name:"Sootblossom", icon:"🌺", habitat:"The Black Bloom", rarity:"Rare", ability:"itemFinder", baseBonus:2, description:"A floating dark flower familiar dusted in luminous pollen.", image:"sootblossom.png" },
-  { key:"thornlet", name:"Thornlet", icon:"🌿", habitat:"The Black Bloom", rarity:"Epic", ability:"capture", baseBonus:3, description:"A chunky little thorn-beast that tangles fleeing prey in spectral vines.", image:"thornlet.png" },
-  { key:"nocturn_bloomling", name:"Nocturn Bloomling", icon:"🌑", habitat:"The Black Bloom", rarity:"Legendary", ability:"eventborn", baseBonus:1, description:"A rare nocturnal bloom familiar that thrives when reality destabilizes.", image:"nocturn_bloomling.png" },
+  { key:"buddle", name:"Buddle", icon:"🌱", habitat:"The Black Bloom", rarity:"Common", ability:"eggFinder", baseBonus:1, description:"A cheerful little Black Bloom bud that releases violet pollen when excited.", image:"buddle.png" },
+  { key:"thorntail", name:"Thorntail", icon:"🌿", habitat:"The Black Bloom", rarity:"Rare", ability:"itemFinder", baseBonus:2, description:"A clever woodland companion with a living vine tail and flowering tip.", image:"thorntail.png" },
+  { key:"sporewisp", name:"Sporewisp", icon:"🍄", habitat:"The Black Bloom", rarity:"Epic", ability:"capture", baseBonus:3, description:"A floating fungal spirit surrounded by a cloud of luminous spores.", image:"sporewisp.png" },
+  { key:"bloomheart", name:"Bloomheart", icon:"🖤", habitat:"The Black Bloom", rarity:"Legendary", ability:"eventborn", baseBonus:1, description:"A regal Black Bloom guardian with a living emerald heart-core.", image:"bloomheart.png" },
 
-  { key:"ticklet", name:"Ticklet", icon:"⏱️", habitat:"The Chrono Tear", rarity:"Common", ability:"cooldown", baseBonus:1, description:"A tiny clockwork critter that is always one second ahead of itself.", image:"ticklet.png" },
-  { key:"epochlet", name:"Epochlet", icon:"⌛", habitat:"The Chrono Tear", rarity:"Rare", ability:"firstLight", baseBonus:1, description:"A curious time-lost familiar carrying traces of many different eras.", image:"epochlet.png" },
-  { key:"loopwing", name:"Loopwing", icon:"🪽", habitat:"The Chrono Tear", rarity:"Epic", ability:"secondChance", baseBonus:1, description:"A temporal winged familiar that sometimes makes failure happen twice differently.", image:"loopwing.png" },
-  { key:"hourwyrm", name:"Hourwyrm", icon:"🐉", habitat:"The Chrono Tear", rarity:"Legendary", ability:"cooldown", baseBonus:4, description:"A miniature dragon wrapped in floating rings of broken time.", image:"hourwyrm.png" },
+  { key:"pendlet", name:"Pendlet", icon:"⏱️", habitat:"The Chrono Tear", rarity:"Common", ability:"cooldown", baseBonus:1, description:"A strange temporal companion whose pendulum tail leaves afterimages.", image:"pendlet.png" },
+  { key:"hourhound", name:"Hourhound", icon:"⌛", habitat:"The Chrono Tear", rarity:"Rare", ability:"firstLight", baseBonus:1, description:"A disciplined temporal hunting beast that senses danger before it arrives.", image:"hourhound.png" },
+  { key:"epoch_raven", name:"Epoch Raven", icon:"🐦‍⬛", habitat:"The Chrono Tear", rarity:"Epic", ability:"secondChance", baseBonus:1, description:"An eerie four-eyed raven whose feathers overlap several moments at once.", image:"epoch_raven.png" },
+  { key:"chronarch", name:"Chronarch", icon:"🐉", habitat:"The Chrono Tear", rarity:"Legendary", ability:"cooldown", baseBonus:4, description:"A regal temporal dragon guardian surrounded by broken rings of time.", image:"chronarch.png" },
 
-  { key:"floatfin", name:"Floatfin", icon:"🐟", habitat:"The Upside-Down Sea", rarity:"Common", ability:"itemFinder", baseBonus:1, description:"A tiny fish that swims through open air as if it were water.", image:"floatfin.png" },
-  { key:"bubblemaw", name:"Bubblemaw", icon:"🫧", habitat:"The Upside-Down Sea", rarity:"Rare", ability:"capture", baseBonus:2, description:"A round floating sea-creature that traps scents inside magical bubbles.", image:"bubblemaw.png" },
-  { key:"cloudray", name:"Cloudray", icon:"☁️", habitat:"The Upside-Down Sea", rarity:"Epic", ability:"rareTracker", baseBonus:1, description:"A baby sky-ray that glides between gravity currents.", image:"cloudray.png" },
-  { key:"tidewisp", name:"Tidewisp", icon:"🌊", habitat:"The Upside-Down Sea", rarity:"Legendary", ability:"eggFinder", baseBonus:4, description:"A living knot of floating seawater and starlight.", image:"tidewisp.png" },
+  { key:"bubblefin", name:"Bubblefin", icon:"🐟", habitat:"The Upside-Down Sea", rarity:"Common", ability:"itemFinder", baseBonus:1, description:"An air-swimming aquatic companion with water suspended around its gills.", image:"bubblefin.png" },
+  { key:"riftskate", name:"Riftskate", icon:"🌊", habitat:"The Upside-Down Sea", rarity:"Rare", ability:"capture", baseBonus:2, description:"A graceful ray-like companion that glides through open air on gravity currents.", image:"riftskate.png" },
+  { key:"abyssal_warden", name:"Abyssal Warden", icon:"🛡️", habitat:"The Upside-Down Sea", rarity:"Epic", ability:"rareTracker", baseBonus:1, description:"An intimidating deep-sea guardian that places itself between its hunter and danger.", image:"abyssal_warden.png" },
+  { key:"tideborn_seraph", name:"Tideborn Seraph", icon:"🐉", habitat:"The Upside-Down Sea", rarity:"Legendary", ability:"eggFinder", baseBonus:4, description:"A majestic sea-dragon guardian that swims through water and open air alike.", image:"tideborn_seraph.png" },
 
-  { key:"dozeling", name:"Dozeling", icon:"💤", habitat:"The Dreaming Gate", rarity:"Common", ability:"luckyHunter", baseBonus:1, description:"A sleepy round familiar that seems to dream even while walking.", image:"dozeling.png" },
-  { key:"pillowisp", name:"Pillowisp", icon:"☁️", habitat:"The Dreaming Gate", rarity:"Rare", ability:"eggFinder", baseBonus:2, description:"A soft floating dream-spirit that nests beside magical eggs.", image:"pillowisp.png" },
-  { key:"moonmoth", name:"Moonmoth", icon:"🦋", habitat:"The Dreaming Gate", rarity:"Epic", ability:"shiny", baseBonus:1, description:"A luminous moth familiar whose wings show places that only exist in dreams.", image:"moonmoth.png" },
-  { key:"dreamkin", name:"Dreamkin", icon:"🌙", habitat:"The Dreaming Gate", rarity:"Legendary", ability:"persistence", baseBonus:1, description:"A gentle nightmare-born companion able to keep fading prey from fully waking away.", image:"dreamkin.png" },
+  { key:"drowser", name:"Drowser", icon:"💤", habitat:"The Dreaming Gate", rarity:"Common", ability:"luckyHunter", baseBonus:1, description:"A sleepy dream companion whose shadow always seems a moment behind.", image:"drowser.png" },
+  { key:"veilfox", name:"Veilfox", icon:"🦊", habitat:"The Dreaming Gate", rarity:"Rare", ability:"eggFinder", baseBonus:2, description:"An elegant three-tailed dream hunter that slips through tiny impossible doorways.", image:"veilfox.png" },
+  { key:"pale_somnambulist", name:"Pale Somnambulist", icon:"👁️", habitat:"The Dreaming Gate", rarity:"Epic", ability:"shiny", baseBonus:1, description:"A silent floating dream entity watched over by a separate waking eye.", image:"pale_somnambulist.png" },
+  { key:"oneirarch", name:"Oneirarch", icon:"🌙", habitat:"The Dreaming Gate", rarity:"Legendary", ability:"persistence", baseBonus:1, description:"An ancient dream guardian that seems to understand intent before commands are spoken.", image:"oneirarch.png" },
 
   // Legacy Unmade companions are intentionally not obtainable this season.
 ];
@@ -6707,8 +6730,6 @@ function mountainLocalTimestamp(dateString, hour, minute) {
 
 function generateDistortionSchedule(data) {
   const weekKey = mountainWeekKey();
-  if (discoveredWorldRelicCount(data) < 3) return false;
-
   const monday = new Date(`${weekKey}T12:00:00Z`);
   const now = Date.now();
 
@@ -12244,22 +12265,22 @@ const H1_BEYOND_PETS = [
   { key:"shardpup", name:"Shardpup", icon:"💎", habitat:"The Mirror Scar", rarity:"Rare", ability:"Rare Tracker", description:"Tracks prey through impossible reflections.", image:"shardpup.png" },
   { key:"echo_sprite", name:"Echo Sprite", icon:"✨", habitat:"The Mirror Scar", rarity:"Epic", ability:"Item Finder", description:"Retrieves supplies from mirrored spaces.", image:"echo_sprite.png" },
   { key:"mirrormane", name:"Mirrormane", icon:"🦁", habitat:"The Mirror Scar", rarity:"Legendary", ability:"Shiny Hunter", description:"Fractures light around rare prey.", image:"mirrormane.png" },
-  { key:"budkin", name:"Budkin", icon:"🖤", habitat:"The Black Bloom", rarity:"Common", ability:"Egg Finder", description:"A soot-black sprout companion.", image:"budkin.png" },
-  { key:"sootblossom", name:"Sootblossom", icon:"🌺", habitat:"The Black Bloom", rarity:"Rare", ability:"Item Finder", description:"A floating dark flower familiar.", image:"sootblossom.png" },
-  { key:"thornlet", name:"Thornlet", icon:"🌿", habitat:"The Black Bloom", rarity:"Epic", ability:"Capture", description:"A tiny thorn-beast that snares prey.", image:"thornlet.png" },
-  { key:"nocturn_bloomling", name:"Nocturn Bloomling", icon:"🌑", habitat:"The Black Bloom", rarity:"Legendary", ability:"Eventborn", description:"Thrives while reality is unstable.", image:"nocturn_bloomling.png" },
-  { key:"ticklet", name:"Ticklet", icon:"⏱️", habitat:"The Chrono Tear", rarity:"Common", ability:"Cooldown", description:"Always seems one second ahead.", image:"ticklet.png" },
-  { key:"epochlet", name:"Epochlet", icon:"⌛", habitat:"The Chrono Tear", rarity:"Rare", ability:"First Light", description:"Carries traces of many eras.", image:"epochlet.png" },
-  { key:"loopwing", name:"Loopwing", icon:"🪽", habitat:"The Chrono Tear", rarity:"Epic", ability:"Second Chance", description:"Folds tiny moments back on themselves.", image:"loopwing.png" },
-  { key:"hourwyrm", name:"Hourwyrm", icon:"🐉", habitat:"The Chrono Tear", rarity:"Legendary", ability:"Cooldown", description:"A miniature dragon wrapped in broken time.", image:"hourwyrm.png" },
-  { key:"floatfin", name:"Floatfin", icon:"🐟", habitat:"The Upside-Down Sea", rarity:"Common", ability:"Item Finder", description:"Swims through open air.", image:"floatfin.png" },
-  { key:"bubblemaw", name:"Bubblemaw", icon:"🫧", habitat:"The Upside-Down Sea", rarity:"Rare", ability:"Capture", description:"Traps scents in magical bubbles.", image:"bubblemaw.png" },
-  { key:"cloudray", name:"Cloudray", icon:"☁️", habitat:"The Upside-Down Sea", rarity:"Epic", ability:"Rare Tracker", description:"Glides along gravity currents.", image:"cloudray.png" },
-  { key:"tidewisp", name:"Tidewisp", icon:"🌊", habitat:"The Upside-Down Sea", rarity:"Legendary", ability:"Egg Finder", description:"A knot of floating seawater and starlight.", image:"tidewisp.png" },
-  { key:"dozeling", name:"Dozeling", icon:"💤", habitat:"The Dreaming Gate", rarity:"Common", ability:"Lucky Hunter", description:"Dreams even while walking.", image:"dozeling.png" },
-  { key:"pillowisp", name:"Pillowisp", icon:"☁️", habitat:"The Dreaming Gate", rarity:"Rare", ability:"Egg Finder", description:"A soft floating dream-spirit.", image:"pillowisp.png" },
-  { key:"moonmoth", name:"Moonmoth", icon:"🦋", habitat:"The Dreaming Gate", rarity:"Epic", ability:"Shiny Hunter", description:"Its wings show impossible dreamscapes.", image:"moonmoth.png" },
-  { key:"dreamkin", name:"Dreamkin", icon:"🌙", habitat:"The Dreaming Gate", rarity:"Legendary", ability:"Persistence", description:"Keeps fading prey from fully escaping into dreams.", image:"dreamkin.png" }
+  { key:"buddle", name:"Buddle", icon:"🌱", habitat:"The Black Bloom", rarity:"Common", ability:"Egg Finder", description:"A cheerful Black Bloom bud companion.", image:"buddle.png" },
+  { key:"thorntail", name:"Thorntail", icon:"🌿", habitat:"The Black Bloom", rarity:"Rare", ability:"Item Finder", description:"A clever vine-tailed woodland companion.", image:"thorntail.png" },
+  { key:"sporewisp", name:"Sporewisp", icon:"🍄", habitat:"The Black Bloom", rarity:"Epic", ability:"Capture", description:"A floating fungal spirit surrounded by luminous spores.", image:"sporewisp.png" },
+  { key:"bloomheart", name:"Bloomheart", icon:"🖤", habitat:"The Black Bloom", rarity:"Legendary", ability:"Eventborn", description:"A regal guardian with a living emerald heart-core.", image:"bloomheart.png" },
+  { key:"pendlet", name:"Pendlet", icon:"⏱️", habitat:"The Chrono Tear", rarity:"Common", ability:"Cooldown", description:"Its pendulum tail leaves temporal afterimages.", image:"pendlet.png" },
+  { key:"hourhound", name:"Hourhound", icon:"⌛", habitat:"The Chrono Tear", rarity:"Rare", ability:"First Light", description:"A disciplined temporal hunting companion.", image:"hourhound.png" },
+  { key:"epoch_raven", name:"Epoch Raven", icon:"🐦‍⬛", habitat:"The Chrono Tear", rarity:"Epic", ability:"Second Chance", description:"An eerie four-eyed raven overlapping several moments.", image:"epoch_raven.png" },
+  { key:"chronarch", name:"Chronarch", icon:"🐉", habitat:"The Chrono Tear", rarity:"Legendary", ability:"Cooldown", description:"A regal guardian dragon wrapped in broken time.", image:"chronarch.png" },
+  { key:"bubblefin", name:"Bubblefin", icon:"🐟", habitat:"The Upside-Down Sea", rarity:"Common", ability:"Item Finder", description:"Swims through open air with water around its gills.", image:"bubblefin.png" },
+  { key:"riftskate", name:"Riftskate", icon:"🌊", habitat:"The Upside-Down Sea", rarity:"Rare", ability:"Capture", description:"Glides gracefully along gravity currents.", image:"riftskate.png" },
+  { key:"abyssal_warden", name:"Abyssal Warden", icon:"🛡️", habitat:"The Upside-Down Sea", rarity:"Epic", ability:"Rare Tracker", description:"An intimidating deep-sea guardian companion.", image:"abyssal_warden.png" },
+  { key:"tideborn_seraph", name:"Tideborn Seraph", icon:"🐉", habitat:"The Upside-Down Sea", rarity:"Legendary", ability:"Egg Finder", description:"A majestic sea-dragon that swims through open air.", image:"tideborn_seraph.png" },
+  { key:"drowser", name:"Drowser", icon:"💤", habitat:"The Dreaming Gate", rarity:"Common", ability:"Lucky Hunter", description:"Its sleepy shadow always seems a moment behind.", image:"drowser.png" },
+  { key:"veilfox", name:"Veilfox", icon:"🦊", habitat:"The Dreaming Gate", rarity:"Rare", ability:"Egg Finder", description:"A three-tailed dream hunter that slips through impossible doors.", image:"veilfox.png" },
+  { key:"pale_somnambulist", name:"Pale Somnambulist", icon:"👁️", habitat:"The Dreaming Gate", rarity:"Epic", ability:"Shiny Hunter", description:"A silent dream entity watched by a separate waking eye.", image:"pale_somnambulist.png" },
+  { key:"oneirarch", name:"Oneirarch", icon:"🌙", habitat:"The Dreaming Gate", rarity:"Legendary", ability:"Persistence", description:"An ancient dream guardian that anticipates its hunter's intent.", image:"oneirarch.png" }
 ];
 
 const H1_OWNED_KEYS = [
@@ -12598,6 +12619,8 @@ function activityEggInventoryPayload(player) {
       name: distortion?.name || `${rarity} Egg`,
       icon: distortion?.icon || EGG_TYPES[rarity]?.icon || "🥚",
       image: distortion?.image || EGG_TYPES[rarity]?.image || null,
+      imageUrl: activityEggImageUrl(eggKey, distortion?.image || EGG_TYPES[rarity]?.image || null),
+      hatchingImageUrl: distortion?.hatchingImage ? activityEggImageUrl(eggKey, distortion.hatchingImage) : null,
       incubationMs: Number(distortion?.incubationMs || EGG_TYPES[rarity]?.incubationMs || EGG_TYPES.Common.incubationMs)
     };
   });
@@ -12617,6 +12640,8 @@ function activityIncubatorPayload(player) {
       name:distortion?.name || `${rarity} Egg`,
       icon:distortion?.icon || EGG_TYPES[rarity]?.icon || "🥚",
       image:distortion?.image || EGG_TYPES[rarity]?.image || null,
+      imageUrl:activityEggImageUrl(eggKey, distortion?.image || EGG_TYPES[rarity]?.image || null),
+      hatchingImageUrl:distortion?.hatchingImage ? activityEggImageUrl(eggKey, distortion.hatchingImage) : null,
       startedAt:Number(egg.startedAt || 0),
       readyAt:Number(egg.readyAt || 0),
       ready:Date.now() >= Number(egg.readyAt || 0)
@@ -12807,7 +12832,7 @@ async function performBountyHunt(data,id,ch=null){
    result:"encounter",
    encountered:true,
    isTarget:Boolean(targetFound),
-   monster:{...monster,imageUrl:monster.image?`/assets/monsters/${monster.image}`:null},
+   monster:{...monster,imageUrl:activityMonsterImageUrl(monster)},
    chance:chanceInfo.total,
    baseChance:Number(monster.chance||0),
    encounters,
@@ -12948,7 +12973,7 @@ function activityLiveEventsPayload(data, userId) {
       icon:distortionDef?.icon || "🌀",
       endsAt:Number(distortionState?.endAt || 0),
       story:distortionDef ? "A live planar breach is affecting the Monster Hunt world." : "No planar breach is currently active.",
-      monsters:(distortionDef?.monsters || []).map(m => ({...m,icon:"👹"})),
+      monsters:(distortionDef?.monsters || []).map(m => ({...m,icon:"👹",imageUrl:activityMonsterImageUrl(m)})),
       knownPlanes:Object.entries(DISTORTIONS).filter(([key])=>key!=="unmade").map(([key,def])=>({
         key, name:def.name, icon:def.icon, discovered:Boolean(data.worldStory?.knownDistortions?.includes?.(key) || data.worldProgress?.[key])
       }))
@@ -13075,7 +13100,7 @@ async function activityHatchEgg(user, slotNumber) {
     ok:true,
     pet:{
       id:owned.id,key:definition.key,name:definition.name,nickname:null,icon:definition.icon,
-      rarity:definition.rarity,habitat:definition.habitat,image:definition.image||null,
+      rarity:definition.rarity,habitat:definition.habitat,image:definition.image||null,imageUrl:activityPetImageUrl(definition),
       level:1,bond:1,xp:0,ability:definition.signatureName||abilityDisplayName(definition.ability),
       abilityEffect:definition.signatureAbility ? definition.description : formatAbilityEffect({ability:definition.ability,baseBonus:definition.baseBonus,level:1}),
       description:definition.description,flavor:activityPetHatchFlavor(definition)
@@ -13429,7 +13454,7 @@ function activityOwnedPetPayload(player) {
     return {id:owned.id,key:def.key,name:def.name,nickname:owned.nickname||null,icon:def.icon,habitat:def.habitat,rarity:def.rarity,
       ability:abilities[0]?.name||abilityDisplayName(def.ability),abilityEffect:abilities[0]?.effect||def.description,abilities,description:def.description,
       level:levelInfo.level,bond,xp:levelInfo.level>=MAX_COMPANION_LEVEL?100:Math.min(100,Math.round((levelInfo.xpIntoLevel/Math.max(1,levelInfo.xpNeeded))*100)),
-      xpCurrent:levelInfo.xpIntoLevel,xpNeeded:levelInfo.xpNeeded,image:def.image||null,equipped:String(player.equippedPetId||"")===String(owned.id),
+      xpCurrent:levelInfo.xpIntoLevel,xpNeeded:levelInfo.xpNeeded,image:def.image||null,imageUrl:activityPetImageUrl(def),equipped:String(player.equippedPetId||"")===String(owned.id),
       inheritedSlotsUsed:(owned.inheritedAbilities||[]).length,inheritedSlotsMax:inheritedLimit,totalAbilitySlots:1+inheritedLimit
     };
   }).filter(Boolean);
@@ -13452,6 +13477,7 @@ function activityPetDexPayload(player, beyond = false) {
         : formatAbilityEffect({ ability:def.ability, baseBonus:def.baseBonus, level:1 }),
       description: def.description,
       image: def.image || null,
+      imageUrl: activityPetImageUrl(def),
       discovered: discovered.has(def.key),
       secret: Boolean(def.secret)
     }));
@@ -13471,14 +13497,18 @@ function activityInventoryPayload(player) {
 
 function activityEggPayload(player) {
   return (player.eggs || []).map((egg, index) => {
-    const distortion = egg.distortionKey ? DISTORTION_EGGS[egg.distortionKey] : null;
+    const eggKey = egg.eggKey || egg.distortionKey || null;
+    const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
     return {
       id: egg.id || `egg-${index + 1}`,
-      key: egg.distortionKey || String(egg.rarity || "Common").toLowerCase(),
+      key: eggKey || String(egg.rarity || "Common").toLowerCase(),
+      eggKey,
       name: distortion?.name || `${egg.rarity || "Common"} Egg`,
       rarity: egg.rarity || (distortion ? "Distortion" : "Common"),
       icon: distortion?.icon || EGG_TYPES[egg.rarity]?.icon || "🥚",
-      image: distortion?.image || EGG_TYPES[egg.rarity]?.image || null
+      image: distortion?.image || EGG_TYPES[egg.rarity]?.image || null,
+      imageUrl: activityEggImageUrl(eggKey, distortion?.image || EGG_TYPES[egg.rarity]?.image || null),
+      hatchingImageUrl: distortion?.hatchingImage ? activityEggImageUrl(eggKey, distortion.hatchingImage) : null
     };
   });
 }
@@ -13509,6 +13539,7 @@ function activityFetchPayload(player) {
       key:definition.key,
       name:getOwnedPetName(fetchPet),
       image:definition.image || null,
+      imageUrl:activityPetImageUrl(definition),
       icon:definition.icon || "🐾"
     } : null,
     result:state?.result || null,
@@ -13683,7 +13714,7 @@ async function activityStartNormalHunt(user) {
 
   return {
     ok:true,
-    monster:{ ...monster, imageUrl:monster.image ? `/assets/monsters/${monster.image}` : null },
+    monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
     chance:chanceInfo.total,
     baseChance:Number(monster.chance || 0),
     choices,
@@ -13772,7 +13803,7 @@ async function activityCapture(user, itemKey = null) {
     ok:true,
     caught:after.caught > before.caught,
     keptEncounter:Boolean(afterPlayer.currentMonster),
-    monster:{ ...monster, imageUrl:monster.image ? `/assets/monsters/${monster.image}` : null },
+    monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
     roll,
     chance,
     method:itemKey ? CAPTURE_ITEMS[itemKey].name : "Normal Throw",

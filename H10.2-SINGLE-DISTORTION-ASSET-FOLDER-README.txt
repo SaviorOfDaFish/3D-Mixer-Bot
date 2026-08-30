@@ -1,0 +1,32 @@
+MONSTER HUNT H10.2 — SINGLE DISTORTION ASSET FOLDER
+
+PURPOSE
+All Distortion-specific artwork may now live together in:
+  public/assets/distortions/
+
+This includes:
+- Distortion backgrounds
+- Distortion opening artwork
+- Distortion closing artwork
+- All 25 Distortion monster PNGs
+- All 20 Distortion companion PNGs
+- All 5 Distortion egg PNGs
+- All 5 Distortion hatching PNGs
+
+Normal Monster Hunt assets remain unchanged:
+- Standard monsters -> public/assets/monsters/
+- Standard pets -> public/assets/pets/
+- Standard eggs -> public/assets/eggs/
+
+WHAT CHANGED
+- Activity hunt monster image URLs now route Distortion monsters to /assets/distortions/.
+- Owned pet, PetDex, hatch reveal, and Fetch image URLs now route Distortion companions to /assets/distortions/.
+- Egg inventory and incubator image URLs now route Distortion eggs to /assets/distortions/.
+- Distortion event background/opening/closing art continues to route to /assets/distortions/.
+- Frontend has a safe fallback resolver based on Distortion habitat/egg key.
+- Normal assets keep their original folder paths.
+- Browser cache version advanced to v1960.
+
+IMPORTANT
+Filenames in GitHub must exactly match the filenames defined in index.js.
+Linux/Railway filenames are case-sensitive.
