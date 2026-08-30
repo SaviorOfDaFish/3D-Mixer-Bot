@@ -1856,7 +1856,7 @@ function showCaptureFailure(roll, chance, secondChance=false) {
   document.getElementById("huntResultDetails").innerHTML = `
     <div><span>Catch Chance</span><b>${chance}%</b></div>
     <div><span>Roll</span><b>${roll}</b></div>
-    <div><span>Method</span><b>${selectedCaptureTool?.name || "Normal Hunt"}</b></div>
+    <div><span>Method</span><b>${selectedCaptureTool?.name || (document.body.classList.contains("h10-distortion-active") ? "Distortion Hunt" : "Normal Hunt")}</b></div>
     <div><span>Rarity</span><b>${currentEncounter.rarity}</b></div>
     ${secondChance ? `<div><span>Companion Effect</span><b>Second Chance used</b></div>` : ""}
   `;
@@ -2192,15 +2192,18 @@ renderPhaseFHunting = function() {
   const ready = remaining <= 0;
   const big=h2aLiveEvents?.bigGame;
   const bigActive=Boolean(big?.active && Number(big.endsAt||0)>Date.now());
-  const normalLabel=bigActive?"Normal / Big Game Hunt":"Normal Hunt";
-  const normalEyebrow=bigActive?"🎯 BIG GAME ACTIVE":"NORMAL HUNT";
-  const normalCopy=bigActive
-    ? (ready
-      ? `Big Game is live! Successful catches award Hunt Tokens and count toward the live leaderboard.`
-      : `Big Game is live. Your next event hunt is ready in ${formatCountdown(remaining)}.`)
-    : (ready
-      ? "Track a real monster using your new-season account."
-      : `Ready in ${formatCountdown(remaining)}.`);
+  const distortionActive=Boolean((Array.isArray(h2aLiveEvents?.active)?h2aLiveEvents.active:[]).some(e=>e.key==="distortion"));
+  const normalLabel=distortionActive?"Distortion Hunt":(bigActive?"Normal / Big Game Hunt":"Normal Hunt");
+  const normalEyebrow=distortionActive?"🌀 DISTORTION HUNT":(bigActive?"🎯 BIG GAME ACTIVE":"NORMAL HUNT");
+  const normalCopy=distortionActive
+    ? (ready ? "Enter the active Distortion and hunt its exclusive creatures." : `Your next Distortion Hunt is ready in ${formatCountdown(remaining)}.`)
+    : bigActive
+      ? (ready
+        ? `Big Game is live! Successful catches award Hunt Tokens and count toward the live leaderboard.`
+        : `Big Game is live. Your next event hunt is ready in ${formatCountdown(remaining)}.`)
+      : (ready
+        ? "Track a real monster using your new-season account."
+        : `Ready in ${formatCountdown(remaining)}.`);
 
   grid.innerHTML = `
     ${bigActive?`
@@ -2230,7 +2233,14 @@ renderPhaseFHunting = function() {
   document.getElementById("encounterLeaveBtn").onclick = returnToHuntOverview;
   document.getElementById("attemptBackBtn").onclick = () => showHuntStep("encounter");
   document.getElementById("resultOverviewBtn").onclick = returnToHuntOverview;
-  document.getElementById("normalHuntChoice").onclick = () => chooseHuntMethod("none");
+  const normalChoice=document.getElementById("normalHuntChoice");
+  if(normalChoice){
+    const label=normalChoice.querySelector("b");
+    const small=normalChoice.querySelector("small");
+    if(label) label.textContent=distortionActive?"Distortion Hunt":"Hunt Normally";
+    if(small) small.textContent=distortionActive?"Use your Distortion catch chance":"Use your normal catch chance";
+    normalChoice.onclick = () => chooseHuntMethod("none");
+  }
   document.getElementById("baitHuntChoice").onclick = openBaitPicker;
   showHuntStep("overview");
 };
@@ -2250,10 +2260,11 @@ beginHuntFromZone = async function(zoneKey="normal") {
   }
 
   const bigGameHunt=zoneKey==="biggame" && Boolean(h2aLiveEvents?.bigGame?.active);
+  const distortionHunt=Boolean((Array.isArray(h2aLiveEvents?.active)?h2aLiveEvents.active:[]).some(e=>e.key==="distortion"));
   activeHuntZone = {
-    key:bigGameHunt?"biggame":"normal",
+    key:bigGameHunt?"biggame":(distortionHunt?"distortion":"normal"),
     name:payload.monster.habitat || "Hunting Grounds",
-    subtitle:bigGameHunt?"Big Game Hunt":"Normal Hunt"
+    subtitle:bigGameHunt?"Big Game Hunt":(distortionHunt?"Distortion Hunt":"Normal Hunt")
   };
   huntAttemptNumber = 1;
   currentEncounter = {
@@ -2264,7 +2275,7 @@ beginHuntFromZone = async function(zoneKey="normal") {
   hunter = {...hunter,...payload.player};
   phaseFHunting.captureTools = payload.choices.map(c => ({
     key:c.itemKey || "none",
-    name:c.itemKey ? c.label : "Normal Hunt",
+    name:c.itemKey ? c.label : (distortionHunt ? "Distortion Hunt" : "Normal Hunt"),
     icon:c.itemKey==="berry"?"🍓":c.itemKey==="honey"?"🍯":c.itemKey==="net"?"🕸️":c.itemKey==="masterCharm"?"🌟":"🏹",
     bonus:0, uses:c.itemKey ? Number(hunter.captureItems?.[c.itemKey]||0) : null, liveChance:c.chance
   }));
@@ -3434,3 +3445,24 @@ async function h93LoadAuthoritativeTutorialState(){
 }
 setTimeout(h93LoadAuthoritativeTutorialState,2300);
 
+
+
+// H10.3 — Background showcase mode. Keeps a small top-left restore control visible.
+(function initBackgroundViewToggle(){
+  const button=document.getElementById("backgroundViewToggle");
+  if(!button) return;
+  const setMode=(enabled)=>{
+    document.body.classList.toggle("background-view-only",enabled);
+    button.setAttribute("aria-pressed",enabled?"true":"false");
+    button.textContent=enabled?"↩️ Show Menus":"👁️ Hide Menus";
+    button.title=enabled?"Restore Monster Hunt menus":"Hide menus and view the background";
+  };
+  let enabled=false;
+  try{ enabled=localStorage.getItem("monsterHuntBackgroundViewOnly")==="1"; }catch{}
+  setMode(enabled);
+  button.addEventListener("click",()=>{
+    const next=!document.body.classList.contains("background-view-only");
+    setMode(next);
+    try{ localStorage.setItem("monsterHuntBackgroundViewOnly",next?"1":"0"); }catch{}
+  });
+})();
