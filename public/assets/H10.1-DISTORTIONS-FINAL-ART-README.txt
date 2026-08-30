@@ -1,0 +1,41 @@
+MONSTER HUNT H10.1 — DISTORTIONS FINAL ART + WEEKLY SCHEDULE
+
+Built on H10 / H9.3.
+
+DISTORTIONS
+- The Mirror Scar
+- The Black Bloom
+- The Chrono Tear
+- The Upside-Down Sea
+- The Dreaming Gate
+
+FINAL EVENT RULES
+- 5 Distortion events per week.
+- Exactly one of each of the five Distortions is scheduled each week.
+- Five distinct days are chosen randomly each week.
+- Weekday starts: randomly between 5:00 PM and 8:59 PM America/Denver.
+- Weekend starts: randomly between 12:00 PM and 8:59 PM America/Denver.
+- Each Distortion lasts 3 hours.
+- Hunt cooldown becomes 30 minutes while active.
+- All hunters are released to hunt immediately at opening.
+- 10 minutes before collapse, all hunters receive one final Hunt reset exactly once.
+- Normal hunt cooldown rules return after collapse.
+- World Shatter remains disabled.
+- Ultra Hunts remain disabled.
+- Existing reward engine, comeback points/bonuses, Hunter Points, Hunt Tokens, companion XP, pet abilities, inventory/egg rewards, catch history and leaderboards remain underneath the Distortion layer.
+
+H10.1 CHANGE
+Removed the old relic-discovery prerequisite from automatic Distortion scheduling. These are now independent recurring season events.
+
+FINAL ART FILENAMES
+Black Bloom monsters: thornbud.png, bramblejaw.png, pollen_wraith.png, nightbloom_reaver.png, the_ebon_orchard.png
+Black Bloom pets: buddle.png, thorntail.png, sporewisp.png, bloomheart.png
+Chrono monsters: tickling.png, agefang.png, tomorrows_witness.png, epoch_devourer.png, the_last_second.png
+Chrono pets: pendlet.png, hourhound.png, epoch_raven.png, chronarch.png
+Upside-Down Sea monsters: driftgill.png, reefstrider.png, drowned_oracle.png, gravity_maw.png, leviathan_above.png
+Upside-Down Sea pets: bubblefin.png, riftskate.png, abyssal_warden.png, tideborn_seraph.png
+Dreaming Gate monsters: murmurmoth.png, pillowmaw.png, doorwalker.png, nightmare_harvester.png, the_sleeper_between_stars.png
+Dreaming Gate pets: drowser.png, veilfox.png, pale_somnambulist.png, oneirarch.png
+
+Put environment/opening/closing PNG files into public/assets/distortions/.
+Monster art follows the existing monster asset path; pet/egg art follows the existing pet/egg asset paths.

@@ -1,0 +1,14190 @@
+require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
+const cron = require("node-cron");
+const http = require("http");
+const { DatabaseSync } = require("node:sqlite");
+
+const {
+  Client,
+  GatewayIntentBits,
+  PermissionsBitField,
+  EmbedBuilder,
+  AttachmentBuilder
+} = require("discord.js");
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ],
+  // Give Discord REST requests more time before they are aborted.
+  rest: {
+    timeout: 30000
+  }
+});
+
+// Prevent temporary Discord client/API errors from crashing the entire bot.
+client.on("error", error => {
+  console.error("Discord client error:", error);
+});
+
+// Helpful logging for Discord warnings without stopping the bot.
+client.on("warn", warning => {
+  console.warn("Discord client warning:", warning);
+});
+
+// Log REST rate limits so they can be diagnosed if Discord starts slowing requests.
+client.rest.on("rateLimited", info => {
+  console.warn("Discord REST rate limit:", info);
+});
+
+// Keep rejected async work from silently killing the process.
+process.on("unhandledRejection", reason => {
+  console.error("Unhandled Promise Rejection:", reason);
+});
+
+const DATA_DIRECTORY = fs.existsSync("/data") ? "/data" : __dirname;
+const DATABASE_FILE = path.join(DATA_DIRECTORY, "monster-hunt.db");
+const GENERATED_HUNTER_DIRECTORY = path.join(DATA_DIRECTORY, "generated-hunters");
+fs.mkdirSync(GENERATED_HUNTER_DIRECTORY, { recursive:true });
+
+const db = new DatabaseSync(DATABASE_FILE);
+db.exec(`
+  PRAGMA journal_mode = WAL;
+  PRAGMA synchronous = NORMAL;
+  CREATE TABLE IF NOT EXISTS game_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    payload TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+`);
+
+console.log(`Monster Hunt SQLite database: ${DATABASE_FILE}`);
+const HUNT_COOLDOWN = 2 * 60 * 60 * 1000;
+const SHINY_CHANCE = 5;
+const MAX_CAPTURE_CHANCE = 95;
+const ULTRA_HUNT_COOLDOWN = 5 * 60 * 1000;
+const ULTRA_RELIC_DROP_CHANCE = 50;
+const ULTRA_CATCHER_REWARD = 50;
+const ULTRA_PARTICIPANT_REWARD = 25;
+const ULTRA_ESCAPE_REWARD = 10;
+const ULTRA_RANDOM_EVENTS_PER_WEEK = 5;
+const ULTRA_SUMMON_DELAY = 5 * 60 * 1000;
+
+// ==================== SEASON 2 QUALITY-OF-LIFE OVERHAUL ====================
+const FETCH_COOLDOWN = 2 * 60 * 60 * 1000;
+const FETCH_DURATION = 10 * 60 * 1000;
+const FETCH_COMPANION_XP = 5;
+const ABILITY_XP_PER_HUNT = 5;
+const ABILITY_XP_PER_FETCH = 5;
+const WEEKLY_COMPETITION_START_AT = Date.UTC(2026, 7, 10, 11, 0, 0); // Aug 10, 2026, 5:00 AM Mountain Daylight Time
+const WEEKLY_WINNER_BAIT_REWARD = 1;
+const PERFECT_CATCH_TITLE = "Perfectly Executed";
+const CRITICAL_CATCH_TITLE = "Against All Odds";
+const CRITICAL_CATCH_BONUS_POINTS = 10;
+const PET_COMBINE_XP = { Common: 50, Rare: 75, Epic: 125, Legendary: 200 };
+const PET_INHERIT_CHANCE = { Common: 85, Rare: 70, Epic: 55, Legendary: 40, Special: 0 };
+const PET_XP_BASE = { Common: 50, Rare: 65, Epic: 80, Legendary: 100 };
+const PET_ABILITY_COMBINE_XP = { Common: 25, Rare: 40, Epic: 65, Legendary: 100 };
+const HATCH_SACRIFICE_WINDOW = 5 * 60 * 1000;
+
+// ==================== DAILY QUEST REROLLS ====================
+const DAILY_FREE_REROLLS = 1;
+const DAILY_MAX_REROLLS = 2;
+const DAILY_SECOND_REROLL_BERRY_COST = 1;
+
+// ==================== HIDDEN COMMUNITY WORLD PROGRESS ====================
+// These thresholds are intentionally ADMIN-ONLY. Do not expose them in player help/announcements.
+const COMMUNITY_WORLD_THRESHOLDS = [3000, 5000, 7500, 10000, 15000];
+const FETCH_WORLD_RELIC_CHANCE = 0.35; // 0.35% per completed Fetch, only while undiscovered Relics remain.
+const COMMUNITY_BLESSING_DURATION = 24 * 60 * 60 * 1000;
+
+const COMMUNITY_BLESSINGS = {
+  fragmentOfOblivion: {
+    name: "Oblivion's Fortune",
+    icon: "🌑",
+    type: "points",
+    description: "+25% Hunter Points",
+    pointMultiplier: 1.25
+  },
+  livingEye: {
+    name: "All-Seeing Favor",
+    icon: "👁️",
+    type: "shiny",
+    description: "Increased Shiny Chance",
+    shinyBonus: 5
+  },
+  distortedHourglass: {
+    name: "Time's Mercy",
+    icon: "⌛",
+    type: "cooldown",
+    description: "30-minute reduction to normal !hunt cooldowns",
+    cooldownReductionMs: 30 * 60 * 1000
+  },
+  fallenStarCore: {
+    name: "Starborn Nests",
+    icon: "⭐",
+    type: "eggs",
+    description: "Increased Egg Discovery",
+    eggBonus: 8
+  },
+  soulEmber: {
+    name: "Ember of Fortune",
+    icon: "🔥",
+    type: "fetch",
+    description: "Improved Fetch Luck",
+    fetchQualityBonus: 10
+  }
+};
+
+const MIXER_MONSTER_ENCOUNTER_CHANCE = 0.25;
+const MIXER_MONSTER = {
+  key: "mixermonster",
+  name: "🌌 Mixer Monster",
+  habitat: "The Rift",
+  rarity: "Mythic",
+  points: 100,
+  chance: 1,
+  image: "mixer_monster.png",
+  description: "A mysterious cosmic creature said to appear only to the luckiest hunters. It wanders between worlds collecting forgotten stories, enchanted dice, and legendary cards. Many hunters believe seeing one is a once-in-a-lifetime event.",
+  secretAchievement: "Beyond the Rift",
+  titleReward: "The Chosen Mixer"
+};
+
+
+// ==================== PET & EGG SYSTEM ====================
+const EGG_DROP_CHANCES = {
+  Common: 50,
+  Rare: 30,
+  Epic: 20,
+  Legendary: 10
+};
+const PET_REACTION_CHANCE = 15;
+const PET_AFFECTION_EVENT_CHANCE = 12;
+const COMPANION_XP_PER_SUCCESSFUL_HUNT = 10;
+const COMPANION_XP_AFFECTION_BONUS = 5;
+const MAX_COMPANION_LEVEL = 25;
+const MAX_PET_BOND_LEVEL = 5;
+
+const EGG_TYPES = {
+  Common: { icon: "🥚", image: "common_egg.png", incubationMs: 30 * 60 * 1000 },
+  Rare: { icon: "🔵", image: "rare_egg.png", incubationMs: 1 * 60 * 60 * 1000 },
+  Epic: { icon: "🟣", image: "epic_egg.png", incubationMs: 2 * 60 * 60 * 1000 },
+  Legendary: { icon: "🟡", image: "legendary_egg.png", incubationMs: 4 * 60 * 60 * 1000 }
+};
+
+const DISTORTION_HUNT_COOLDOWN = 30 * 60 * 1000;
+const DISTORTION_DURATION = 3 * 60 * 60 * 1000;
+const DISTORTION_EVENT_MONSTER_CHANCE = 60;
+const DISTORTION_EGG_DROP_CHANCE = 40;
+const DISTORTION_EVENTS_PER_WEEK = 5;
+const DISTORTION_WARNING_MINUTES = 5;
+const DISTORTION_FINAL_RESET_MINUTES = 10;
+const UNMADE_REPLACEMENT_CHANCE = 3;
+
+// ==================== LEGACY WORLD STORY / WORLD SHATTER (ARCHIVED / DISABLED) ====================
+const WORLD_SHATTER_ENABLED = false;
+// H.4 routes WORLD_EVENT_FEED_CHANNEL_ID dynamically; see notification routing block below.
+const WORLD_SHATTER_HUNT_COOLDOWN = 10 * 60 * 1000;
+const WORLD_SHATTER_COLLISION_DURATION = 20 * 60 * 1000;
+const WORLD_SHATTER_STABILIZE_MAX_DURATION = 2 * 60 * 60 * 1000;
+const WORLD_SHATTER_UNMADE_DURATION = 30 * 60 * 1000;
+const WORLD_SHATTER_BOSS_DURATION = 45 * 60 * 1000;
+const WORLD_SHATTER_BOSS_COOLDOWN = 2 * 60 * 1000;
+const ARCHITECT_IMAGE = "architect_of_nothing.png";
+const WORLD_SHATTER_VICTORY_UNMADE_CHANCE = 3;
+const WORLD_SHATTER_FAILURE_UNMADE_CHANCE = 10;
+const WORLD_SHATTER_PARTICIPATION_POINTS = 100;
+const WORLD_SHATTER_REMATCH_MIN_DELAY = 48 * 60 * 60 * 1000;
+const WORLD_SHATTER_STABILITY_GOAL = 10;
+const WORLD_SHATTER_IMPOSSIBLE_EGG_CHANCE = 12;
+const WORLD_SHATTER_MIN_NOTICE = 24 * 60 * 60 * 1000;
+const WORLD_SHATTER_START_GRACE_MS = 10 * 60 * 1000;
+const WORLD_STORY_PROCESS_BOOT_AT = Date.now();
+
+// ==================== H.9.2 MONTHLY SEASON RESET AUTOMATION ====================
+// Resets at midnight America/Denver on the 1st of every month.
+// Sends a 24-hour warning, a 1-hour warning, archives standings, performs the
+// same hard reset used by the admin season-reset command, then announces the
+// new season. Each stage stores a monthly execution key so Railway restarts
+// cannot duplicate messages or resets.
+
+const SEASON_TIMEZONE = process.env.SEASON_TIMEZONE || "America/Denver";
+const SEASON_ANNOUNCEMENT_CHANNEL_ID = process.env.SEASON_ANNOUNCEMENT_CHANNEL_ID || "1521536122239586456";
+const SEASON_HUNT_CHANNEL_ID = process.env.SEASON_HUNT_CHANNEL_ID || "1533218205496115471";
+const SEASON_TEST_CHANNEL_ID = process.env.SEASON_TEST_CHANNEL_ID || "1520969860765450353";
+const SEASON_LIVE_START_MONTH = process.env.SEASON_LIVE_START_MONTH || "2026-09";
+const SEASON_AUTOMATION_ENABLED = String(process.env.SEASON_AUTOMATION_ENABLED || "true").toLowerCase() !== "false";
+
+function h92SeasonAutomationData(data){
+  if(!data.seasonAutomation || typeof data.seasonAutomation !== "object"){
+    data.seasonAutomation={completedKeys:{},lastCheckedAt:0};
+  }
+  if(!data.seasonAutomation.completedKeys || typeof data.seasonAutomation.completedKeys !== "object"){
+    data.seasonAutomation.completedKeys={};
+  }
+  return data.seasonAutomation;
+}
+
+function h92DenverParts(date=new Date()){
+  const parts = new Intl.DateTimeFormat("en-US",{
+    timeZone:SEASON_TIMEZONE,
+    year:"numeric",month:"2-digit",day:"2-digit",
+    hour:"2-digit",minute:"2-digit",second:"2-digit",
+    hour12:false
+  }).formatToParts(date);
+  const out={};
+  for(const p of parts) if(p.type!=="literal") out[p.type]=p.value;
+  return {
+    year:Number(out.year), month:Number(out.month), day:Number(out.day),
+    hour:Number(out.hour), minute:Number(out.minute), second:Number(out.second)
+  };
+}
+
+function h92MonthKey(parts){
+  return `${parts.year}-${String(parts.month).padStart(2,"0")}`;
+}
+
+function h92NextMonthKey(parts){
+  let y=parts.year,m=parts.month+1;
+  if(m===13){m=1;y++;}
+  return `${y}-${String(m).padStart(2,"0")}`;
+}
+
+function h92PreviousMonthKey(parts){
+  let y=parts.year,m=parts.month-1;
+  if(m===0){m=12;y--;}
+  return `${y}-${String(m).padStart(2,"0")}`;
+}
+
+function h92UseLiveChannels(monthKey){
+  return monthKey >= SEASON_LIVE_START_MONTH;
+}
+
+async function h92SeasonChannel(monthKey,kind="announcement"){
+  const live=h92UseLiveChannels(monthKey);
+  const id = live
+    ? (kind==="hunt" ? SEASON_HUNT_CHANNEL_ID : SEASON_ANNOUNCEMENT_CHANNEL_ID)
+    : SEASON_TEST_CHANNEL_ID;
+  return getTextChannel(id);
+}
+
+async function h92PostSeasonMessage(monthKey,kind,payload){
+  try{
+    const channel=await h92SeasonChannel(monthKey,kind);
+    if(channel) await channel.send(payload);
+  }catch(error){
+    console.error("Season automation message failed:",error);
+  }
+}
+
+function h92ArchiveStandings(data,seasonKey){
+  if(!data.seasonHistory || !Array.isArray(data.seasonHistory)) data.seasonHistory=[];
+  if(data.seasonHistory.some(x=>x && x.seasonKey===seasonKey)) return;
+
+  const standings=Object.entries(data.players||{})
+    .map(([id,p])=>({
+      id,
+      username:p.discordDisplayName||p.discordUsername||p.username||"Hunter",
+      points:Number(p.points||0),
+      huntTokens:Number(p.huntTokens||0),
+      catches:Array.isArray(p.caught)?p.caught.length:0
+    }))
+    .sort((a,b)=>b.points-a.points)
+    .slice(0,100);
+
+  data.seasonHistory.push({
+    seasonKey,
+    archivedAt:Date.now(),
+    standings
+  });
+}
+
+async function h92RunSeasonAutomation(){
+  if(!SEASON_AUTOMATION_ENABLED) return;
+  const now=new Date();
+  const p=h92DenverParts(now);
+  const data=loadData();
+  const state=h92SeasonAutomationData(data);
+  state.lastCheckedAt=Date.now();
+
+  // 24-hour warning: midnight on the final calendar day of the month.
+  const tomorrow = new Date(now.getTime()+24*60*60*1000);
+  const tp=h92DenverParts(tomorrow);
+  const tomorrowStartsNewMonth = tp.day===1 && (tp.month!==p.month || tp.year!==p.year);
+  if(tomorrowStartsNewMonth && p.hour===0 && p.minute<10){
+    const nextKey=h92MonthKey(tp);
+    const key=`warn24:${nextKey}`;
+    if(!state.completedKeys[key]){
+      state.completedKeys[key]=Date.now();
+      saveData(data);
+      await h92PostSeasonMessage(nextKey,"announcement",{
+        content:"⏳ **24-HOUR SEASON WARNING**\nThe current Monster Hunt season ends in about **24 hours**.\n\nSeasonal Hunter Points, Hunt Tokens, eggs, pets, bait, capture items, active effects, cooldown state, event progress, trades, relic inventory, and other gameplay advantages will reset for the new season.\n\nPermanent accomplishment history such as PetDex/Monster Dex discoveries, permanent titles/achievements, collections, and archived season history will remain."
+      });
+      return;
+    }
+  }
+
+  // 1-hour warning: 11:00 PM on the last day.
+  if(tomorrowStartsNewMonth && p.hour===23 && p.minute<10){
+    const nextKey=h92MonthKey(tp);
+    const key=`warn1:${nextKey}`;
+    if(!state.completedKeys[key]){
+      state.completedKeys[key]=Date.now();
+      saveData(data);
+      await h92PostSeasonMessage(nextKey,"announcement",{
+        content:"⚠️ **1-HOUR SEASON WARNING**\nMonster Hunt resets in about **1 hour**.\nFinish any last hunts, hatches, purchases, or season goals now. Final standings will be archived before the reset."
+      });
+      return;
+    }
+  }
+
+  // Reset window: first 10 minutes after midnight on the 1st.
+  if(p.day===1 && p.hour===0 && p.minute<10){
+    const currentKey=h92MonthKey(p);
+    const resetKey=`reset:${currentKey}`;
+    if(!state.completedKeys[resetKey]){
+      const previousKey=h92PreviousMonthKey(p);
+
+      // Archive BEFORE resetting.
+      h92ArchiveStandings(data,previousKey);
+      saveData(data);
+
+      // Use the existing full season reset implementation.
+      if(typeof hardResetSeasonForNewCompetition!=="function"){
+        console.error("Season automation could not find hardResetSeasonForNewCompetition().");
+        return;
+      }
+
+      const result = hardResetSeasonForNewCompetition(data);
+      state.completedKeys[resetKey]=Date.now();
+      saveData(data);
+
+      await h92PostSeasonMessage(currentKey,"announcement",{
+        content:
+          `🌅 **A NEW MONSTER HUNT SEASON HAS BEGUN!**\n\n`+
+          `The previous season has been archived and all seasonal progression has been reset.\n\n`+
+          `🏹 Hunter Points: reset\n🪙 Hunt Tokens: reset\n🥚 Eggs & incubations: reset\n🐾 Seasonal pets & companion progression: reset\n🎒 Seasonal supplies/items: reset\n🌌 Event progress: reset\n\n`+
+          `📚 Permanent discovery and accomplishment history remains.\n\n`+
+          `**Good luck, Hunters. The new hunt starts now!**`
+      });
+
+      await h92PostSeasonMessage(currentKey,"hunt",{
+        content:"🏹 **The hunting grounds are open for the new season!**\nOpen Monster Hunt, choose your first hunting ground, and begin the climb."
+      });
+
+      console.log("Monthly season reset completed:",currentKey,result||"ok");
+      return;
+    }
+  }
+
+  saveData(data);
+}
+
+// Check once per minute. The persistent monthly keys make this restart-safe.
+cron.schedule("* * * * *",()=>{
+  h92RunSeasonAutomation().catch(error=>console.error("Monthly season automation failed:",error));
+});
+
+// Also run once shortly after process boot in case Railway restarted inside a
+// warning/reset window.
+setTimeout(()=>{
+  h92RunSeasonAutomation().catch(error=>console.error("Initial season automation check failed:",error));
+},15000);
+
+
+const WORLD_KNOWN_DISTORTION_KEYS = ["mirror_scar","black_bloom","chrono_tear","upside_down_sea","dreaming_gate"];
+
+// Startup safety: automatic Distortions never catch up events that were already due before this process started.
+const DISTORTION_PROCESS_BOOT_AT = Date.now();
+const DISTORTION_START_GRACE_MS = 2 * 60 * 1000;
+
+const DISTORTION_EGGS = {
+  reflected: {
+    name: "Reflected Egg", icon: "🪞🥚", plane: "mirror_scar", incubationMs: 2 * 60 * 60 * 1000,
+    image: "reflected_egg.png", hatchingImage: "reflected_egg_hatching.png",
+    pets: [{key:"gleamlet",weight:40},{key:"shardpup",weight:30},{key:"echo_sprite",weight:20},{key:"mirrormane",weight:10}]
+  },
+  blightbloom: {
+    name: "Blightbloom Egg", icon: "🌑🥚", plane: "black_bloom", incubationMs: 2 * 60 * 60 * 1000,
+    image: "blightbloom_egg.png", hatchingImage: "blightbloom_egg_hatching.png",
+    pets: [{key:"buddle",weight:40},{key:"thorntail",weight:30},{key:"sporewisp",weight:20},{key:"bloomheart",weight:10}]
+  },
+  timelost: {
+    name: "Timelost Egg", icon: "⏳🥚", plane: "chrono_tear", incubationMs: 2 * 60 * 60 * 1000,
+    image: "timelost_egg.png", hatchingImage: "timelost_egg_hatching.png",
+    pets: [{key:"pendlet",weight:40},{key:"hourhound",weight:30},{key:"epoch_raven",weight:20},{key:"chronarch",weight:10}]
+  },
+  tidefall: {
+    name: "Tidefall Egg", icon: "🌊🥚", plane: "upside_down_sea", incubationMs: 2 * 60 * 60 * 1000,
+    image: "tidefall_egg.png", hatchingImage: "tidefall_egg_hatching.png",
+    pets: [{key:"bubblefin",weight:40},{key:"riftskate",weight:30},{key:"abyssal_warden",weight:20},{key:"tideborn_seraph",weight:10}]
+  },
+  dreambound: {
+    name: "Dreambound Egg", icon: "🌙🥚", plane: "dreaming_gate", incubationMs: 2 * 60 * 60 * 1000,
+    image: "dreambound_egg.png", hatchingImage: "dreambound_egg_hatching.png",
+    pets: [{key:"drowser",weight:40},{key:"veilfox",weight:30},{key:"pale_somnambulist",weight:20},{key:"oneirarch",weight:10}]
+  }
+};
+
+const DISTORTIONS = {
+  mirror_scar: {
+    name: "The Mirror Scar", icon: "🪞", eggKey: "reflected",
+    backgroundImage: "mirror_scar_background.png",
+    openingImage: "mirror_scar_opening.png", closingImage: "mirror_scar_closing.png",
+    monsters: [
+      { name:"Gleamcrawler", habitat:"The Mirror Scar", rarity:"Common", points:3, chance:75, image:"gleamcrawler.png" },
+      { name:"Echo Hound", habitat:"The Mirror Scar", rarity:"Rare", points:5, chance:50, image:"echo_hound.png" },
+      { name:"Reflection Stalker", habitat:"The Mirror Scar", rarity:"Rare", points:5, chance:45, image:"reflection_stalker.png" },
+      { name:"Prism Doppel", habitat:"The Mirror Scar", rarity:"Epic", points:8, chance:28, image:"prism_doppel.png" },
+      { name:"Mirrorbound Colossus", habitat:"The Mirror Scar", rarity:"Legendary", points:15, chance:10, image:"mirrorbound_colossus.png" }
+    ]
+  },
+  black_bloom: {
+    name: "The Black Bloom", icon: "🌑", eggKey: "blightbloom",
+    backgroundImage: "black_bloom_background.png",
+    openingImage: "black_bloom_opening.png", closingImage: "black_bloom_closing.png",
+    monsters: [
+      { name:"Thornbud", habitat:"The Black Bloom", rarity:"Common", points:3, chance:75, image:"thornbud.png" },
+      { name:"Bramblejaw", habitat:"The Black Bloom", rarity:"Rare", points:5, chance:50, image:"bramblejaw.png" },
+      { name:"Pollen Wraith", habitat:"The Black Bloom", rarity:"Rare", points:5, chance:45, image:"pollen_wraith.png" },
+      { name:"Nightbloom Reaver", habitat:"The Black Bloom", rarity:"Epic", points:8, chance:28, image:"nightbloom_reaver.png" },
+      { name:"The Ebon Orchard", habitat:"The Black Bloom", rarity:"Legendary", points:15, chance:10, image:"the_ebon_orchard.png" }
+    ]
+  },
+  chrono_tear: {
+    name: "The Chrono Tear", icon: "⏳", eggKey: "timelost",
+    backgroundImage: "chrono_tear_background.png",
+    openingImage: "chrono_tear_opening.png", closingImage: "chrono_tear_closing.png",
+    monsters: [
+      { name:"Tickling", habitat:"The Chrono Tear", rarity:"Common", points:3, chance:75, image:"tickling.png" },
+      { name:"Agefang", habitat:"The Chrono Tear", rarity:"Rare", points:5, chance:50, image:"agefang.png" },
+      { name:"Tomorrow's Witness", habitat:"The Chrono Tear", rarity:"Rare", points:5, chance:45, image:"tomorrows_witness.png" },
+      { name:"Epoch Devourer", habitat:"The Chrono Tear", rarity:"Epic", points:8, chance:28, image:"epoch_devourer.png" },
+      { name:"The Last Second", habitat:"The Chrono Tear", rarity:"Legendary", points:15, chance:10, image:"the_last_second.png" }
+    ]
+  },
+  upside_down_sea: {
+    name: "The Upside-Down Sea", icon: "🌊", eggKey: "tidefall",
+    backgroundImage: "upside_down_sea_background.png",
+    openingImage: "upside_down_sea_opening.png", closingImage: "upside_down_sea_closing.png",
+    monsters: [
+      { name:"Driftgill", habitat:"The Upside-Down Sea", rarity:"Common", points:3, chance:75, image:"driftgill.png" },
+      { name:"Reefstrider", habitat:"The Upside-Down Sea", rarity:"Rare", points:5, chance:50, image:"reefstrider.png" },
+      { name:"Drowned Oracle", habitat:"The Upside-Down Sea", rarity:"Rare", points:5, chance:45, image:"drowned_oracle.png" },
+      { name:"Gravity Maw", habitat:"The Upside-Down Sea", rarity:"Epic", points:8, chance:28, image:"gravity_maw.png" },
+      { name:"Leviathan Above", habitat:"The Upside-Down Sea", rarity:"Legendary", points:15, chance:10, image:"leviathan_above.png" }
+    ]
+  },
+  dreaming_gate: {
+    name: "The Dreaming Gate", icon: "🌙", eggKey: "dreambound",
+    backgroundImage: "dreaming_gate_background.png",
+    openingImage: "dreaming_gate_opening.png", closingImage: "dreaming_gate_closing.png",
+    monsters: [
+      { name:"Murmurmoth", habitat:"The Dreaming Gate", rarity:"Common", points:3, chance:75, image:"murmurmoth.png" },
+      { name:"Pillowmaw", habitat:"The Dreaming Gate", rarity:"Rare", points:5, chance:50, image:"pillowmaw.png" },
+      { name:"Doorwalker", habitat:"The Dreaming Gate", rarity:"Rare", points:5, chance:45, image:"doorwalker.png" },
+      { name:"Nightmare Harvester", habitat:"The Dreaming Gate", rarity:"Epic", points:8, chance:28, image:"nightmare_harvester.png" },
+      { name:"The Sleeper Between Stars", habitat:"The Dreaming Gate", rarity:"Legendary", points:15, chance:10, image:"the_sleeper_between_stars.png" }
+    ]
+  }
+};
+
+const MAX_INCUBATORS = 5;
+const HUNTER_POINTS_PER_LEVEL = 100;
+const HATCH_POINT_REWARDS = {
+  Common: 2,
+  Rare: 5,
+  Epic: 10,
+  Legendary: 20
+};
+const NEW_PET_SPECIES_BONUS = 5;
+
+const PET_PERSONALITIES = ["Cheerful", "Curious", "Loyal", "Mischievous", "Sleepy", "Brave"];
+
+const pets = [
+  // ===== NEW SEASON STANDARD COMPANIONS =====
+  { key: "puddlewyrm", name: "Puddlewyrm", icon: "🌙", habitat: "Moonfen", rarity: "Common", ability: "capture", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "puddlewyrm.png" },
+  { key: "mosscap", name: "Mosscap", icon: "🍄", habitat: "Moonfen", rarity: "Rare", ability: "eggFinder", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "mosscap.png" },
+  { key: "fen_gricklet", name: "Fen Gricklet", icon: "🐾", habitat: "Moonfen", rarity: "Epic", ability: "itemFinder", baseBonus: 6, description: "A new-season Monster Hunt companion.", image: "fen_gricklet.png" },
+  { key: "lunarch_whelp", name: "Lunarch Whelp", icon: "🌙", habitat: "Moonfen", rarity: "Legendary", ability: "shiny", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "lunarch_whelp.png" },
+  { key: "shardhopper", name: "Shardhopper", icon: "💎", habitat: "Glasswaste", rarity: "Common", ability: "capture", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "shardhopper.png" },
+  { key: "glassback", name: "Glassback", icon: "🪲", habitat: "Glasswaste", rarity: "Rare", ability: "eggFinder", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "glassback.png" },
+  { key: "dune_gnawer", name: "Dune Gnawer", icon: "🦷", habitat: "Glasswaste", rarity: "Epic", ability: "itemFinder", baseBonus: 6, description: "A new-season Monster Hunt companion.", image: "dune_gnawer.png" },
+  { key: "prismwing", name: "Prismwing", icon: "🌈", habitat: "Glasswaste", rarity: "Legendary", ability: "shiny", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "prismwing.png" },
+  { key: "tumblebud", name: "Tumblebud", icon: "🌱", habitat: "Gloamwood", rarity: "Common", ability: "capture", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "tumblebud.png" },
+  { key: "wispwing", name: "Wispwing", icon: "🦋", habitat: "Gloamwood", rarity: "Rare", ability: "eggFinder", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "wispwing.png" },
+  { key: "knotmaw", name: "Knotmaw", icon: "🪵", habitat: "Gloamwood", rarity: "Epic", ability: "itemFinder", baseBonus: 6, description: "A new-season Monster Hunt companion.", image: "knotmaw.png" },
+  { key: "twilight_cervid", name: "Twilight Cervid", icon: "🌙", habitat: "Gloamwood", rarity: "Legendary", ability: "shiny", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "twilight_cervid.png" },
+  { key: "puffle", name: "Puffle", icon: "☁️", habitat: "Stormreach", rarity: "Common", ability: "points", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "puffle.png" },
+  { key: "zephyr_beak", name: "Zephyr Beak", icon: "🪽", habitat: "Stormreach", rarity: "Rare", ability: "cooldown", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "zephyr_beak.png" },
+  { key: "voltgrin", name: "Voltgrin", icon: "⚡", habitat: "Stormreach", rarity: "Epic", ability: "capture", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "voltgrin.png" },
+  { key: "stormcrown", name: "Stormcrown", icon: "⛈️", habitat: "Stormreach", rarity: "Legendary", ability: "cooldown", baseBonus: 5, description: "A new-season Monster Hunt companion.", image: "stormcrown.png" },
+  { key: "cinderpip", name: "Cinderpip", icon: "🔥", habitat: "Emberdeep", rarity: "Common", ability: "points", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "cinderpip.png" },
+  { key: "glowgill", name: "Glowgill", icon: "✨", habitat: "Emberdeep", rarity: "Rare", ability: "itemFinder", baseBonus: 5, description: "A new-season Monster Hunt companion.", image: "glowgill.png" },
+  { key: "clinker", name: "Clinker", icon: "⚒️", habitat: "Emberdeep", rarity: "Epic", ability: "eggFinder", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "clinker.png" },
+  { key: "pyremane", name: "Pyremane", icon: "🔥", habitat: "Emberdeep", rarity: "Legendary", ability: "shiny", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "pyremane.png" },
+  { key: "snowpod", name: "Snowpod", icon: "❄️", habitat: "Frostgrave", rarity: "Common", ability: "cooldown", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "snowpod.png" },
+  { key: "shiverquill", name: "Shiverquill", icon: "🧊", habitat: "Frostgrave", rarity: "Rare", ability: "capture", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "shiverquill.png" },
+  { key: "coffinrawl", name: "Coffinrawl", icon: "⚰️", habitat: "Frostgrave", rarity: "Epic", ability: "points", baseBonus: 5, description: "A new-season Monster Hunt companion.", image: "coffinrawl.png" },
+  { key: "auroralynx", name: "Auroralynx", icon: "🌌", habitat: "Frostgrave", rarity: "Legendary", ability: "capture", baseBonus: 4, description: "A new-season Monster Hunt companion.", image: "auroralynx.png" },
+  { key: "buttoncap", name: "Buttoncap", icon: "🍄", habitat: "Sporewilds", rarity: "Common", ability: "eggFinder", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "buttoncap.png" },
+  { key: "lumenslug", name: "Lumenslug", icon: "✨", habitat: "Sporewilds", rarity: "Rare", ability: "cooldown", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "lumenslug.png" },
+  { key: "sporemaw", name: "Sporemaw", icon: "🦷", habitat: "Sporewilds", rarity: "Epic", ability: "itemFinder", baseBonus: 7, description: "A new-season Monster Hunt companion.", image: "sporemaw.png" },
+  { key: "bloomwarden", name: "Bloomwarden", icon: "🌺", habitat: "Sporewilds", rarity: "Legendary", ability: "points", baseBonus: 7, description: "A new-season Monster Hunt companion.", image: "bloomwarden.png" },
+  { key: "orblet", name: "Orblet", icon: "⭐", habitat: "Starfall Basin", rarity: "Common", ability: "eggFinder", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "orblet.png" },
+  { key: "shardtail", name: "Shardtail", icon: "🌠", habitat: "Starfall Basin", rarity: "Rare", ability: "shiny", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "shardtail.png" },
+  { key: "gazeling", name: "Gazeling", icon: "👁️", habitat: "Starfall Basin", rarity: "Epic", ability: "eggFinder", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "gazeling.png" },
+  { key: "astrael", name: "Astrael", icon: "🌌", habitat: "Starfall Basin", rarity: "Legendary", ability: "shiny", baseBonus: 4, description: "A new-season Monster Hunt companion.", image: "astrael.png" },
+  { key: "mixlet", name: "Mixlet", icon: "🎧", habitat: "Special", rarity: "Legendary", ability: "shiny", baseBonus: 5, description: "A new-season Monster Hunt companion.", image: "mixlet.png" },
+
+  // 🌀 CURRENT-SEASON DISTORTION COMPANIONS
+  { key:"gleamlet", name:"Gleamlet", icon:"🪞", habitat:"The Mirror Scar", rarity:"Common", ability:"capture", baseBonus:1, description:"A tiny reflective familiar born from splinters of the Mirror Scar.", image:"gleamlet.png" },
+  { key:"shardpup", name:"Shardpup", icon:"💎", habitat:"The Mirror Scar", rarity:"Rare", ability:"rareTracker", baseBonus:1, description:"A bright crystal-coated pup that follows impossible reflections.", image:"shardpup.png" },
+  { key:"echo_sprite", name:"Echo Sprite", icon:"✨", habitat:"The Mirror Scar", rarity:"Epic", ability:"itemFinder", baseBonus:3, description:"A playful double-image spirit that retrieves things from the wrong side of mirrors.", image:"echo_sprite.png" },
+  { key:"mirrormane", name:"Mirrormane", icon:"🦁", habitat:"The Mirror Scar", rarity:"Legendary", ability:"shiny", baseBonus:2, description:"A regal mirrored cub whose mane fractures light into impossible colors.", image:"mirrormane.png" },
+
+  { key:"buddle", name:"Buddle", icon:"🌱", habitat:"The Black Bloom", rarity:"Common", ability:"eggFinder", baseBonus:1, description:"A cheerful little Black Bloom bud that releases violet pollen when excited.", image:"buddle.png" },
+  { key:"thorntail", name:"Thorntail", icon:"🌿", habitat:"The Black Bloom", rarity:"Rare", ability:"itemFinder", baseBonus:2, description:"A clever woodland companion with a living vine tail and flowering tip.", image:"thorntail.png" },
+  { key:"sporewisp", name:"Sporewisp", icon:"🍄", habitat:"The Black Bloom", rarity:"Epic", ability:"capture", baseBonus:3, description:"A floating fungal spirit surrounded by a cloud of luminous spores.", image:"sporewisp.png" },
+  { key:"bloomheart", name:"Bloomheart", icon:"🖤", habitat:"The Black Bloom", rarity:"Legendary", ability:"eventborn", baseBonus:1, description:"A regal Black Bloom guardian with a living emerald heart-core.", image:"bloomheart.png" },
+
+  { key:"pendlet", name:"Pendlet", icon:"⏱️", habitat:"The Chrono Tear", rarity:"Common", ability:"cooldown", baseBonus:1, description:"A strange temporal companion whose pendulum tail leaves afterimages.", image:"pendlet.png" },
+  { key:"hourhound", name:"Hourhound", icon:"⌛", habitat:"The Chrono Tear", rarity:"Rare", ability:"firstLight", baseBonus:1, description:"A disciplined temporal hunting beast that senses danger before it arrives.", image:"hourhound.png" },
+  { key:"epoch_raven", name:"Epoch Raven", icon:"🐦‍⬛", habitat:"The Chrono Tear", rarity:"Epic", ability:"secondChance", baseBonus:1, description:"An eerie four-eyed raven whose feathers overlap several moments at once.", image:"epoch_raven.png" },
+  { key:"chronarch", name:"Chronarch", icon:"🐉", habitat:"The Chrono Tear", rarity:"Legendary", ability:"cooldown", baseBonus:4, description:"A regal temporal dragon guardian surrounded by broken rings of time.", image:"chronarch.png" },
+
+  { key:"bubblefin", name:"Bubblefin", icon:"🐟", habitat:"The Upside-Down Sea", rarity:"Common", ability:"itemFinder", baseBonus:1, description:"An air-swimming aquatic companion with water suspended around its gills.", image:"bubblefin.png" },
+  { key:"riftskate", name:"Riftskate", icon:"🌊", habitat:"The Upside-Down Sea", rarity:"Rare", ability:"capture", baseBonus:2, description:"A graceful ray-like companion that glides through open air on gravity currents.", image:"riftskate.png" },
+  { key:"abyssal_warden", name:"Abyssal Warden", icon:"🛡️", habitat:"The Upside-Down Sea", rarity:"Epic", ability:"rareTracker", baseBonus:1, description:"An intimidating deep-sea guardian that places itself between its hunter and danger.", image:"abyssal_warden.png" },
+  { key:"tideborn_seraph", name:"Tideborn Seraph", icon:"🐉", habitat:"The Upside-Down Sea", rarity:"Legendary", ability:"eggFinder", baseBonus:4, description:"A majestic sea-dragon guardian that swims through water and open air alike.", image:"tideborn_seraph.png" },
+
+  { key:"drowser", name:"Drowser", icon:"💤", habitat:"The Dreaming Gate", rarity:"Common", ability:"luckyHunter", baseBonus:1, description:"A sleepy dream companion whose shadow always seems a moment behind.", image:"drowser.png" },
+  { key:"veilfox", name:"Veilfox", icon:"🦊", habitat:"The Dreaming Gate", rarity:"Rare", ability:"eggFinder", baseBonus:2, description:"An elegant three-tailed dream hunter that slips through tiny impossible doorways.", image:"veilfox.png" },
+  { key:"pale_somnambulist", name:"Pale Somnambulist", icon:"👁️", habitat:"The Dreaming Gate", rarity:"Epic", ability:"shiny", baseBonus:1, description:"A silent floating dream entity watched over by a separate waking eye.", image:"pale_somnambulist.png" },
+  { key:"oneirarch", name:"Oneirarch", icon:"🌙", habitat:"The Dreaming Gate", rarity:"Legendary", ability:"persistence", baseBonus:1, description:"An ancient dream guardian that seems to understand intent before commands are spoken.", image:"oneirarch.png" },
+
+  // Legacy Unmade companions are intentionally not obtainable this season.
+];
+
+
+// ==================== H.3 PET ABILITY BIBLE ====================
+// Hunter level controls BOTH inheritance slots and incubator pods.
+// Level 1-2 = 1, 3-4 = 2, 5-6 = 3, 7-8 = 4, 9+ = 5 (hard cap).
+const H3_MAX_INHERITED_ABILITIES = 5;
+const H3_ABILITY_XP_TO_NEXT = { 1:100, 2:150, 3:250, 4:400, 5:0 };
+const H3_ABILITY_ROMAN = ["0","I","II","III","IV","V"];
+const H3_GLOBAL_CAPS = {
+  capture:20, points:20, eggFinder:20, itemFinder:20, shiny:5,
+  cooldownMinutes:60, companionTrainer:50, incubator:30,
+  baitSaver:30, trapMaster:30, rareTracker:15, tokenBonus:5,
+  rewardDouble:15, persistence:15
+};
+const H3_ABILITY_DEFS = {
+  capture:{name:"Capture",icon:"🎯",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:"%",description:"Increases normal capture chance.",capText:"Pet capture bonuses can never exceed +20% total."},
+  cooldown:{name:"Swift Hunter",icon:"⏱️",tier:"Rare",inheritable:true,values:[0,5,10,15,20,25],unit:" min",description:"Reduces the normal hunt cooldown.",capText:"Pet effects can never push a normal hunt below 1 hour."},
+  points:{name:"Hunter's Spirit",icon:"⭐",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:" points",description:"Awards bonus Hunter Points after successful catches.",capText:"Pet-derived Hunter Point bonuses cap at +20 per catch."},
+  tokenFinder:{name:"Token Finder",icon:"🪙",tier:"Common",inheritable:true,values:[0,10,15,20,25,30],unit:"% proc",description:"Chance to find bonus Hunt Tokens after a successful catch.",capText:"No pet combination can award more than +5 bonus Hunt Tokens from one catch."},
+  eggFinder:{name:"Egg Finder",icon:"🥚",tier:"Common",inheritable:true,values:[0,2,4,6,8,10],unit:"%",description:"Improves egg discovery chance.",capText:"Pet-derived Egg Find caps at +20%."},
+  itemFinder:{name:"Treasure Finder",icon:"🎒",tier:"Common",inheritable:true,values:[0,2,4,6,8,10],unit:"%",description:"Improves companion item-find chance.",capText:"Pet-derived Item Find caps at +20%."},
+  shiny:{name:"Shiny Hunter",icon:"✨",tier:"Legendary",inheritable:true,values:[0,.5,1,1.5,2,2.5],unit:"%",description:"Improves the chance that an eligible monster is Shiny.",capText:"Pet-derived Shiny bonus caps at +5 percentage points."},
+  rareTracker:{name:"Rare Tracker",icon:"🌟",tier:"Epic",inheritable:true,values:[0,3,5,8,11,15],unit:"%",description:"Shifts eligible encounter weighting toward Rare+ monsters.",capText:"Rare Tracker weighting caps at +15%."},
+  companionTrainer:{name:"Companion Trainer",icon:"🧬",tier:"Common",inheritable:true,values:[0,10,20,30,40,50],unit:"% XP",description:"Increases Companion XP earned by the equipped pet.",capText:"Companion XP bonuses cap at +50%."},
+  incubator:{name:"Incubator",icon:"🪺",tier:"Rare",inheritable:true,values:[0,5,10,15,20,25],unit:"% faster",description:"Reduces egg incubation duration while this pet is equipped.",capText:"Pet incubation reduction caps at 30%."},
+  luckyHunter:{name:"Lucky Hunter",icon:"🎲",tier:"Epic",inheritable:true,values:[0,3,5,8,11,15],unit:"%",description:"Chance to double ordinary hunt rewards. Unique trophies and restricted rewards never duplicate.",capText:"Reward doubling caps at 15%."},
+  baitSaver:{name:"Bait Saver",icon:"🧲",tier:"Rare",inheritable:true,values:[0,8,14,20,26,30],unit:"%",description:"Chance to preserve eligible bait after it is used.",capText:"Bait saving caps at 30%."},
+  trapMaster:{name:"Trap Master",icon:"🪤",tier:"Rare",inheritable:true,values:[0,8,14,20,26,30],unit:"%",description:"Chance to preserve an eligible capture item after a failed capture.",capText:"Capture-item saving caps at 30%."},
+  bloodhound:{name:"Bloodhound",icon:"🐾",tier:"Common",inheritable:true,values:[0,3,5,7,9,10],unit:"%",description:"After prey escapes, improves the next eligible attempt against that species.",capText:"Still obeys the +20% companion capture ceiling."},
+  trailSniffer:{name:"Trail Sniffer",icon:"👣",tier:"Common",inheritable:true,values:[0,5,6,7,8,10],unit:"%",description:"Successful hunting builds toward a boosted Rare+ encounter.",capText:"Temporary encounter boosts still respect rarity safety caps."},
+  tokenHoarder:{name:"Token Hoarder",icon:"💰",tier:"Common",inheritable:true,values:[0,10,9,8,7,6],unit:" catches",description:"A predictable streak counter that awards bonus Hunt Tokens after enough successful catches.",capText:"Bonus-token payout still obeys the +5 per-catch ceiling."},
+  treasureNose:{name:"Treasure Nose",icon:"🎁",tier:"Rare",inheritable:true,values:[0,15,13,11,9,8],unit:" catches",description:"After enough successful catches, guarantees an eligible item drop.",capText:"The counter resets after triggering."},
+  hotStreak:{name:"Hot Streak",icon:"🔥",tier:"Rare",inheritable:true,values:[0,3,4,5,6,7],unit:"% max",description:"Consecutive catches build a temporary capture streak; failure resets it.",capText:"Still obeys the +20% companion capture ceiling."},
+  secondChance:{name:"Second Chance",icon:"🛡️",tier:"Rare",inheritable:true,values:[0,12,10,8,7,6],unit:" failures",description:"After enough eligible failed captures, guarantees a capture item is preserved.",capText:"Only one save can trigger per failed attempt."},
+  firstLight:{name:"First Light",icon:"🌕",tier:"Epic",inheritable:true,values:[0,5,7,9,12,15],unit:"%",description:"The first eligible hunt after the daily reset gains improved Rare+ weighting.",capText:"Activates once per day."},
+  trophyHunter:{name:"Trophy Hunter",icon:"👑",tier:"Epic",inheritable:true,values:[0,3,5,7,9,10],unit:"%",description:"Improves capture chance during eligible Big Game Hunts.",capText:"Big Game-specific bonus caps at +10%."},
+  eventborn:{name:"Eventborn",icon:"⚡",tier:"Epic",inheritable:true,values:[0,2,3,4,5,5],unit:"%",description:"Gains temporary hunting bonuses while an eligible server-wide event is active.",capText:"Each affected stat still obeys its normal global cap."},
+  packHunter:{name:"Pack Hunter",icon:"🤝",tier:"Rare",inheritable:true,values:[0,2,3,4,5,6],unit:"%",description:"Gains a temporary capture bonus when another hunter has caught prey recently.",capText:"Nearby community activity does not stack repeatedly."},
+  persistence:{name:"Persistence",icon:"👻",tier:"Legendary",inheritable:true,values:[0,4,7,10,13,15],unit:"%",description:"Chance for escaped prey to linger for one immediate second capture attempt.",capText:"Maximum one Persistence retry per encounter."},
+  nestGuardian:{name:"Nest Guardian",icon:"🥚",tier:"Legendary",inheritable:true,values:[0,2,4,6,8,10],unit:"%",description:"Chance for an eligible discovered egg to upgrade by one rarity tier.",capText:"Legendary eggs cannot upgrade further."},
+  cosmicFortune:{name:"Cosmic Fortune",icon:"🌌",tier:"Special",inheritable:false,values:[0,1,2,3,4,5],unit:"",description:"Astræl's signature all-rounder: small Capture, Egg, Item and Shiny bonuses.",capText:"Exclusive to Astræl; each component obeys its own global cap."},
+  mixedResults:{name:"Mixed Results",icon:"🎲",tier:"Special",inheritable:false,values:[0,1,2,3,4,5],unit:"",description:"Mixlet rolls one temporary hunting bonus each hunt. Rank V can rarely activate two different bonuses.",capText:"Exclusive to Mixlet and can never be inherited."}
+};
+
+const H3_STANDARD_NATURAL_ABILITIES = {
+  puddlewyrm:"bloodhound", mosscap:"eggFinder", fen_gricklet:"itemFinder", lunarch_whelp:"firstLight",
+  shardhopper:"trailSniffer", glassback:"eggFinder", dune_gnawer:"baitSaver", prismwing:"shiny",
+  tumblebud:"companionTrainer", wispwing:"cooldown", knotmaw:"hotStreak", twilight_cervid:"rareTracker",
+  puffle:"packHunter", zephyr_beak:"cooldown", voltgrin:"tokenFinder", stormcrown:"capture",
+  cinderpip:"tokenHoarder", glowgill:"itemFinder", clinker:"luckyHunter", pyremane:"eventborn",
+  snowpod:"incubator", shiverquill:"trapMaster", coffinrawl:"persistence", auroralynx:"shiny",
+  buttoncap:"eggFinder", lumenslug:"treasureNose", sporemaw:"capture", bloomwarden:"nestGuardian",
+  orblet:"rareTracker", shardtail:"secondChance", gazeling:"firstLight", astrael:"cosmicFortune",
+  mixlet:"mixedResults"
+};
+for (const pet of pets) {
+  const h3Ability = H3_STANDARD_NATURAL_ABILITIES[pet.key];
+  if (h3Ability) {
+    pet.ability = h3Ability;
+    pet.baseBonus = 1;
+    pet.h3Ability = true;
+    const def = H3_ABILITY_DEFS[h3Ability];
+    if (def) pet.description = `${def.name}: ${def.description}`;
+  }
+}
+
+function h3HunterLevel(player) {
+  return Math.max(1, 1 + Math.floor(Math.max(0, Number(player?.points || 0)) / HUNTER_POINTS_PER_LEVEL));
+}
+function h3InheritedSlotLimit(player) {
+  return Math.min(H3_MAX_INHERITED_ABILITIES, 1 + Math.floor((h3HunterLevel(player) - 1) / 2));
+}
+function h3AbilityDef(key) {
+  return H3_ABILITY_DEFS[key] || {name:abilityDisplayName(key),icon:"✨",tier:"Common",inheritable:true,values:[0,1,2,3,4,5],unit:"",description:"Companion ability.",capText:""};
+}
+function h3RankRoman(rank) { return H3_ABILITY_ROMAN[Math.max(1,Math.min(5,Number(rank)||1))] || "I"; }
+function h3XpToNext(rank) { return H3_ABILITY_XP_TO_NEXT[Math.max(1,Math.min(5,Number(rank)||1))] || 0; }
+function h3AbilityValue(key, rank) {
+  const def=h3AbilityDef(key); const r=Math.max(1,Math.min(5,Number(rank)||1));
+  return Number(def.values?.[r] ?? r);
+}
+function h3AbilityEffectText(key, rank) {
+  const def=h3AbilityDef(key), value=h3AbilityValue(key,rank);
+  const special={
+    tokenFinder:`${value}% chance to find bonus Hunt Tokens after a successful catch`,
+    tokenHoarder:`bonus Hunt Tokens after every ${value} successful catches`,
+    treasureNose:`guaranteed eligible item drop after ${value} successful catches`,
+    secondChance:`guaranteed eligible item save after ${value} failed captures`,
+    cosmicFortune:`+${value}% Capture, Egg Find and Item Find, plus +${(value/10).toFixed(1)}% Shiny`,
+    mixedResults:`Rank ${h3RankRoman(rank)} random hunt bonus${rank>=5?' with a small two-bonus Jackpot chance':''}`
+  };
+  if (special[key]) return special[key];
+  if (key === "cooldown") return `${value} minute normal hunt cooldown reduction`;
+  if (key === "points") return `+${value} Hunter Points on successful catches`;
+  if (key === "companionTrainer") return `+${value}% Companion XP`;
+  if (key === "incubator") return `${value}% shorter egg incubation`;
+  return `${value >= 0 ? "+" : ""}${value}${def.unit || ""} — ${def.description}`;
+}
+function h3AbilityInheritanceChance(targetOwned, donorOwned, abilityKey) {
+  const targetDef=getOwnedPetDefinition(targetOwned), donorDef=getOwnedPetDefinition(donorOwned), def=h3AbilityDef(abilityKey);
+  if (!def.inheritable || def.tier === "Special") return {base:0,bondBonus:0,habitatBonus:0,total:0,label:"Locked"};
+  const base=Number(PET_INHERIT_CHANCE[def.tier] ?? 40);
+  const bond=getPetBondLevel(targetOwned);
+  const bondBonus=({1:0,2:3,3:6,4:9,5:12})[bond] || 0;
+  const habitatBonus=targetDef?.habitat && donorDef?.habitat && targetDef.habitat===donorDef.habitat ? 5 : 0;
+  const total=Math.min(95,base+bondBonus+habitatBonus);
+  return {base,bondBonus,habitatBonus,total,label:total>=80?"Excellent":total>=60?"Good":total>=40?"Uncertain":"Risky"};
+}
+
+const PET_COLLECTIONS = {
+  Moonfen: { icon: "🌙", achievement: "Moonfen Companion Collection", title: "Moonfen Keeper" },
+  Glasswaste: { icon: "🏜️", achievement: "Glasswaste Companion Collection", title: "Glasswalker" },
+  Gloamwood: { icon: "🌲", achievement: "Gloamwood Companion Collection", title: "Gloamwarden" },
+  Stormreach: { icon: "⛈️", achievement: "Stormreach Companion Collection", title: "Storm Rider" },
+  Emberdeep: { icon: "🔥", achievement: "Emberdeep Companion Collection", title: "Emberbound" },
+  Frostgrave: { icon: "🧊", achievement: "Frostgrave Companion Collection", title: "Gravefrost Warden" },
+  Sporewilds: { icon: "🍄", achievement: "Sporewilds Companion Collection", title: "Sporekeeper" },
+  "Starfall Basin": { icon: "🌌", achievement: "Starfall Basin Companion Collection", title: "Starfall Keeper" }
+};
+
+const GRAND_PET_COLLECTION_REWARD = {
+  achievement: "Complete Companion Collection",
+  title: "Master Beast Tamer",
+  pointReward: 100,
+  eggRarity: "Legendary",
+  legendaryTitles: [
+    "Warden of Every Habitat",
+    "The Thirty-Twofold Bond",
+    "Keeper of the Wild Covenant"
+  ]
+};
+
+const LEGACY_PET_KEY_MIGRATION = {
+  sproutling: "briar_pup",
+  embercub: "cinderling",
+  frostpup: "ice_crawler",
+  tideotter: "reef_snapper",
+  spiritfox: "myceling",
+  mysticowl: "grave_whisper",
+  direwolfpup: "frost_wretch",
+  tinygolem: "pebble_maw",
+  stormhatchling: "tempest_hatchling",
+  ghostwisp: "void_watcher",
+  reefdrake: "inkfiend_hatchling",
+  voidling: "night_skitter",
+  phoenixhatchling: "infernal_wyrmling",
+  celestialdragonling: "astral_spawn",
+  ancientguardian: "verdant_sentinel",
+  minileviathan: "leviacub"
+};
+
+const CAPTURE_ITEMS = {
+  berry: {
+    name: "🍓 Hunter Berry",
+    bonus: 10,
+    aliases: ["berry", "hunter berry"]
+  },
+  honey: {
+    name: "🍯 Sticky Honey",
+    bonus: 20,
+    aliases: ["honey", "sticky honey"]
+  },
+  net: {
+    name: "🕸️ Enchanted Net",
+    bonus: 30,
+    aliases: ["net", "enchanted net"]
+  },
+  masterCharm: {
+    name: "🌟 Master Charm",
+    bonus: 100,
+    guaranteed: true,
+    aliases: ["master", "master charm", "charm"]
+  }
+};
+
+// ==================== H.4 DISCORD NOTIFICATION ROUTING ====================
+// Until Sep 1, 2026 at midnight Mountain Time, ALL Monster Hunt public output
+// is routed to the test channel. The variables below switch automatically
+// while the process is running; no redeploy is required at launch.
+const H4_PUBLIC_LAUNCH_AT = Date.parse("2026-09-01T06:00:00Z"); // Sep 1 00:00 MDT
+const H4_TEST_CHANNEL_ID = "1520969860765450353";
+const H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID = "1521536122239586456";
+const H4_PRODUCTION_HUNT_CHANNEL_ID = "1533218205496115471";
+const H4_PRODUCTION_EGGS_PETS_CHANNEL_ID = "1539117649840046140";
+
+const H4_HUNT_ALERT_ROLE_ID = "1543005506577113118";
+const H4_MERCHANT_ALERT_ROLE_ID = "1543005682519908382";
+const H4_BIG_HUNT_ALERT_ROLE_ID = "1543005759238045786";
+const H4_BOUNTY_ALERT_ROLE_ID = "1543005828465033317";
+const H4_WORLD_EVENT_ALERT_ROLE_ID = "1543005860714905742";
+
+// Personal ready-alert roles. These roles act as opt-in switches.
+// The bot mentions only the individual hunter when their timer finishes so
+// one player's cooldown never pings every member of the role.
+const H4_EGG_READY_ROLE_ID = "1543010894844403753";
+const H4_HUNT_READY_ROLE_ID = "1543011185404674128";
+const H4_FETCH_ALERT_ROLE_ID = "1543011414254288967";
+
+// Legacy callers still use these names. H.4 keeps them live and dynamically routed.
+const MONSTER_NOTIFY_ROLE = H4_HUNT_ALERT_ROLE_ID;
+let MONSTER_CHANNEL_ID = H4_TEST_CHANNEL_ID;
+let EGGS_PETS_CHANNEL_ID = H4_TEST_CHANNEL_ID;
+let WORLD_EVENT_FEED_CHANNEL_ID = H4_TEST_CHANNEL_ID;
+let H4_ANNOUNCEMENT_CHANNEL_ID = H4_TEST_CHANNEL_ID;
+
+function h4UsingTestChannel(now = Date.now()) {
+  return now < H4_PUBLIC_LAUNCH_AT;
+}
+function h4RefreshChannelRouting(now = Date.now()) {
+  const testing = h4UsingTestChannel(now);
+  MONSTER_CHANNEL_ID = testing ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_HUNT_CHANNEL_ID;
+  EGGS_PETS_CHANNEL_ID = testing ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_EGGS_PETS_CHANNEL_ID;
+  WORLD_EVENT_FEED_CHANNEL_ID = testing ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID;
+  H4_ANNOUNCEMENT_CHANNEL_ID = testing ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID;
+}
+h4RefreshChannelRouting();
+const h4RouteTimer = setInterval(() => h4RefreshChannelRouting(), 60 * 1000);
+if (typeof h4RouteTimer.unref === "function") h4RouteTimer.unref();
+
+// ==================== BIG GAME HUNT & TRAVELING MERCHANT ====================
+// Three Big Game Hunts are generated every week on different days.
+// Each one lasts 2 hours and starts randomly between 3:30 PM and 8:00 PM Mountain Time,
+// so every event ends no later than 10:00 PM. America/Denver keeps DST correct.
+const BIG_GAME_TIMEZONE = "America/Denver";
+const BIG_GAME_COOLDOWN = 30 * 60 * 1000;
+const BIG_GAME_EVENTS_PER_WEEK = 3;
+const BIG_GAME_DURATION = 2 * 60 * 60 * 1000;
+const BIG_GAME_EARLIEST_START_MINUTE = 15 * 60 + 30;
+const BIG_GAME_LATEST_START_MINUTE = 20 * 60;
+const MERCHANT_VISITS_PER_WEEK = 3;
+const BIG_GAME_TOKEN_REWARDS = {
+  Common: 1,
+  Rare: 2,
+  Epic: 4,
+  Legendary: 8,
+  Mythic: 15,
+  "Ultra Rare": 15,
+  Event: 4,
+  Secret: 15
+};
+const BIG_GAME_PLACEMENT_REWARDS = [50, 30, 15];
+const BIG_GAME_IMAGE = "big_game_hunt.png";
+const BIG_GAME_AWARD_IMAGES = ["big_game_first.png", "big_game_second.png", "big_game_third.png"];
+
+const MERCHANT_TYPE_DEFINITIONS = {
+  aldric: { name: "Aldric, the Traveling Hunter", icon: "🧙", weight: 55, durationHours: 8, image: "aldric_traveling_hunter.png" },
+  gribble: { name: "Gribble", icon: "🎲", weight: 20, durationHours: 6, image: "gribble_questionable_goods.png" },
+  beastkeeper: { name: "The Beastkeeper", icon: "🐲", weight: 12, durationHours: 8, image: "the_beastkeeper.png" },
+  pale_collector: { name: "The Pale Collector", icon: "👻", weight: 7, durationHours: 6, image: "pale_collector.png" },
+  riftwalker: { name: "The Riftwalker", icon: "🌌", weight: 5, durationHours: 4, image: "riftwalker_merchant.png" },
+  nameless: { name: "The Nameless Merchant", icon: "❓", weight: 1, durationHours: 2, image: "nameless_merchant.png" }
+};
+
+// Item behavior is intentionally data-driven. Add or rebalance stock here without
+// rewriting the purchase command. "grant" sends supplies into the existing game
+// inventory; other items live in merchantCollection until used or traded later.
+const MERCHANT_ITEMS = {
+  hunter_berry: {
+    name: "Hunter Berry", icon: "🍓", image: "hunter_berry.png", price: 3, unlimited: true, kind: "supply",
+    grant: { captureItem: "berry", amount: 1 },
+    description: "A sweet berry prized by patient hunters.",
+    effectDescription: "🎯 CAPTURE ITEM: Adds +10% to one capture attempt. Goes directly to your capture-item inventory."
+  },
+  sticky_honey: {
+    name: "Sticky Honey", icon: "🍯", image: "sticky_honey.png", price: 5, unlimited: true, kind: "supply",
+    grant: { captureItem: "honey", amount: 1 },
+    description: "Thick enchanted honey that even monsters struggle to ignore.",
+    effectDescription: "🎯 CAPTURE ITEM: Adds +20% to one capture attempt. Goes directly to your capture-item inventory."
+  },
+  enchanted_net: {
+    name: "Enchanted Net", icon: "🕸️", image: "enchanted_net.png", price: 8, unlimited: true, kind: "supply",
+    grant: { captureItem: "net", amount: 1 },
+    description: "A shimmering net woven with binding magic.",
+    effectDescription: "🎯 CAPTURE ITEM: Adds +30% to one capture attempt. Goes directly to your capture-item inventory."
+  },
+  master_charm: {
+    name: "Master Charm", icon: "🌟", image: "master_charm.png", price: 25, stock: 1, kind: "supply",
+    grant: { captureItem: "masterCharm", amount: 1 },
+    description: "A rare charm that seems to bend the odds completely in your favor.",
+    effectDescription: "🌟 GUARANTEED CAPTURE: Guarantees one capture attempt. Goes directly to your capture-item inventory."
+  },
+  rare_bait: {
+    name: "Rare Bait", icon: "🔵", image: "rare_bait.png", price: 4, unlimited: true, kind: "supply",
+    grant: { bait: "rare", amount: 1 },
+    description: "A scent mixture favored by uncommon creatures.",
+    effectDescription: "🎣 BAIT: Improves the Rare odds of your next normal hunt. Goes directly to your bait inventory."
+  },
+  epic_bait: {
+    name: "Epic Bait", icon: "🟣", image: "epic_bait.png", price: 7, unlimited: true, kind: "supply",
+    grant: { bait: "epic", amount: 1 },
+    description: "A potent lure that attracts dangerous magical creatures.",
+    effectDescription: "🎣 BAIT: Improves the Epic odds of your next normal hunt. Goes directly to your bait inventory."
+  },
+  legendary_bait: {
+    name: "Legendary Bait", icon: "🟠", image: "legendary_bait.png", price: 12, stock: 4, kind: "supply",
+    grant: { bait: "legendary", amount: 1 },
+    description: "A legendary hunter's lure reserved for the rarest trails.",
+    effectDescription: "🎣 BAIT: Improves the Legendary odds of your next normal hunt. Goes directly to your bait inventory."
+  },
+  hunters_compass: {
+    name: "Hunter's Compass", icon: "🧭", image: "hunters_compass.png", price: 10, stock: 5, kind: "consumable",
+    description: "Its needle ignores north and points toward stronger prey.",
+    effectDescription: "🎯 USE: Your next ordinary encounter is guaranteed to be Rare or better."
+  },
+  golden_lure: {
+    name: "Golden Lure", icon: "🟡", image: "golden_lure.png", price: 15, stock: 3, kind: "consumable",
+    description: "Golden light pulses from it like a beacon.",
+    effectDescription: "🎯 USE: Your next ordinary encounter is guaranteed to be Legendary."
+  },
+  fresh_tracks: {
+    name: "Fresh Tracks", icon: "🐾", image: "fresh_tracks.png", price: 8, stock: 5, kind: "consumable",
+    description: "A perfect trail appears where none existed moments ago.",
+    effectDescription: "⏱️ USE: Immediately clears your normal !hunt cooldown."
+  },
+  mystery_sack: {
+    name: "Mystery Sack", icon: "🎒", image: "mystery_sack.png", price: 8, stock: 7, kind: "consumable",
+    description: "The contents shift every time the sack moves.",
+    effectDescription: "🎁 USE: Opens for a random reward: capture items, Hunt Tokens, Epic Bait, or possibly a Master Charm."
+  },
+  rusted_key: {
+    name: "Rusted Key", icon: "🗝️", image: "rusted_key.png", price: 15, stock: 1, kind: "collectible", usable: true,
+    description: "Its lock and purpose are unknown.",
+    effectDescription: "🗝️ USE: Opens a forgotten hunter cache containing 5–10 Hunt Tokens."
+  },
+  strange_map: {
+    name: "Strange Map", icon: "🗺️", image: "strange_map.png", price: 18, stock: 2, kind: "consumable",
+    description: "The route redraws itself whenever you stop looking.",
+    effectDescription: "🗺️ USE: Clears your normal !hunt cooldown and makes your next ordinary encounter Rare or better."
+  },
+  sealed_bottle: {
+    name: "Sealed Bottle", icon: "🍾", image: "sealed_bottle.png", price: 12, stock: 3, kind: "consumable",
+    description: "Something magical moves inside.",
+    effectDescription: "🎁 USE: Gives one random capture item: Hunter Berry, Sticky Honey, or Enchanted Net."
+  },
+  monster_whistle: {
+    name: "Monster Whistle", icon: "📯", image: "monster_whistle.png", price: 20, stock: 2, kind: "collectible", usable: true,
+    description: "A distant creature sometimes answers it.",
+    effectDescription: "📯 USE: Clears your normal !hunt cooldown and guarantees the next ordinary encounter is Rare or better."
+  },
+  merchants_dice: {
+    name: "Merchant's Dice", icon: "🎲", image: "merchants_dice.png", price: 10, stock: 4, kind: "consumable",
+    description: "One die looks suspiciously weighted.",
+    effectDescription: "🎲 USE: Roll for a random result: nothing, capture items, Hunt Tokens, or a Mystery Relic."
+  },
+  do_not_open: {
+    name: "DO NOT OPEN", icon: "⛓️", image: "do_not_open.png", price: 35, stock: 1, kind: "consumable",
+    description: "Gribble strongly recommends that you do not open it.",
+    effectDescription: "⚠️ USE: Opens for one powerful random reward: 20 Hunt Tokens, a Master Charm, +25 Hunter Points, or an Unidentified Object."
+  },
+  common_mystery_egg: {
+    name: "Common Mystery Egg", icon: "🥚", image: "common_mystery_egg.png", price: 12, stock: 5, kind: "egg",
+    description: "A friendly-looking unknown egg.",
+    effectDescription: "🥚 SEALED EGG: Stored in your Merchant Collection. Its contents are not currently ready to hatch."
+  },
+  rare_mystery_egg: {
+    name: "Rare Mystery Egg", icon: "🔵🥚", image: "rare_mystery_egg.png", price: 25, stock: 3, kind: "egg",
+    description: "A valuable egg covered in magical markings.",
+    effectDescription: "🥚 SEALED EGG: Stored in your Merchant Collection. Its contents are not currently ready to hatch."
+  },
+  ancient_egg: {
+    name: "Ancient Egg", icon: "🗿🥚", image: "ancient_egg.png", price: 40, stock: 2, kind: "egg",
+    description: "It feels impossibly old.",
+    effectDescription: "🥚 SEALED EGG: Stored in your Merchant Collection. Its contents are not currently ready to hatch."
+  },
+  merchants_egg: {
+    name: "Merchant's Egg", icon: "🧳🥚", image: "merchants_egg.png", price: 50, stock: 1, kind: "egg",
+    description: "Only a Traveling Merchant could have found this.",
+    effectDescription: "🥚 SEALED EGG: Stored in your Merchant Collection. Its contents are not currently ready to hatch."
+  },
+  monster_trophy: {
+    name: "Monster Trophy", icon: "🏆", image: "monster_trophy.png", price: 22, stock: 3, kind: "collectible",
+    description: "A prestigious hunter's achievement.",
+    effectDescription: "🏆 COLLECTIBLE: Stored permanently in your Merchant Collection."
+  },
+  golden_monster_trophy: {
+    name: "Golden Monster Trophy", icon: "🥇", image: "golden_monster_trophy.png", price: 55, stock: 1, kind: "collectible",
+    description: "Exceptionally prestigious and expensive.",
+    effectDescription: "🥇 RARE COLLECTIBLE: Stored permanently in your Merchant Collection."
+  },
+  mystery_relic: {
+    name: "Mystery Relic", icon: "🔮", image: "mystery_relic.png", price: 30, stock: 1, kind: "collectible", usable: true,
+    description: "Its original purpose is impossible to determine.",
+    effectDescription: "🔮 USE: Transforms into one random Ultra Rare summoning Relic."
+  },
+  black_egg: {
+    name: "Black Egg", icon: "⚫🥚", image: "black_egg.png", price: 100, stock: 1, kind: "egg",
+    description: "Its surface seems to absorb the surrounding light.",
+    effectDescription: "🥚 UNKNOWN SEALED EGG: Stored in your Merchant Collection. Whatever is inside is not currently ready to hatch."
+  },
+  impossible_key: {
+    name: "Impossible Key", icon: "🗝️", image: "impossible_key.png", price: 75, stock: 1, kind: "collectible", usable: true,
+    description: "It could unlock something that should not have a door.",
+    effectDescription: "🗝️ USE: Tears open a path to powerful prey—clears your hunt cooldown and guarantees your next ordinary encounter is Legendary."
+  },
+  torn_page: {
+    name: "Torn Page", icon: "📜", image: "torn_page.png", price: 12, stock: 4, kind: "collectible", usable: true,
+    description: "The writing changes whenever you look away.",
+    effectDescription: "📜 USE: The page reveals a supply route, granting 1 Rare Bait and 3 Hunt Tokens."
+  },
+  watchers_eye: {
+    name: "Watcher's Eye", icon: "👁️", image: "watchers_eye.png", price: 45, stock: 1, kind: "collectible", usable: true,
+    description: "It gives the impression that it is watching you.",
+    effectDescription: "👁️ USE: Reveals a perfect weakness and grants 1 Master Charm for a guaranteed capture."
+  },
+  broken_compass: {
+    name: "Broken Compass", icon: "🧭", image: "broken_compass.png", price: 28, stock: 2, kind: "collectible", usable: true,
+    description: "The floating needle points somewhere impossible.",
+    effectDescription: "🧭 USE: Points toward stronger prey. Your next ordinary encounter is Rare or better, with a 25% chance to become guaranteed Legendary."
+  },
+  fractured_compass: {
+    name: "Fractured Compass", icon: "💠🧭", image: "fractured_compass.png", price: 35, stock: 2, kind: "collectible", usable: true,
+    description: "Every needle points in a different direction.",
+    effectDescription: "💠 USE: Clears your normal !hunt cooldown and guarantees your next ordinary encounter is Rare or better."
+  },
+  reality_anchor: {
+    name: "Reality Anchor", icon: "⚓", image: "reality_anchor.png", price: 60, stock: 1, kind: "collectible", usable: true,
+    description: "Nearby reality feels unusually stable.",
+    effectDescription: "⚓ USE: Stabilizes fate, clearing your hunt cooldown and granting 1 Master Charm."
+  },
+  unmarked_relic: {
+    name: "Unmarked Relic", icon: "⬛", image: "unmarked_relic.png", price: 42, stock: 1, kind: "collectible", usable: true,
+    description: "It belongs to no recognizable culture.",
+    effectDescription: "⬛ USE: Breaks apart into one random Ultra Rare summoning Relic plus 5 Hunt Tokens."
+  },
+  voidglass_shard: {
+    name: "Voidglass Shard", icon: "🌌", image: "voidglass_shard.png", price: 50, stock: 1, kind: "collectible", usable: true,
+    description: "It reflects places that are not nearby.",
+    effectDescription: "🌌 USE: Shows a legendary creature through the glass. Your next ordinary encounter is guaranteed Legendary and you gain 5 Hunt Tokens."
+  },
+  unidentified_object: {
+    name: "Unidentified Object", icon: "❔", image: "unidentified_object.png", price: 80, stock: 1, kind: "collectible", usable: true,
+    description: "Its true shape cannot be determined.",
+    effectDescription: "❔ USE: Reality chooses one major reward: +25 Hunter Points, 20 Hunt Tokens, 1 Master Charm, or a guaranteed Legendary next encounter."
+  }
+};
+
+const MERCHANT_POOLS = {
+  aldric: ["hunter_berry", "sticky_honey", "enchanted_net", "rare_bait", "epic_bait", "legendary_bait", "hunters_compass", "golden_lure", "fresh_tracks", "mystery_sack", "rusted_key", "ancient_egg", "monster_trophy", "mystery_relic"],
+  gribble: ["hunter_berry", "mystery_sack", "sealed_bottle", "merchants_dice", "do_not_open", "common_mystery_egg", "rusted_key", "torn_page", "unidentified_object"],
+  beastkeeper: ["rare_bait", "epic_bait", "legendary_bait", "golden_lure", "monster_whistle", "common_mystery_egg", "rare_mystery_egg", "ancient_egg", "merchants_egg", "monster_trophy", "golden_monster_trophy"],
+  pale_collector: ["torn_page", "monster_trophy", "golden_monster_trophy", "mystery_relic", "watchers_eye", "broken_compass", "sealed_bottle"],
+  riftwalker: ["fractured_compass", "reality_anchor", "unmarked_relic", "voidglass_shard", "broken_compass", "mystery_relic", "unidentified_object"],
+  nameless: ["black_egg", "impossible_key", "watchers_eye", "broken_compass", "torn_page", "voidglass_shard", "unidentified_object"]
+};
+
+// The Pale Collector can demand collectibles instead of tokens.
+const PALE_COLLECTOR_BARTERS = {
+  watchers_eye: { torn_page: 3, monster_trophy: 1 },
+  golden_monster_trophy: { monster_trophy: 2, mystery_relic: 1 },
+  broken_compass: { torn_page: 2 },
+  mystery_relic: { torn_page: 2, monster_trophy: 1 }
+};
+
+// ==================== ONE-TIME SEASON 2 LAUNCH ====================
+// Opens both launch channels for both launch roles at 12:00 PM Mountain Time.
+const SEASON_LAUNCH_DATE = "2026-08-02";
+const SEASON_LAUNCH_TIMEZONE = "America/Denver";
+
+const SEASON_LAUNCH_ROLE_IDS = [
+  "1521532551339180122", // Monster Hunter
+  "1531471045805084743"  // Monster Hunt Notifications
+];
+
+const SEASON_LAUNCH_CHANNEL_IDS = [
+  "1521536122239586456", // Rules
+  "1533218205496115471"  // Monster Hunt Room
+];
+
+const SEASON_LAUNCH_ANNOUNCEMENT_CHANNEL_ID = "1533218205496115471";
+
+const EMPTY_GAME_STATE = {
+  players: {},
+  pendingTrades: {},
+  ultraRareState: null,
+  worldProgress: {},
+  ultraWeeklySchedule: null
+};
+
+function sqliteHasState() {
+  return Boolean(db.prepare("SELECT 1 FROM game_state WHERE id = 1").get());
+}
+
+function writeSqliteState(data) {
+  const payload = JSON.stringify(data);
+  db.prepare(`
+    INSERT INTO game_state (id, payload, updated_at)
+    VALUES (1, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at
+  `).run(payload, Date.now());
+}
+
+// Fresh Season startup:
+// A new Railway Volume starts with an empty Monster Hunt database.
+// Existing H.0.1 SQLite state is preserved across deploys/restarts.
+if (!sqliteHasState()) {
+  writeSqliteState(EMPTY_GAME_STATE);
+  console.log("Created fresh Season database in SQLite.");
+}
+
+const monsters = [
+  // ===== NEW SEASON STANDARD MONSTERS =====
+  { name: "Mireclaw", habitat: "Moonfen", rarity: "Common", points: 1, chance: 85, image: "mireclaw.png", description: "A common creature of Moonfen." },
+  { name: "Lantern Toad", habitat: "Moonfen", rarity: "Common", points: 1, chance: 85, image: "lantern_toad.png", description: "A common creature of Moonfen." },
+  { name: "Bogskin Mimic", habitat: "Moonfen", rarity: "Rare", points: 3, chance: 55, image: "bogskin_mimic.png", description: "A rare creature of Moonfen." },
+  { name: "Drowned Bellower", habitat: "Moonfen", rarity: "Epic", points: 5, chance: 32, image: "drowned_bellower.png", description: "A epic creature of Moonfen." },
+  { name: "The Moonfen Hydra", habitat: "Moonfen", rarity: "Legendary", points: 10, chance: 12, image: "moonfen_hydra.png", description: "A legendary creature of Moonfen." },
+  { name: "Shardskitter", habitat: "Glasswaste", rarity: "Common", points: 1, chance: 85, image: "shardskitter.png", description: "A common creature of Glasswaste." },
+  { name: "Mirage Lurker", habitat: "Glasswaste", rarity: "Common", points: 1, chance: 85, image: "mirage_lurker.png", description: "A common creature of Glasswaste." },
+  { name: "Reliquary Devourer", habitat: "Glasswaste", rarity: "Rare", points: 3, chance: 55, image: "reliquary_devourer.png", description: "A rare creature of Glasswaste." },
+  { name: "Prismatic Ravager", habitat: "Glasswaste", rarity: "Epic", points: 5, chance: 32, image: "prismatic_ravager.png", description: "A epic creature of Glasswaste." },
+  { name: "The Buried Emperor", habitat: "Glasswaste", rarity: "Legendary", points: 10, chance: 12, image: "the_buried_emperor.png", description: "A legendary creature of Glasswaste." },
+  { name: "Wickling", habitat: "Gloamwood", rarity: "Common", points: 1, chance: 85, image: "wickling.png", description: "A common creature of Gloamwood." },
+  { name: "Crookhorn", habitat: "Gloamwood", rarity: "Common", points: 1, chance: 85, image: "crookhorn.png", description: "A common creature of Gloamwood." },
+  { name: "Hollowdouble", habitat: "Gloamwood", rarity: "Rare", points: 3, chance: 55, image: "hollowdouble.png", description: "A rare creature of Gloamwood." },
+  { name: "Gloamstalker", habitat: "Gloamwood", rarity: "Epic", points: 5, chance: 32, image: "gloamstalker.png", description: "A epic creature of Gloamwood." },
+  { name: "The Crowned Widow", habitat: "Gloamwood", rarity: "Legendary", points: 10, chance: 12, image: "the_crowned_widow.png", description: "A legendary creature of Gloamwood." },
+  { name: "Thundermite", habitat: "Stormreach", rarity: "Common", points: 1, chance: 85, image: "thundermite.png", description: "A common creature of Stormreach." },
+  { name: "Galemaw", habitat: "Stormreach", rarity: "Common", points: 1, chance: 85, image: "galemaw.png", description: "A common creature of Stormreach." },
+  { name: "Cloudshepherd", habitat: "Stormreach", rarity: "Rare", points: 3, chance: 55, image: "cloudshepherd.png", description: "A rare creature of Stormreach." },
+  { name: "Skybreaker", habitat: "Stormreach", rarity: "Epic", points: 5, chance: 32, image: "skybreaker.png", description: "A epic creature of Stormreach." },
+  { name: "The Tempest Sovereign", habitat: "Stormreach", rarity: "Legendary", points: 10, chance: 12, image: "the_tempest_sovereign.png", description: "A legendary creature of Stormreach." },
+  { name: "Coalcrawler", habitat: "Emberdeep", rarity: "Common", points: 1, chance: 85, image: "coalcrawler.png", description: "A common creature of Emberdeep." },
+  { name: "Cinderveil", habitat: "Emberdeep", rarity: "Common", points: 1, chance: 85, image: "cinderveil.png", description: "A common creature of Emberdeep." },
+  { name: "Forgehaunt", habitat: "Emberdeep", rarity: "Rare", points: 3, chance: 55, image: "forgehaunt.png", description: "A rare creature of Emberdeep." },
+  { name: "Magma Gorger", habitat: "Emberdeep", rarity: "Epic", points: 5, chance: 32, image: "magma_gorger.png", description: "A epic creature of Emberdeep." },
+  { name: "The First Flame", habitat: "Emberdeep", rarity: "Legendary", points: 10, chance: 12, image: "the_first_flame.png", description: "A legendary creature of Emberdeep." },
+  { name: "Pale Lantern", habitat: "Frostgrave", rarity: "Common", points: 1, chance: 85, image: "pale_lantern.png", description: "A common creature of Frostgrave." },
+  { name: "Rimegnasher", habitat: "Frostgrave", rarity: "Common", points: 1, chance: 85, image: "rimegnasher.png", description: "A common creature of Frostgrave." },
+  { name: "Tombbound", habitat: "Frostgrave", rarity: "Rare", points: 3, chance: 55, image: "tombbound.png", description: "A rare creature of Frostgrave." },
+  { name: "Winter Revenant", habitat: "Frostgrave", rarity: "Epic", points: 5, chance: 32, image: "winterrevenant.png", description: "A epic creature of Frostgrave." },
+  { name: "The King Beneath the Ice", habitat: "Frostgrave", rarity: "Legendary", points: 10, chance: 12, image: "the_king_beneath_the_ice.png", description: "A legendary creature of Frostgrave." },
+  { name: "Capscrabbler", habitat: "Sporewilds", rarity: "Common", points: 1, chance: 85, image: "capscrabbler.png", description: "A common creature of Sporewilds." },
+  { name: "Bloombeetle", habitat: "Sporewilds", rarity: "Common", points: 1, chance: 85, image: "bloombeetle.png", description: "A common creature of Sporewilds." },
+  { name: "Huskbloom", habitat: "Sporewilds", rarity: "Rare", points: 3, chance: 55, image: "huskbloom.png", description: "A rare creature of Sporewilds." },
+  { name: "Mycelial Reaver", habitat: "Sporewilds", rarity: "Epic", points: 5, chance: 32, image: "mycelial_reaver.png", description: "A epic creature of Sporewilds." },
+  { name: "The One Beneath", habitat: "Sporewilds", rarity: "Legendary", points: 10, chance: 12, image: "the_one_beneath.png", description: "A legendary creature of Sporewilds." },
+  { name: "Starskipper", habitat: "Starfall Basin", rarity: "Common", points: 1, chance: 85, image: "starskipper.png", description: "A common creature of Starfall Basin." },
+  { name: "Cratermaw", habitat: "Starfall Basin", rarity: "Common", points: 1, chance: 85, image: "cratermaw.png", description: "A common creature of Starfall Basin." },
+  { name: "Orbital Watcher", habitat: "Starfall Basin", rarity: "Rare", points: 3, chance: 55, image: "orbital_watcher.png", description: "A rare creature of Starfall Basin." },
+  { name: "Gravity Reaver", habitat: "Starfall Basin", rarity: "Epic", points: 5, chance: 32, image: "gravity_reaver.png", description: "A epic creature of Starfall Basin." },
+  { name: "The Fallen Constellation", habitat: "Starfall Basin", rarity: "Legendary", points: 10, chance: 12, image: "the_fallen_constellation.png", description: "A legendary creature of Starfall Basin." },
+];
+
+const SPECIAL_MONSTERS = [
+  { name: "The Mixer", habitat: "Special", rarity: "Mixed", points: 25, chance: 10, image: "the_mixer.png", description: "The signature cosmic mascot of Monster Hunt." }
+];
+
+const ultraRareMonsters = [
+  {
+    key: "worldeater",
+    name: "🌑 The World Eater",
+    rarity: "Ultra Rare",
+    image: "the_world_eater.png",
+    relicKey: "fragmentOfOblivion",
+    relicName: "🌑 Fragment of Oblivion",
+    relicCommand: "fragment of oblivion",
+    relicDescription: "A piece of reality that should not exist. It absorbs light, warmth, and even sound.",
+    catchChance: 5,
+    durationMinutes: 30,
+    personality: "steadfast",
+    abilityName: "Reality Collapse",
+    abilityDescription: "Every 5 minutes, its base catch chance permanently falls by 1%, to a minimum of 1%.",
+    spawnText: "Reality trembles as the skies begin to darken...",
+    description: "An impossibly ancient creature that exists only to consume worlds. Wherever it travels, stars fade, forests wither, and even magic begins to unravel.",
+    secretAchievement: "The End Has Begun",
+    titleReward: "Worldbreaker"
+  },
+  {
+    key: "thousandeyes",
+    name: "👁️ The Thousand Eyes",
+    rarity: "Ultra Rare",
+    image: "the_thousand_eyes.png",
+    relicKey: "livingEye",
+    relicName: "👁️ Living Eye",
+    relicCommand: "living eye",
+    relicDescription: "An enormous eye that never blinks. No matter where it is placed, it always seems to be watching someone.",
+    catchChance: 12,
+    durationMinutes: 30,
+    personality: "watching",
+    abilityName: "All-Seeing Gaze",
+    abilityDescription: "Every 5 minutes, a random participant is marked. Their next Ultra attempt suffers -5% catch chance.",
+    spawnText: "You feel as though something is watching from every direction...",
+    description: "A nightmare formed from countless living eyes drifting around a massive floating core. It sees every hunt, every secret, and every movement made beneath its endless gaze.",
+    secretAchievement: "Nothing Escapes",
+    titleReward: "The All-Seeing"
+  },
+  {
+    key: "chronovore",
+    name: "⏳ Chronovore",
+    rarity: "Ultra Rare",
+    image: "chronovore.png",
+    relicKey: "distortedHourglass",
+    relicName: "⌛ Distorted Hourglass",
+    relicCommand: "distorted hourglass",
+    relicDescription: "The sand inside flows upward one moment and sideways the next. Looking at it too long makes minutes disappear.",
+    catchChance: 10,
+    durationMinutes: 30,
+    personality: "shifting",
+    abilityName: "Time Distortion",
+    abilityDescription: "Every 5 minutes, time shifts and the Ultra Hunt cooldown becomes either 3 or 7 minutes until the next shift.",
+    spawnText: "Time itself begins to twist and fracture...",
+    description: "A colossal beast that feeds upon time itself. Flowers bloom and decay in seconds wherever it walks, while ancient ruins become new before crumbling again.",
+    secretAchievement: "Master of Time",
+    titleReward: "Timewalker"
+  },
+  {
+    key: "astralcolossus",
+    name: "🌠 Astral Colossus",
+    rarity: "Ultra Rare",
+    image: "astral_colossus.png",
+    relicKey: "fallenStarCore",
+    relicName: "⭐ Fallen Star Core",
+    relicCommand: "fallen star core",
+    relicDescription: "A glowing fragment of a dead star that hums with cosmic energy.",
+    catchChance: 8,
+    durationMinutes: 30,
+    personality: "generous",
+    abilityName: "Falling Stars",
+    abilityDescription: "Every 5 minutes, a random participant receives +5% catch chance on their next Ultra attempt.",
+    spawnText: "A brilliant light tears across the sky as meteors begin to fall...",
+    description: "A titan forged from shattered stars and drifting constellations. Meteor showers follow in its wake while fragments of distant galaxies orbit its colossal body.",
+    secretAchievement: "Among the Stars",
+    titleReward: "Starforged"
+  },
+  {
+    key: "harbinger",
+    name: "💀 The Harbinger",
+    rarity: "Ultra Rare",
+    image: "the_harbinger.png",
+    relicKey: "soulEmber",
+    relicName: "🔥 Soul Ember",
+    relicCommand: "soul ember",
+    relicDescription: "A tiny blue flame that never burns out. Whispering voices can sometimes be heard within it.",
+    catchChance: 15,
+    durationMinutes: 30,
+    personality: "flee",
+    abilityName: "Soul Flight",
+    abilityDescription: "After 15 minutes, it has a 20% chance to flee early every 5 minutes.",
+    spawnText: "An unnatural silence falls across the world...",
+    description: "A mysterious figure wrapped in endless black robes, carrying a lantern filled with wandering souls. Entire kingdoms have vanished shortly after crossing its path.",
+    secretAchievement: "Death's Witness",
+    titleReward: "Soulkeeper"
+  }
+];
+
+const RELIC_KEYS = ultraRareMonsters.map(monster => monster.relicKey);
+
+const eventMonsters = [
+  { name: "🎆 Firework Dragon", rarity: "Event", points: 12, chance: 20, image: "firework_dragon.png" },
+  { name: "🇺🇸 Liberty Mimic", rarity: "Event", points: 8, chance: 35, image: "liberty_mimic.png" },
+  { name: "🦅 Star-Spangled Griffon", rarity: "Event", points: 10, chance: 25, image: "star_spangled_griffon.png" }
+];
+
+const questPool = [
+  { id: "hunt3", text: "Hunt 3 times", goal: 3, reward: 5 },
+  { id: "catch2", text: "Catch 2 monsters", goal: 2, reward: 5 },
+  { id: "catchRare", text: "Catch 1 Rare monster", goal: 1, reward: 10 },
+  { id: "catchEpic", text: "Catch 1 Epic monster", goal: 1, reward: 15 },
+  { id: "catchLegendary", text: "Catch 1 Legendary monster", goal: 1, reward: 25 }
+];
+
+const achievements = [
+  { name: "Novice Hunter", check: p => p.caught.length >= 1 },
+  { name: "Monster Collector", check: p => p.caught.length >= 10 },
+  { name: "Monster Master", check: p => p.caught.length >= 25 },
+  { name: "Rare Collector", check: p => p.caught.filter(m => m.rarity === "Rare").length >= 3 },
+  { name: "Epic Tamer", check: p => p.caught.filter(m => m.rarity === "Epic").length >= 2 },
+  { name: "Legend Seeker", check: p => p.caught.filter(m => m.rarity === "Legendary").length >= 1 },
+  { name: "Shiny Hunter", check: p => p.caught.filter(m => m.shiny).length >= 1 },
+  { name: "Event Hunter", check: p => p.caught.filter(m => m.rarity === "Event").length >= 1 },
+  { name: "Habitat Explorer", check: p => new Set((p.caught || []).map(m => m.habitat).filter(Boolean)).size >= 8 },
+  { name: "Beyond the Rift", check: p => p.caught.some(m => cleanMonsterName(m.name) === "Mixer Monster") }
+];
+
+const ULTRA_META_ACHIEVEMENTS = {
+  allCaught: { achievement: "Masters of the Beyond", title: "Ultra Hunter" },
+  allRelics: { achievement: "Relic Master", title: "Relic Keeper" },
+  allSummoned: { achievement: "The Summoner", title: "World Summoner" },
+  veteran: { achievement: "Veteran Monster Hunter", title: "Legendary Hunter" }
+};
+
+const TITLE_RARITY_ICONS = {
+  Common: "⚪",
+  Rare: "🔵",
+  Epic: "🟣",
+  Legendary: "🟠",
+  Mythic: "🌈"
+};
+
+const HIDDEN_TITLE_DEFINITIONS = [
+  // Hunts and captures
+  { name: "First Footfall", rarity: "Common", check: p => (p.huntCount || 0) >= 1 },
+  { name: "Trail Reader", rarity: "Common", check: p => (p.huntCount || 0) >= 10 },
+  { name: "Wildpath Seeker", rarity: "Rare", check: p => (p.huntCount || 0) >= 25 },
+  { name: "Untiring Pursuer", rarity: "Epic", check: p => (p.huntCount || 0) >= 100 },
+  { name: "Footprints Without End", rarity: "Legendary", check: p => (p.huntCount || 0) >= 250 },
+  { name: "Creature Keeper", rarity: "Common", check: p => (p.caught || []).length >= 10 },
+  { name: "Menagerie Maker", rarity: "Rare", check: p => (p.caught || []).length >= 25 },
+  { name: "Warden of the Wild", rarity: "Epic", check: p => (p.caught || []).length >= 50 },
+  { name: "Hundredfold Hunter", rarity: "Legendary", check: p => (p.caught || []).length >= 100 },
+
+  // Points
+  { name: "Rising Mark", rarity: "Common", check: p => (p.points || 0) >= 100 },
+  { name: "Silver Trail", rarity: "Rare", check: p => (p.points || 0) >= 250 },
+  { name: "Guild Proven", rarity: "Epic", check: p => (p.points || 0) >= 500 },
+  { name: "Crown of the Chase", rarity: "Legendary", check: p => (p.points || 0) >= 1000 },
+  { name: "Beyond the Scoreboard", rarity: "Mythic", check: p => (p.points || 0) >= 2500 },
+
+  // Shiny and rarity accomplishments
+  { name: "Spark-Touched", rarity: "Rare", check: p => (p.caught || []).filter(m => m.shiny).length >= 1 },
+  { name: "Prism Pursuer", rarity: "Epic", check: p => (p.caught || []).filter(m => m.shiny).length >= 5 },
+  { name: "Radiance Bound", rarity: "Legendary", check: p => (p.caught || []).filter(m => m.shiny).length >= 10 },
+  { name: "Rare Resonance", rarity: "Rare", check: p => (p.caught || []).filter(m => m.rarity === "Rare").length >= 10 },
+  { name: "Epic Echo", rarity: "Epic", check: p => (p.caught || []).filter(m => m.rarity === "Epic").length >= 10 },
+  { name: "Legend Magnet", rarity: "Legendary", check: p => (p.caught || []).filter(m => m.rarity === "Legendary").length >= 5 },
+
+  // Knowledge
+  { name: "Field Notes", rarity: "Common", check: p => Object.values(p.knowledge || {}).filter(v => v >= 3).length >= 5 },
+  { name: "Beast Linguist", rarity: "Rare", check: p => Object.values(p.knowledge || {}).filter(v => v >= 5).length >= 5 },
+  { name: "Living Archive", rarity: "Epic", check: p => Object.values(p.knowledge || {}).filter(v => v >= 10).length >= 5 },
+  { name: "Keeper of True Names", rarity: "Legendary", check: p => Object.values(p.knowledge || {}).filter(v => v >= 20).length >= 10 },
+
+  // Eggs and companions
+  { name: "Nestfinder", rarity: "Common", check: p => (p.titleProgress?.eggsFound || 0) >= 1 },
+  { name: "Shell Cartographer", rarity: "Rare", check: p => (p.titleProgress?.eggsFound || 0) >= 10 },
+  { name: "Keeper of Warmth", rarity: "Common", check: p => (p.titleProgress?.eggsHatched || 0) >= 1 },
+  { name: "Cradle of Wonders", rarity: "Epic", check: p => (p.titleProgress?.eggsHatched || 0) >= 10 },
+  { name: "Golden Cradle", rarity: "Legendary", check: p => (p.pets || []).some(x => getOwnedPetDefinition(x)?.rarity === "Legendary") },
+  { name: "Chosen Companion", rarity: "Common", check: p => Boolean(getEquippedPet(p)) },
+  { name: "Bondforged", rarity: "Rare", check: p => (p.pets || []).some(x => getPetBondLevel(x) >= 2) },
+  { name: "Kindred Pulse", rarity: "Epic", check: p => (p.pets || []).some(x => getPetBondLevel(x) >= 3) },
+  { name: "Soulbound Pair", rarity: "Legendary", check: p => (p.pets || []).some(x => getPetBondLevel(x) >= 5) },
+  { name: "Companion Ascendant", rarity: "Legendary", check: p => (p.pets || []).some(x => getCompanionLevelInfo(x).level >= MAX_COMPANION_LEVEL) },
+  { name: "Heartheard", rarity: "Epic", check: p => (p.pets || []).reduce((n, x) => n + (x.affectionEvents || 0), 0) >= 25 },
+
+  // Ultra progression
+  { name: "Rift Witness", rarity: "Rare", check: p => (p.ultraParticipationCount || 0) >= 1 },
+  { name: "Beyond the Veil", rarity: "Epic", check: p => (p.ultraParticipationCount || 0) >= 10 },
+  { name: "Rift-Hardened", rarity: "Legendary", check: p => (p.ultraParticipationCount || 0) >= 25 },
+  { name: "Impossible Aim", rarity: "Epic", check: p => (p.titleProgress?.ultraAttempts || 0) >= 25 },
+  { name: "Titan Taker", rarity: "Legendary", check: p => (p.ultraCaughtKeys || []).length >= 1 },
+  { name: "Relic Awakened", rarity: "Rare", check: p => Object.values(p.relics || {}).some(v => v > 0) },
+  { name: "Caller from Beyond", rarity: "Epic", check: p => (p.ultraSummonedKeys || []).length >= 1 },
+
+  // Item, bait, and unusual secret accomplishments
+  { name: "Well Supplied", rarity: "Rare", check: p => (p.titleProgress?.captureItemsUsed || 0) >= 10 },
+  { name: "Empty Satchel", rarity: "Epic", check: p => (p.titleProgress?.captureItemsUsed || 0) >= 50 },
+  { name: "Charmburner", rarity: "Legendary", check: p => (p.titleProgress?.masterCharmUsed || 0) >= 1 },
+  { name: "Scentweaver", rarity: "Rare", check: p => (p.titleProgress?.baitUsed || 0) >= 10 },
+  { name: "Professional Escape Artist", rarity: "Rare", check: p => (p.titleProgress?.failedCaptureStreak || 0) >= 10 },
+  { name: "Almost Certain", rarity: "Epic", check: p => Boolean(p.titleProgress?.failedAtNinety) },
+  { name: "The One Percent", rarity: "Mythic", check: p => Boolean(p.titleProgress?.mixerWithoutCharm) },
+  { name: "Against the Cosmos", rarity: "Mythic", check: p => Boolean(p.titleProgress?.ultraAtFiveOrLess) },
+  { name: CRITICAL_CATCH_TITLE, rarity: "Mythic", check: p => Boolean(p.titleProgress?.criticalCatch) },
+  { name: PERFECT_CATCH_TITLE, rarity: "Mythic", check: p => Boolean(p.titleProgress?.perfectCatch) },
+  { name: "Should Not Exist", rarity: "Legendary", check: p => ["The Misplaced","Stitchmaw","The Empty Knight","The Forgotten","NULL"].every(name => (p.caught||[]).some(m => cleanMonsterName(m.name) === name)) },
+  { name: "You Were Never Here", rarity: "Mythic", check: p => ["The Misplaced","Stitchmaw","The Empty Knight","The Forgotten","NULL"].every(name => (p.caught||[]).some(m => cleanMonsterName(m.name) === name)) && ["mimicling","the_unwritten"].every(key => (p.pets||[]).some(x => x.key === key)) }
+];
+
+
+// ==================== H.7 NEW-SEASON COLLECTION TITLES ====================
+const H7_SEASON_TITLE_DEFINITIONS = [
+  { name:"Moonfen Keeper", rarity:"Rare", requirement:"Discover all 4 Moonfen companions", check:p => ["puddlewyrm","mosscap","fen_gricklet","lunarch_whelp"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Glasswalker", rarity:"Rare", requirement:"Discover all 4 Glasswaste companions", check:p => ["shardhopper","glassback","dune_gnawer","prismwing"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Gloamwarden", rarity:"Rare", requirement:"Discover all 4 Gloamwood companions", check:p => ["tumblebud","wispwing","knotmaw","twilight_cervid"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Storm Rider", rarity:"Rare", requirement:"Discover all 4 Stormreach companions", check:p => ["puffle","zephyr_beak","voltgrin","stormcrown"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Emberbound", rarity:"Rare", requirement:"Discover all 4 Emberdeep companions", check:p => ["cinderpip","glowgill","clinker","pyremane"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Gravefrost Warden", rarity:"Rare", requirement:"Discover all 4 Frostgrave companions", check:p => ["snowpod","shiverquill","coffinrawl","auroralynx"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Sporekeeper", rarity:"Rare", requirement:"Discover all 4 Sporewilds companions", check:p => ["buttoncap","lumenslug","sporemaw","bloomwarden"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+  { name:"Starfall Keeper", rarity:"Rare", requirement:"Discover all 4 Starfall Basin companions", check:p => ["orblet","shardtail","gazeling","astrael"].every(k => (p.discoveredPetKeys||[]).includes(k)) },
+
+  { name:"Companion Collector", rarity:"Common", requirement:"Discover 8 PetDex companions", check:p => (p.discoveredPetKeys||[]).filter(k => H3_STANDARD_NATURAL_ABILITIES[k]).length >= 8 },
+  { name:"Menagerie Keeper", rarity:"Epic", requirement:"Discover 16 PetDex companions", check:p => (p.discoveredPetKeys||[]).filter(k => H3_STANDARD_NATURAL_ABILITIES[k]).length >= 16 },
+  { name:"Warden of Every Habitat", rarity:"Legendary", requirement:"Complete the 32-companion PetDex", check:p => (p.discoveredPetKeys||[]).filter(k => H3_STANDARD_NATURAL_ABILITIES[k] && k !== "mixlet").length >= 32 },
+
+  { name:"Shell Tender", rarity:"Common", requirement:"Hatch 3 eggs this season", check:p => Number(p.titleProgress?.eggsHatched||0) >= 3 },
+  { name:"Master of the Cradle", rarity:"Epic", requirement:"Hatch 10 eggs this season", check:p => Number(p.titleProgress?.eggsHatched||0) >= 10 },
+  { name:"Ability Weaver", rarity:"Rare", requirement:"Successfully inherit an ability", check:p => (p.pets||[]).some(x => (x.inheritedAbilities||[]).length >= 1) },
+  { name:"Many-Talented", rarity:"Epic", requirement:"Build a pet with 3 inherited abilities", check:p => (p.pets||[]).some(x => (x.inheritedAbilities||[]).length >= 3) },
+  { name:"Perfect Bond", rarity:"Legendary", requirement:"Reach Bond 5 with a companion", check:p => (p.pets||[]).some(x => getPetBondLevel(x) >= 5) },
+
+  { name:"Shimmer Chaser", rarity:"Rare", requirement:"Capture a Shiny monster", check:p => (p.caught||[]).some(m => m.shiny) },
+  { name:"Legend Stalker", rarity:"Epic", requirement:"Capture 5 Legendary monsters", check:p => (p.caught||[]).filter(m => m.rarity === "Legendary").length >= 5 },
+  { name:"Token Trader", rarity:"Rare", requirement:"Spend 25 Hunt Tokens", check:p => Number(p.tokensSpent||0) >= 25 },
+  { name:"Big Game Champion", rarity:"Legendary", requirement:"Win a Big Game Hunt", check:p => Number(p.bigGameWins||0) >= 1 }
+];
+
+function h7AllTitleDefinitions() {
+  return [...HIDDEN_TITLE_DEFINITIONS, ...H7_SEASON_TITLE_DEFINITIONS];
+}
+
+function h7SeasonBountyTrophies(data, userId) {
+  const history = Array.isArray(data?.bounty?.history) ? data.bounty.history : [];
+  const earnedKeys = new Set(
+    history
+      .filter(entry => entry?.catcherId === userId && Number(entry.completedAt||0) >= H4_PUBLIC_LAUNCH_AT)
+      .map(entry => entry.targetKey)
+  );
+  return [...earnedKeys].map(key => {
+    const def = BOUNTY_TARGETS.find(x => x.key === key);
+    if (!def) return null;
+    return {
+      key:def.key,
+      name:def.trophy,
+      icon:"🏆",
+      image:def.trophyImage || null,
+      earned:true,
+      source:"Bounty Hunt",
+      description:`Claimed after completing the ${def.name} bounty this season.`
+    };
+  }).filter(Boolean);
+}
+
+function h7SeasonTitlesPayload(player) {
+  const genuineUnlocked = new Set(player.unlockedTitles || []);
+  const seasonNames = new Set(H7_SEASON_TITLE_DEFINITIONS.map(x => x.name));
+  const season = H7_SEASON_TITLE_DEFINITIONS.map(def => ({
+    name:def.name,
+    rarity:def.rarity,
+    requirement:def.requirement,
+    unlocked:genuineUnlocked.has(def.name) || Boolean(def.check(player)),
+    secret:false,
+    legacy:false
+  }));
+
+  const legacy = [...genuineUnlocked]
+    .filter(name => !seasonNames.has(name))
+    .map(name => {
+      const def = getTitleDefinition(name);
+      return {name,rarity:def.rarity||"Epic",requirement:"Lifetime accomplishment",unlocked:true,secret:false,legacy:true};
+    });
+
+  return [...season, ...legacy];
+}
+
+function h7CurrentSeasonTrophyCount(data,userId) {
+  return h7SeasonBountyTrophies(data,userId).length;
+}
+
+const H7_COSMETICS = [
+  {key:"moonfen_mantle",name:"Moonfen Mantle",slot:"Cloak",requirement:"Discover 4 PetDex companions",unlock:{type:"petdex",amount:4}},
+  {key:"glasswaste_scarf",name:"Glasswaste Scarf",slot:"Cloak",requirement:"Discover 8 PetDex companions",unlock:{type:"petdex",amount:8}},
+  {key:"stormcloak",name:"Stormreach Cloak",slot:"Cloak",requirement:"Reach Hunter Level 5",unlock:{type:"level",amount:5}},
+  {key:"embercloak",name:"Emberdeep Cloak",slot:"Cloak",requirement:"Discover 16 PetDex companions",unlock:{type:"petdex",amount:16}},
+  {key:"frostcloak",name:"Frostgrave Cloak",slot:"Cloak",requirement:"Reach Hunter Level 8",unlock:{type:"level",amount:8}},
+  {key:"starfall_mantle",name:"Starfall Mantle",slot:"Cloak",requirement:"Discover 28 PetDex companions",unlock:{type:"petdex",amount:28}},
+
+  {key:"field_band",name:"Hunter's Field Band",slot:"Headgear",requirement:"Starter cosmetic"},
+  {key:"army_helmet",name:"Army Helmet",slot:"Headgear",requirement:"Reach Hunter Level 3",unlock:{type:"level",amount:3}},
+  {key:"ninja_mask",name:"Ninja Mask",slot:"Headgear",requirement:"Reach Hunter Level 6",unlock:{type:"level",amount:6}},
+  {key:"cowboy_hat",name:"Cowboy Hat",slot:"Headgear",requirement:"Discover 8 PetDex companions",unlock:{type:"petdex",amount:8}},
+  {key:"wizard_hat",name:"Wizard Hat",slot:"Headgear",requirement:"Discover 18 PetDex companions",unlock:{type:"petdex",amount:18}},
+  {key:"moonfen_circlet",name:"Moonfen Circlet",slot:"Headgear",requirement:"Discover 4 PetDex companions",unlock:{type:"petdex",amount:4}},
+  {key:"trophy_horns",name:"Trophy Horns",slot:"Headgear",requirement:"Earn 3 current-season bounty trophies",unlock:{type:"trophies",amount:3}},
+  {key:"starfall_crown",name:"Starfall Crown",slot:"Headgear",requirement:"Complete the 32-companion PetDex",unlock:{type:"petdex",amount:32}},
+
+  {key:"field_scout",name:"Field Scout Gear",slot:"Outfit",requirement:"Starter cosmetic"},
+  {key:"overalls",name:"Hunter Overalls",slot:"Outfit",requirement:"Reach Hunter Level 3",unlock:{type:"level",amount:3}},
+  {key:"ninja_robe",name:"Ninja Robe",slot:"Outfit",requirement:"Reach Hunter Level 6",unlock:{type:"level",amount:6}},
+  {key:"pirate_coat",name:"Pirate Coat",slot:"Outfit",requirement:"Discover 10 PetDex companions",unlock:{type:"petdex",amount:10}},
+  {key:"wizard_robe",name:"Wizard Robe",slot:"Outfit",requirement:"Discover 18 PetDex companions",unlock:{type:"petdex",amount:18}},
+  {key:"storm_hunter",name:"Storm Hunter Coat",slot:"Outfit",requirement:"Reach Hunter Level 5",unlock:{type:"level",amount:5}},
+  {key:"glasswaste_hunter",name:"Glasswaste Hunter Gear",slot:"Outfit",requirement:"Discover 12 PetDex companions",unlock:{type:"petdex",amount:12}},
+  {key:"ember_hunter",name:"Ember Hunter Armor",slot:"Outfit",requirement:"Discover 20 PetDex companions",unlock:{type:"petdex",amount:20}},
+
+  {key:"side_swept",name:"Side Swept",slot:"Hair Style",requirement:"Starter cosmetic"},
+  {key:"ponytail",name:"Ponytail",slot:"Hair Style",requirement:"Starter cosmetic"},
+  {key:"messy",name:"Messy",slot:"Hair Style",requirement:"Starter cosmetic"},
+  {key:"pixie",name:"Pixie Cut",slot:"Hair Style",requirement:"Starter cosmetic"},
+  {key:"undercut",name:"Undercut",slot:"Hair Style",requirement:"Reach Hunter Level 3",unlock:{type:"level",amount:3}},
+  {key:"curls",name:"Curly",slot:"Hair Style",requirement:"Reach Hunter Level 4",unlock:{type:"level",amount:4}},
+  {key:"bun",name:"Hunter Bun",slot:"Hair Style",requirement:"Reach Hunter Level 5",unlock:{type:"level",amount:5}},
+  {key:"braid",name:"Long Braid",slot:"Hair Style",requirement:"Reach Hunter Level 7",unlock:{type:"level",amount:7}},
+
+  {key:"spear",name:"Hunter Spear",slot:"Weapon",requirement:"Reach Hunter Level 3",unlock:{type:"level",amount:3}},
+  {key:"pitchfork",name:"Pitchfork",slot:"Weapon",requirement:"Reach Hunter Level 3",unlock:{type:"level",amount:3}},
+  {key:"sword",name:"Hunter Sword",slot:"Weapon",requirement:"Reach Hunter Level 4",unlock:{type:"level",amount:4}},
+  {key:"katana",name:"Katana",slot:"Weapon",requirement:"Reach Hunter Level 6",unlock:{type:"level",amount:6}},
+  {key:"magic_wand",name:"Magic Wand",slot:"Weapon",requirement:"Discover 12 PetDex companions",unlock:{type:"petdex",amount:12}},
+  {key:"rift_staff",name:"Rift Staff",slot:"Weapon",requirement:"Reach Hunter Level 10",unlock:{type:"level",amount:10}}
+];
+
+function h7CosmeticsPayload(player,data,userId) {
+  const level = h3HunterLevel(player);
+  const petdex = (player.discoveredPetKeys||[]).filter(k => H3_STANDARD_NATURAL_ABILITIES[k] && k !== "mixlet").length;
+  const trophies = h7CurrentSeasonTrophyCount(data,userId);
+  return H7_COSMETICS.map(c => {
+    let unlocked = !c.unlock;
+    if (c.unlock?.type === "level") unlocked = level >= c.unlock.amount;
+    if (c.unlock?.type === "petdex") unlocked = petdex >= c.unlock.amount;
+    if (c.unlock?.type === "trophies") unlocked = trophies >= c.unlock.amount;
+    return {...c,unlocked};
+  });
+}
+
+async function activityEquipTitle(user,titleName) {
+  const data=loadData();
+  const player=getPlayer(data,user.id);
+  const requested=String(titleName||"").trim();
+  if (!requested) {
+    player.title=null;
+    saveData(data);
+    return {ok:true,title:null,message:"Title unequipped."};
+  }
+
+  const def=h7AllTitleDefinitions().find(x => x.name.toLowerCase() === requested.toLowerCase());
+  const genuinelyUnlocked=(player.unlockedTitles||[]).some(x => x.toLowerCase() === requested.toLowerCase());
+  const eligible=Boolean(def?.check?.(player));
+  if (!genuinelyUnlocked && !eligible) return {ok:false,error:"You have not unlocked that title yet."};
+
+  const canonical=def?.name || (player.unlockedTitles||[]).find(x => x.toLowerCase() === requested.toLowerCase()) || requested;
+  if (!player.unlockedTitles.includes(canonical)) player.unlockedTitles.push(canonical);
+  player.title=canonical;
+  saveData(data);
+  return {ok:true,title:canonical,message:`Equipped title: ${canonical}`};
+}
+
+
+// ==================== H.8 AI HUNTER CREATOR — SAFE PHASE 1 ====================
+// Phase 1 deliberately does NOT call an image-generation API.
+// It validates progression-gated selections, stores a draft on the player,
+// and builds the exact controlled prompt that Phase 2 will send to the image model.
+
+const H8_HUNTER_CREATOR_OPTIONS = Object.freeze({
+  archetype: [
+    {value:"hunter",label:"Monster Hunter",icon:"🏹",description:"Classic wilderness tracker with leather armor and professional hunting gear."},
+    {value:"farmer",label:"Farmer",icon:"🌾",description:"Cheerful field hand turned monster hunter.",unlock:{type:"level",amount:3}},
+    {value:"teacher",label:"Adventuring Teacher",icon:"📚",description:"Book-smart adventurer with magical classroom gear.",unlock:{type:"petdex",amount:5}},
+    {value:"wizard",label:"Arcane Wizard",icon:"🧙",description:"Rune-covered spellcaster who studies magical creatures.",unlock:{type:"level",amount:3}},
+    {value:"ninja",label:"Shadow Ninja",icon:"🥷",description:"Stealthy precision hunter with dark fantasy equipment.",unlock:{type:"level",amount:6}},
+    {value:"knight",label:"Kingdom Knight",icon:"⚔️",description:"Armored protector with sword-and-shield styling.",unlock:{type:"level",amount:8}},
+    {value:"pirate",label:"Treasure Pirate",icon:"🏴‍☠️",description:"Treasure-seeking hunter with a flamboyant pirate look.",unlock:{type:"petdex",amount:10}},
+    {value:"alchemist",label:"Monster Alchemist",icon:"🧪",description:"Potion-carrying field scientist fascinated by monsters.",unlock:{type:"petdex",amount:12}}
+  ],
+  body: [
+    {value:"male",label:"Male"},
+    {value:"female",label:"Female"}
+  ],
+  hair: [
+    {value:"messy",label:"Messy"},
+    {value:"short",label:"Short"},
+    {value:"side_swept",label:"Side Swept"},
+    {value:"ponytail",label:"Ponytail"},
+    {value:"long",label:"Long"},
+    {value:"pixie",label:"Pixie Cut"},
+    {value:"undercut",label:"Undercut",unlock:{type:"level",amount:3}},
+    {value:"curly",label:"Curly",unlock:{type:"level",amount:4}},
+    {value:"hunter_bun",label:"Hunter Bun",unlock:{type:"level",amount:5}},
+    {value:"braid",label:"Long Braid",unlock:{type:"level",amount:7}},
+    {value:"bald",label:"Bald"}
+  ],
+  hairColor: [
+    {value:"dark_brown",label:"Dark Brown",swatch:"#3f2a22"},
+    {value:"black",label:"Black",swatch:"#16181d"},
+    {value:"warm_brown",label:"Warm Brown",swatch:"#6a402e"},
+    {value:"blonde",label:"Blonde",swatch:"#d9a84e",unlock:{type:"level",amount:3}},
+    {value:"red",label:"Red",swatch:"#9e352e",unlock:{type:"level",amount:4}},
+    {value:"white",label:"White",swatch:"#dce3ed",unlock:{type:"petdex",amount:8}},
+    {value:"blue",label:"Arcane Blue",swatch:"#2368c4",unlock:{type:"petdex",amount:12}},
+    {value:"violet",label:"Starfall Violet",swatch:"#7041a8",unlock:{type:"petdex",amount:20}}
+  ],
+  eyes: [
+    {value:"blue",label:"Blue",swatch:"#2f8ee5"},
+    {value:"green",label:"Green",swatch:"#3aa56a"},
+    {value:"brown",label:"Brown",swatch:"#8c5a32"},
+    {value:"amber",label:"Amber",swatch:"#d18b2e",unlock:{type:"level",amount:3}},
+    {value:"violet",label:"Violet",swatch:"#7857c5",unlock:{type:"petdex",amount:12}}
+  ],
+  outfit: [
+    {value:"hunter_armor",label:"Hunter Armor"},
+    {value:"overalls",label:"Overalls",unlock:{type:"level",amount:3}},
+    {value:"storm_hunter",label:"Storm Hunter Coat",unlock:{type:"level",amount:5}},
+    {value:"ninja_robe",label:"Ninja Robe",unlock:{type:"level",amount:6}},
+    {value:"pirate_coat",label:"Pirate Coat",unlock:{type:"petdex",amount:10}},
+    {value:"glasswaste_gear",label:"Glasswaste Hunter Gear",unlock:{type:"petdex",amount:12}},
+    {value:"wizard_robe",label:"Wizard Robe",unlock:{type:"petdex",amount:18}},
+    {value:"ember_armor",label:"Ember Hunter Armor",unlock:{type:"petdex",amount:20}}
+  ],
+  headgear: [
+    {value:"none",label:"None"},
+    {value:"field_band",label:"Field Headband"},
+    {value:"army_helmet",label:"Army Helmet",unlock:{type:"level",amount:3}},
+    {value:"moonfen_circlet",label:"Moonfen Circlet",unlock:{type:"petdex",amount:4}},
+    {value:"ninja_mask",label:"Ninja Mask",unlock:{type:"level",amount:6}},
+    {value:"cowboy_hat",label:"Cowboy Hat",unlock:{type:"petdex",amount:8}},
+    {value:"wizard_hat",label:"Wizard Hat",unlock:{type:"petdex",amount:18}},
+    {value:"trophy_horns",label:"Trophy Horns",unlock:{type:"trophies",amount:3}},
+    {value:"starfall_crown",label:"Starfall Crown",unlock:{type:"petdex",amount:32}}
+  ],
+  weapon: [
+    {value:"hunter_bow",label:"Hunter Bow"},
+    {value:"pitchfork",label:"Pitchfork",unlock:{type:"level",amount:3}},
+    {value:"spear",label:"Spear",unlock:{type:"level",amount:3}},
+    {value:"sword",label:"Sword",unlock:{type:"level",amount:4}},
+    {value:"katana",label:"Katana",unlock:{type:"level",amount:6}},
+    {value:"magic_wand",label:"Magic Wand",unlock:{type:"petdex",amount:12}},
+    {value:"rift_staff",label:"Rift Staff",unlock:{type:"level",amount:10}}
+  ],
+  personality: [
+    {value:"friendly",label:"Friendly"},
+    {value:"confident",label:"Confident"},
+    {value:"cheerful",label:"Cheerful"},
+    {value:"serious",label:"Serious"},
+    {value:"mischievous",label:"Mischievous"},
+    {value:"curious",label:"Curious"},
+    {value:"determined",label:"Determined"}
+  ],
+  eyewear: [
+    {value:"none",label:"None"},
+    {value:"round_glasses",label:"Round Glasses"},
+    {value:"sunglasses",label:"Sunglasses",unlock:{type:"level",amount:2}},
+    {value:"aviators",label:"Aviator Sunglasses",unlock:{type:"level",amount:4}},
+    {value:"goggles",label:"Adventurer Goggles",unlock:{type:"petdex",amount:6}},
+    {value:"arcane_monocle",label:"Arcane Monocle",unlock:{type:"petdex",amount:14}}
+  ],
+  gloves: [
+    {value:"none",label:"None"},
+    {value:"leather",label:"Leather Gloves"},
+    {value:"fingerless",label:"Fingerless Gloves"},
+    {value:"armored",label:"Armored Gauntlets",unlock:{type:"level",amount:5}},
+    {value:"arcane",label:"Arcane Gloves",unlock:{type:"petdex",amount:14}}
+  ],
+  neckFace: [
+    {value:"none",label:"None"},
+    {value:"scarf",label:"Adventure Scarf"},
+    {value:"bandana",label:"Bandana",unlock:{type:"level",amount:3}},
+    {value:"ninja_wrap",label:"Ninja Face Wrap",unlock:{type:"level",amount:6}},
+    {value:"fur_collar",label:"Fur Collar",unlock:{type:"petdex",amount:12}}
+  ],
+  cloak: [
+    {value:"none",label:"None"},
+    {value:"blue",label:"Blue Hunter Cloak"},
+    {value:"green",label:"Forest Cloak",unlock:{type:"petdex",amount:4}},
+    {value:"red",label:"Red Champion Cloak",unlock:{type:"level",amount:6}},
+    {value:"black",label:"Shadow Cloak",unlock:{type:"level",amount:8}},
+    {value:"starfall",label:"Starfall Mantle",unlock:{type:"petdex",amount:28}}
+  ],
+  backItem: [
+    {value:"none",label:"None"},
+    {value:"quiver",label:"Arrow Quiver"},
+    {value:"backpack",label:"Explorer Backpack",unlock:{type:"level",amount:3}},
+    {value:"produce_basket",label:"Produce Basket",unlock:{type:"level",amount:3}},
+    {value:"spellbook",label:"Spellbook Pack",unlock:{type:"petdex",amount:10}},
+    {value:"potion_rack",label:"Potion Rack",unlock:{type:"petdex",amount:12}}
+  ],
+  beltItem: [
+    {value:"tool_pouch",label:"Tool Pouch"},
+    {value:"hunt_token_pouch",label:"Hunt Token Pouch"},
+    {value:"map_case",label:"Map Case",unlock:{type:"level",amount:3}},
+    {value:"potion_belt",label:"Potion Belt",unlock:{type:"petdex",amount:8}},
+    {value:"trophy_belt",label:"Trophy Belt",unlock:{type:"trophies",amount:2}}
+  ],
+  offhand: [
+    {value:"none",label:"None"},
+    {value:"map",label:"Treasure Map"},
+    {value:"lantern",label:"Hunter Lantern",unlock:{type:"level",amount:3}},
+    {value:"shield",label:"Knight Shield",unlock:{type:"level",amount:8}},
+    {value:"potion",label:"Glowing Potion",unlock:{type:"petdex",amount:12}},
+    {value:"spellbook",label:"Open Spellbook",unlock:{type:"petdex",amount:18}}
+  ]
+});
+
+const H82_EXTRA_DETAILS = Object.freeze([
+  {value:"freckles",label:"Freckles",icon:"🙂"},
+  {value:"cheek_bandage",label:"Bandage on Cheek",icon:"🩹"},
+  {value:"wheat",label:"Wheat in Mouth",icon:"🌾",unlock:{type:"level",amount:3}},
+  {value:"scarf_tail",label:"Long Scarf Tail",icon:"🧣",unlock:{type:"level",amount:4}},
+  {value:"headphones",label:"Magical Headphones",icon:"🎧",unlock:{type:"petdex",amount:8}},
+  {value:"plants_boots",label:"Plants on Boots",icon:"🌿",unlock:{type:"petdex",amount:10}},
+  {value:"monster_fang",label:"Monster Fang Charm",icon:"🦷",unlock:{type:"trophies",amount:1}},
+  {value:"glowing_runes",label:"Glowing Runes",icon:"✨",unlock:{type:"petdex",amount:16}}
+]);
+
+const H8_ARCHETYPE_STYLE = Object.freeze({
+  hunter:"rugged brown-and-forest-green professional monster-hunting gear, practical belts and tracking equipment",
+  farmer:"charming blue overalls, rolled work sleeves, rugged boots, practical field gear",
+  teacher:"smart fantasy educator clothing, fitted vest, rolled sleeves, book satchel and field notes",
+  wizard:"elaborate midnight-blue and violet arcane clothing with tasteful rune and star details",
+  ninja:"layered black and charcoal stealth gear with subtle violet accents",
+  knight:"polished silver fantasy plate armor with blue cloth and restrained gold trim",
+  pirate:"deep-red and gold fantasy pirate clothing with belts, map pouches and adventurous detailing",
+  alchemist:"cream field-alchemist coat with potion bandolier, sample satchel and brass utility details"
+});
+
+function h8CreatorProgress(player,data,userId) {
+  return {
+    level:h3HunterLevel(player),
+    petdex:(player.discoveredPetKeys||[]).filter(k => H3_STANDARD_NATURAL_ABILITIES[k] && k !== "mixlet").length,
+    trophies:h7CurrentSeasonTrophyCount(data,userId)
+  };
+}
+
+function h8CreatorOptionUnlocked(option,progress) {
+  if (!option?.unlock) return true;
+  const value=Number(progress?.[option.unlock.type]||0);
+  return value >= Number(option.unlock.amount||0);
+}
+
+function h8CreatorUnlockText(option) {
+  if (!option?.unlock) return null;
+  if (option.unlock.type === "level") return `Reach Hunter Level ${option.unlock.amount}`;
+  if (option.unlock.type === "petdex") return `Discover ${option.unlock.amount} PetDex companions`;
+  if (option.unlock.type === "trophies") return `Earn ${option.unlock.amount} current-season bounty trophies`;
+  return "Complete the required progression milestone";
+}
+
+function h8CreatorOptionsPayload(data,userId) {
+  const player=getPlayer(data,userId);
+  const progress=h8CreatorProgress(player,data,userId);
+  const categories={};
+  for (const [category,options] of Object.entries(H8_HUNTER_CREATOR_OPTIONS)) {
+    categories[category]=options.map(option => ({
+      ...option,
+      unlocked:h8CreatorOptionUnlocked(option,progress),
+      requirement:h8CreatorUnlockText(option)
+    }));
+  }
+  return {
+    categories,
+    extras:H82_EXTRA_DETAILS.map(option=>({
+      ...option,
+      unlocked:h8CreatorOptionUnlocked(option,progress),
+      requirement:h8CreatorUnlockText(option)
+    })),
+    progress,
+    draft:player.aiHunterCreatorDraft || {
+      archetype:"hunter",body:"male",hair:"messy",hairColor:"dark_brown",
+      eyes:"blue",outfit:"hunter_armor",headgear:"none",weapon:"hunter_bow",personality:"friendly",
+      eyewear:"none",gloves:"leather",neckFace:"none",cloak:"blue",backItem:"quiver",
+      beltItem:"tool_pouch",offhand:"none",extras:[]
+    },
+    phase:"live-generation",
+    generationEnabled:Boolean(process.env.OPENAI_API_KEY),
+    imageModel:process.env.HUNTER_IMAGE_MODEL || "gpt-image-2",
+    generationsRemaining:h81GenerationsRemaining(player),
+    activeHunter:player.generatedHunter || null,
+    candidate:player.hunterGenerationCandidate || null
+  };
+}
+
+function h8CreatorValidateSelection(data,userId,selection) {
+  const player=getPlayer(data,userId);
+  const progress=h8CreatorProgress(player,data,userId);
+  const cleaned={};
+  for (const [category,options] of Object.entries(H8_HUNTER_CREATOR_OPTIONS)) {
+    const requested=String(selection?.[category]||"");
+    const option=options.find(x => x.value === requested);
+    if (!option) return {ok:false,error:`Unknown ${category} option.`};
+    if (!h8CreatorOptionUnlocked(option,progress)) {
+      return {ok:false,error:`${option.label} is locked. ${h8CreatorUnlockText(option)}.`};
+    }
+    cleaned[category]=option.value;
+  }
+
+  const requestedExtras=Array.isArray(selection?.extras)?selection.extras.slice(0,4):[];
+  cleaned.extras=[];
+  for(const value of requestedExtras){
+    const option=H82_EXTRA_DETAILS.find(x=>x.value===String(value));
+    if(!option) continue;
+    if(!h8CreatorOptionUnlocked(option,progress)) {
+      return {ok:false,error:`${option.label} is locked. ${h8CreatorUnlockText(option)}.`};
+    }
+    if(!cleaned.extras.includes(option.value)) cleaned.extras.push(option.value);
+  }
+
+  return {ok:true,cleaned,progress};
+}
+
+function h8CreatorLabel(category,value) {
+  return H8_HUNTER_CREATOR_OPTIONS[category]?.find(x => x.value === value)?.label || value;
+}
+
+function h8BuildHunterPrompt(selection) {
+  const labels=Object.fromEntries(Object.keys(H8_HUNTER_CREATOR_OPTIONS).map(k => [k,h8CreatorLabel(k,selection[k])]));
+  const archetypeStyle=H8_ARCHETYPE_STYLE[selection.archetype] || H8_ARCHETYPE_STYLE.hunter;
+  return [
+    "Create ONE complete player character for the fantasy RPG game Monster Hunt.",
+    "ART DIRECTION: premium highly detailed polished chibi fantasy RPG/anime-cartoon game artwork matching a high-end collectible mobile RPG hero portrait; large expressive eyes; slightly oversized head; compact heroic body; dynamic but readable silhouette; clean dark ink-like outlines; rich detailed cel shading; soft highlights; ornate believable fantasy materials; layered belts, buckles, fabric folds, leather, metal and accessories; polished professional character-concept quality.",
+    `CHARACTER: ${labels.body} ${labels.archetype}.`,
+    `PERSONALITY/EXPRESSION: ${labels.personality}; friendly heroic game-character energy.`,
+    `HAIR: ${labels.hair}, ${labels.hairColor}.`,
+    `EYES: ${labels.eyes}.`,
+    `ARCHETYPE VISUAL LANGUAGE: ${archetypeStyle}.`,
+    `OUTFIT: ${labels.outfit}.`,
+    `HEADGEAR: ${labels.headgear}.`,
+    `EYEWEAR: ${labels.eyewear}.`,
+    `GLOVES: ${labels.gloves}.`,
+    `NECK/FACE ACCESSORY: ${labels.neckFace}.`,
+    `CLOAK/CAPE: ${labels.cloak}.`,
+    `BACK ITEM: ${labels.backItem}.`,
+    `BELT/POUCH DETAIL: ${labels.beltItem}.`,
+    `WEAPON: ${labels.weapon}.`,
+    `OFF-HAND ITEM: ${labels.offhand}.`,
+    `OPTIONAL PERSONAL DETAILS: ${(selection.extras||[]).map(value=>H82_EXTRA_DETAILS.find(x=>x.value===value)?.label).filter(Boolean).join(", ") || "None"}.`,
+    "Keep every selected accessory visually readable without overcrowding the face or silhouette.",
+    "COMPOSITION: full body visible from head to boots; front-facing; centered; natural confident standing pose; entire weapon and accessories visible.",
+    "BACKGROUND: fully transparent PNG. No environment, scenery, floor, cast shadow, text, UI, border, logo, additional characters, monsters, or pets.",
+    "OUTPUT: square character portrait suitable for placement over Monster Hunt environment artwork."
+  ].join("\n");
+}
+
+function h8CreatorSaveDraft(data,userId,selection) {
+  const check=h8CreatorValidateSelection(data,userId,selection);
+  if (!check.ok) return check;
+  const player=getPlayer(data,userId);
+  player.aiHunterCreatorDraft={...check.cleaned};
+  saveData(data);
+  return {ok:true,draft:{...player.aiHunterCreatorDraft}};
+}
+
+function h8CreatorPreview(data,userId,selection) {
+  const check=h8CreatorValidateSelection(data,userId,selection);
+  if (!check.ok) return check;
+  const player=getPlayer(data,userId);
+  player.aiHunterCreatorDraft={...check.cleaned};
+  saveData(data);
+  return {
+    ok:true,
+    generationEnabled:false,
+    selection:{...check.cleaned},
+    labels:Object.fromEntries(Object.keys(H8_HUNTER_CREATOR_OPTIONS).map(k => [k,h8CreatorLabel(k,check.cleaned[k])])),
+    prompt:h8BuildHunterPrompt(check.cleaned),
+    message:"Hunter design validated and ready for image generation."
+  };
+}
+
+
+// ==================== H.8.1 LIVE AI HUNTER GENERATION ====================
+const H81_GENERATION_LIMIT = Math.max(1, Number(process.env.HUNTER_GENERATIONS_PER_DAY || 3));
+const H81_GENERATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+const H81_GENERATION_MIN_INTERVAL_MS = 30 * 1000;
+const h81GenerationLocks = new Set();
+
+function h81GenerationHistory(player) {
+  const cutoff=Date.now()-H81_GENERATION_WINDOW_MS;
+  player.hunterGenerationHistory=Array.isArray(player.hunterGenerationHistory)
+    ? player.hunterGenerationHistory.filter(ts => Number(ts||0)>=cutoff)
+    : [];
+  return player.hunterGenerationHistory;
+}
+function h81GenerationsRemaining(player) {
+  return Math.max(0,H81_GENERATION_LIMIT-h81GenerationHistory(player).length);
+}
+function h81PublicHunterRecord(record) {
+  if (!record) return null;
+  return {
+    imageUrl:record.imageUrl||null,
+    createdAt:Number(record.createdAt||0),
+    selection:record.selection||null,
+    labels:record.labels||null
+  };
+}
+function h81SafeGeneratedFilename(userId) {
+  const safe=String(userId||"hunter").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,40)||"hunter";
+  return `${safe}-${Date.now()}-${Math.random().toString(36).slice(2,9)}.png`;
+}
+function h81DeleteGeneratedFile(record) {
+  try {
+    if (!record?.filename) return;
+    const safe=path.basename(record.filename);
+    const target=path.join(GENERATED_HUNTER_DIRECTORY,safe);
+    if (fs.existsSync(target)) fs.unlinkSync(target);
+  } catch(error) {
+    console.warn("Generated hunter cleanup failed:",error.message);
+  }
+}
+async function h81GenerateOpenAIImage(prompt) {
+  const apiKey=String(process.env.OPENAI_API_KEY||"").trim();
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured on Railway.");
+
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),150000);
+  try {
+    const response=await fetch("https://api.openai.com/v1/images/generations",{
+      method:"POST",
+      headers:{
+        "Authorization":`Bearer ${apiKey}`,
+        "Content-Type":"application/json"
+      },
+      body:JSON.stringify({
+        model:process.env.HUNTER_IMAGE_MODEL || "gpt-image-2",
+        prompt,
+        size:"1024x1024",
+        quality:process.env.HUNTER_IMAGE_QUALITY || "medium",
+        background:"transparent",
+        output_format:"png",
+        n:1
+      }),
+      signal:controller.signal
+    });
+
+    const payload=await response.json().catch(()=>null);
+    if (!response.ok) {
+      const detail=payload?.error?.message || `Image API returned HTTP ${response.status}.`;
+      throw new Error(detail);
+    }
+    const b64=payload?.data?.[0]?.b64_json;
+    if (!b64) throw new Error("The Image API did not return PNG image data.");
+    return Buffer.from(b64,"base64");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function h81GenerateHunter(user,selection) {
+  const userId=String(user.id);
+  if (h81GenerationLocks.has(userId)) return {ok:false,code:"busy",error:"Your Hunter is already being created. Please wait for it to finish."};
+
+  const data=loadData();
+  const player=getPlayer(data,userId);
+  const check=h8CreatorValidateSelection(data,userId,selection);
+  if (!check.ok) return check;
+  if (!process.env.OPENAI_API_KEY) return {ok:false,code:"not_configured",error:"AI Hunter generation is not configured yet. Add OPENAI_API_KEY to Railway."};
+
+  const history=h81GenerationHistory(player);
+  const remaining=h81GenerationsRemaining(player);
+  if (remaining<=0) return {ok:false,code:"limit",error:`You have used today's ${H81_GENERATION_LIMIT} Hunter generations. Try again after your oldest generation expires.`};
+  const last=history.length?Math.max(...history):0;
+  const wait=H81_GENERATION_MIN_INTERVAL_MS-(Date.now()-last);
+  if (wait>0) return {ok:false,code:"cooldown",error:`Please wait ${Math.ceil(wait/1000)} seconds before generating again.`,timeLeft:wait};
+
+  h81GenerationLocks.add(userId);
+  try {
+    const prompt=h8BuildHunterPrompt(check.cleaned);
+    const imageBuffer=await h81GenerateOpenAIImage(prompt);
+    const filename=h81SafeGeneratedFilename(userId);
+    fs.writeFileSync(path.join(GENERATED_HUNTER_DIRECTORY,filename),imageBuffer);
+
+    // Remove an abandoned prior candidate, but never delete the equipped art.
+    if (player.hunterGenerationCandidate?.filename &&
+        player.hunterGenerationCandidate.filename !== player.generatedHunter?.filename) {
+      h81DeleteGeneratedFile(player.hunterGenerationCandidate);
+    }
+
+    const labels=Object.fromEntries(
+      Object.keys(H8_HUNTER_CREATOR_OPTIONS).map(k => [k,h8CreatorLabel(k,check.cleaned[k])])
+    );
+    const record={
+      filename,
+      imageUrl:`/generated-hunters/${encodeURIComponent(filename)}`,
+      createdAt:Date.now(),
+      selection:{...check.cleaned},
+      labels
+    };
+    player.aiHunterCreatorDraft={...check.cleaned};
+    player.hunterGenerationCandidate=record;
+    h81GenerationHistory(player).push(record.createdAt);
+    saveData(data);
+    return {
+      ok:true,
+      candidate:h81PublicHunterRecord(record),
+      generationsRemaining:h81GenerationsRemaining(player),
+      message:"Your new Hunter has been created!"
+    };
+  } catch(error) {
+    console.error("AI Hunter generation failed:",error);
+    return {ok:false,code:"generation_failed",error:error.name==="AbortError"?"Hunter generation timed out. Please try again.":error.message};
+  } finally {
+    h81GenerationLocks.delete(userId);
+  }
+}
+
+function h81ApproveHunter(userId) {
+  const data=loadData();
+  const player=getPlayer(data,userId);
+  const candidate=player.hunterGenerationCandidate;
+  if (!candidate?.filename || !fs.existsSync(path.join(GENERATED_HUNTER_DIRECTORY,path.basename(candidate.filename)))) {
+    return {ok:false,error:"There is no generated Hunter waiting to be equipped."};
+  }
+  const previous=player.generatedHunter;
+  player.generatedHunter={...candidate,equippedAt:Date.now()};
+  player.hunterGenerationCandidate=null;
+  saveData(data);
+  if (previous?.filename && previous.filename !== player.generatedHunter.filename) h81DeleteGeneratedFile(previous);
+  return {
+    ok:true,
+    hunter:h81PublicHunterRecord(player.generatedHunter),
+    message:"Your generated Hunter is now equipped!"
+  };
+}
+
+function h81DiscardCandidate(userId) {
+  const data=loadData();
+  const player=getPlayer(data,userId);
+  const candidate=player.hunterGenerationCandidate;
+  if (candidate?.filename && candidate.filename !== player.generatedHunter?.filename) h81DeleteGeneratedFile(candidate);
+  player.hunterGenerationCandidate=null;
+  saveData(data);
+  return {ok:true};
+}
+
+function getTitleDefinition(titleName) {
+  const builtIn = h7AllTitleDefinitions().find(title => title.name === titleName);
+  if (builtIn) return builtIn;
+
+  const specialRarity = [
+    "The Chosen Mixer", "Master Beast Tamer", "You Were Never Here"
+  ].includes(titleName) ? "Mythic" :
+  ["Worldbreaker", "The All-Seeing", "Timewalker", "Starforged", "Soulkeeper", "Ultra Hunter", "Relic Keeper", "World Summoner", "Legendary Hunter", "Shatterborn", "World Mender", "Should Not Exist", "Warden of Every Habitat", "The Thirty-Twofold Bond", "Keeper of the Wild Covenant"].includes(titleName)
+    ? "Legendary"
+    : "Epic";
+
+  return { name: titleName, rarity: specialRarity };
+}
+
+function formatTitle(titleName) {
+  const definition = getTitleDefinition(titleName);
+  return `${TITLE_RARITY_ICONS[definition.rarity] || "⚪"} ${titleName}`;
+}
+
+function checkTitleUnlocks(player) {
+  const newlyUnlocked = [];
+  if (!Array.isArray(player.unlockedTitles)) player.unlockedTitles = [];
+
+  for (const definition of h7AllTitleDefinitions()) {
+    if (!player.unlockedTitles.includes(definition.name) && definition.check(player)) {
+      player.unlockedTitles.push(definition.name);
+      newlyUnlocked.push(definition);
+    }
+  }
+
+  return newlyUnlocked;
+}
+
+async function announceTitleUnlocks(message, unlocks) {
+  if (!unlocks || unlocks.length === 0) return;
+
+  for (const unlock of unlocks) {
+    await message.channel.send(
+      `🏆 **SECRET TITLE UNLOCKED!**\n\n` +
+      `${TITLE_RARITY_ICONS[unlock.rarity] || "⚪"} **${unlock.name}**\n\n` +
+      `Use \`!title ${unlock.name}\` to equip it.`
+    );
+  }
+}
+
+function loadData() {
+  const row = db.prepare("SELECT payload FROM game_state WHERE id = 1").get();
+  const data = row ? JSON.parse(row.payload) : structuredClone(EMPTY_GAME_STATE);
+
+  if (!data.players) data.players = {};
+  if (!data.pendingTrades) data.pendingTrades = {};
+  if (data.ultraRareState === undefined) data.ultraRareState = null;
+  if (!data.worldProgress) data.worldProgress = {};
+  for (const relicKey of RELIC_KEYS) {
+    if (data.worldProgress[relicKey] === undefined) {
+      data.worldProgress[relicKey] = false;
+    }
+  }
+  if (data.worldShatterUnlocked === undefined) data.worldShatterUnlocked = false;
+  if (!Array.isArray(data.worldCommunityMilestonesAwarded)) data.worldCommunityMilestonesAwarded = [];
+  if (!data.communityBlessings || typeof data.communityBlessings !== "object") data.communityBlessings = {};
+  if (data.ultraWeeklySchedule === undefined) data.ultraWeeklySchedule = null;
+  if (data.ultraAdminPauseUntil === undefined) data.ultraAdminPauseUntil = 0;
+  if (!data.weeklyCompetition || typeof data.weeklyCompetition !== "object") {
+    data.weeklyCompetition = {
+      startsAt: WEEKLY_COMPETITION_START_AT,
+      active: false,
+      weekStartedAt: 0,
+      lastResultsAt: 0
+    };
+  }
+
+  if (data.overhaulAnnouncementSent === undefined) data.overhaulAnnouncementSent = false;
+  if (!data.distortionSchedule || typeof data.distortionSchedule !== "object") data.distortionSchedule = { weekKey: null, events: [] };
+  if (data.activeDistortion === undefined) data.activeDistortion = null;
+  if (!data.distortionHistory || typeof data.distortionHistory !== "object") data.distortionHistory = { firstOpened: {}, firstCaught: {}, firstEgg: {} };
+  if (!data.worldStory || typeof data.worldStory !== "object") {
+    data.worldStory = {
+      phase: "dormant", anomalyIndex: 0, nextAnomalyAt: 0, finalWarningStartedAt: 0,
+      shatterScheduledAt: 0, shatterScheduleManual: false, beats: [], event: null, postShatter: false, completedAt: 0,
+      outcome: null, unmadeReplacementChance: 0, architectRematchAt: 0, rematch24hSent: false, rematch2hSent: false,
+      worldMenderEligible: [], architectDefeats: 0, architectFailures: 0, worldShatterEightPmMigrationDone: false
+    };
+  }
+  if (!Array.isArray(data.worldStory.beats)) data.worldStory.beats = [];
+  if (data.worldStory.postShatter === undefined) data.worldStory.postShatter = false;
+  if (data.worldStory.outcome === undefined) data.worldStory.outcome = null;
+  if (data.worldStory.unmadeReplacementChance === undefined) data.worldStory.unmadeReplacementChance = data.worldStory.postShatter ? UNMADE_REPLACEMENT_CHANCE : 0;
+  if (data.worldStory.architectRematchAt === undefined) data.worldStory.architectRematchAt = 0;
+  if (data.worldStory.rematch24hSent === undefined) data.worldStory.rematch24hSent = false;
+  if (data.worldStory.rematch2hSent === undefined) data.worldStory.rematch2hSent = false;
+  if (!Array.isArray(data.worldStory.worldMenderEligible)) data.worldStory.worldMenderEligible = [];
+  if (data.worldStory.architectDefeats === undefined) data.worldStory.architectDefeats = 0;
+  if (data.worldStory.architectFailures === undefined) data.worldStory.architectFailures = 0;
+  if (data.worldStory.worldShatterEightPmMigrationDone === undefined) data.worldStory.worldShatterEightPmMigrationDone = false;
+  if (!Array.isArray(data.seasonMoments)) data.seasonMoments = [];
+  if (!data.seasonMomentFlags || typeof data.seasonMomentFlags !== "object") {
+    data.seasonMomentFlags = {};
+  }
+  if (!Number.isInteger(data.nextSeasonMomentId) || data.nextSeasonMomentId < 1) {
+    data.nextSeasonMomentId = data.seasonMoments.reduce(
+      (max, moment) => Math.max(max, Number(moment.id) || 0),
+      0
+    ) + 1;
+  }
+
+  if (!data.seasonLaunch || typeof data.seasonLaunch !== "object") {
+    data.seasonLaunch = {
+      channelsOpened: false,
+      announcementSent: false
+    };
+  }
+
+  if (data.seasonLaunch.channelsOpened === undefined) {
+    data.seasonLaunch.channelsOpened = false;
+  }
+
+  if (data.seasonLaunch.announcementSent === undefined) {
+    data.seasonLaunch.announcementSent = false;
+  }
+
+  ensureBigGameMerchantData(data);
+
+  return data;
+}
+
+function saveData(data) {
+  writeSqliteState(data);
+}
+
+function addSeasonMoment(data, {
+  type = "community",
+  playerId = null,
+  text,
+  icon = "📜",
+  uniqueKey = null,
+  metadata = {}
+}) {
+  if (!Array.isArray(data.seasonMoments)) data.seasonMoments = [];
+  if (!data.seasonMomentFlags || typeof data.seasonMomentFlags !== "object") {
+    data.seasonMomentFlags = {};
+  }
+  if (!Number.isInteger(data.nextSeasonMomentId) || data.nextSeasonMomentId < 1) {
+    data.nextSeasonMomentId = 1;
+  }
+
+  if (uniqueKey && data.seasonMomentFlags[uniqueKey]) return null;
+
+  const moment = {
+    id: data.nextSeasonMomentId++,
+    timestamp: Date.now(),
+    type,
+    playerId,
+    text: String(text || "").trim(),
+    icon,
+    metadata
+  };
+
+  data.seasonMoments.push(moment);
+  if (uniqueKey) data.seasonMomentFlags[uniqueKey] = moment.id;
+
+  return moment;
+}
+
+function seasonMomentDate(timestamp) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Denver",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(timestamp));
+}
+
+function seasonMomentPlayerName(data, userId) {
+  if (!userId) return "";
+  const member = client.guilds.cache
+    .map(guild => guild.members.cache.get(userId))
+    .find(Boolean);
+
+  return member?.displayName || member?.user?.username || `Hunter ${userId}`;
+}
+
+function formatSeasonMoment(data, moment, includeNumber = true) {
+  const number = includeNumber ? `**#${moment.id}** ` : "";
+  return (
+    `${number}${moment.icon || "📜"} **${seasonMomentDate(moment.timestamp)}** — ` +
+    `${moment.text}`
+  );
+}
+
+function recordPointMilestoneMoments(data, playerId, previousPoints, currentPoints) {
+  const milestones = [
+    { points: 100, icon: "⭐", label: "reached 100 Hunter Points" },
+    { points: 250, icon: "🌟", label: "reached 250 Hunter Points" },
+    { points: 500, icon: "💫", label: "reached 500 Hunter Points" },
+    { points: 1000, icon: "👑", label: "reached 1,000 Hunter Points" }
+  ];
+
+  const name = seasonMomentPlayerName(data, playerId);
+
+  for (const milestone of milestones) {
+    if (previousPoints < milestone.points && currentPoints >= milestone.points) {
+      addSeasonMoment(data, {
+        type: "point_milestone",
+        playerId,
+        icon: milestone.icon,
+        text: `${name} ${milestone.label}.`,
+        uniqueKey: `points:${playerId}:${milestone.points}`
+      });
+    }
+  }
+}
+
+function getPlayer(data, userId) {
+  if (!data.players[userId]) {
+    data.players[userId] = {
+      points: 0,
+      caught: [],
+      lifetimeCaught: [],
+      currentMonster: null,
+      lastHunt: 0,
+      title: null,
+      unlockedTitles: [],
+      secretAchievements: [],
+      ultraCaughtKeys: [],
+      ultraSummonedKeys: [],
+      ultraParticipationCount: 0,
+      dailyQuests: [],
+      dailyClaimed: false,
+      dailyRerollsUsed: 0,
+      lastDaily: null,
+      huntCount: 0,
+      dailyReward: 0,
+      bait: {
+        rare: 0,
+        epic: 0,
+        legendary: 0
+      },
+      activeBait: null,
+      knowledge: {},
+      captureItems: {
+        berry: 0,
+        honey: 0,
+        net: 0,
+        masterCharm: 0
+      },
+      eggs: [],
+      incubatingEggs: [],
+      lastIncubatorSlots: 1,
+      pets: [],
+      discoveredPetKeys: [],
+      grandPetCollectionRewardClaimed: false,
+      equippedPetId: null,
+      nextPetId: 1,
+      lastFetch: 0,
+      fetchState: null,
+      pendingHatchChoice: null,
+      cooldownReminders: { hunt: false, fetch: false },
+      reminderState: { huntDueAt: 0, huntSent: false, fetchDueAt: 0, fetchSent: false, channelId: null },
+      weeklyStats: { points: 0, catches: 0, shinies: 0, legendaries: 0, startRank: null },
+      titleProgress: {
+        eggsFound: 0,
+        eggsHatched: 0,
+        ultraAttempts: 0,
+        captureItemsUsed: 0,
+        masterCharmUsed: 0,
+        baitUsed: 0,
+        failedCaptureStreak: 0,
+        failedAtNinety: false,
+        mixerWithoutCharm: false,
+        ultraAtFiveOrLess: false,
+        criticalCatch: false,
+        perfectCatch: false
+      },
+      relics: {
+        abyssalInk: 0,
+        ancientDragonScale: 0,
+        phoenixFeather: 0,
+        frozenCore: 0,
+        stormCrystal: 0,
+        shadowEssence: 0,
+        heartwoodSeed: 0,
+        starFeather: 0
+      },
+      huntTokens: 0,
+      lifetimeTokens: 0,
+      tokensSpent: 0,
+      bigGameWins: 0,
+      bigGamePlacements: [],
+      merchantCollection: {},
+      merchantPurchases: [],
+      merchantEffects: {},
+      merchantGambles: 0
+    };
+  }
+
+  
+
+  const player = data.players[userId];
+
+  // Lifetime collection is display-only and never affects seasonal scoring.
+  if (!Array.isArray(player.lifetimeCaught)) player.lifetimeCaught = [];
+
+  if (player.lastHunt === undefined) player.lastHunt = 0;
+  if (player.title === undefined) player.title = null;
+  if (!Array.isArray(player.unlockedTitles)) player.unlockedTitles = [];
+  if (!Array.isArray(player.secretAchievements)) player.secretAchievements = [];
+  if (!Array.isArray(player.ultraCaughtKeys)) player.ultraCaughtKeys = [];
+  if (!Array.isArray(player.ultraSummonedKeys)) player.ultraSummonedKeys = [];
+  if (player.ultraParticipationCount === undefined) player.ultraParticipationCount = 0;
+  if (player.dailyQuests === undefined) player.dailyQuests = [];
+  if (player.dailyClaimed === undefined) player.dailyClaimed = false;
+  if (!Number.isInteger(player.dailyRerollsUsed) || player.dailyRerollsUsed < 0) {
+    player.dailyRerollsUsed = 0;
+  }
+  if (player.lastDaily === undefined) player.lastDaily = null;
+  if (player.huntCount === undefined) player.huntCount = 0;
+  if (player.dailyReward === undefined) player.dailyReward = 0;
+  if (player.bait === undefined) {
+    player.bait = {
+      rare: 0,
+      epic: 0,
+      legendary: 0
+    };
+  }
+  if (player.activeBait === undefined) player.activeBait = null;
+  if (player.knowledge === undefined) player.knowledge = {};
+  if (player.captureItems === undefined) {
+    player.captureItems = {
+      berry: 0,
+      honey: 0,
+      net: 0,
+      masterCharm: 0
+    };
+  }
+  if (player.captureItems.berry === undefined) player.captureItems.berry = 0;
+  if (player.captureItems.honey === undefined) player.captureItems.honey = 0;
+  if (player.captureItems.net === undefined) player.captureItems.net = 0;
+  if (player.captureItems.masterCharm === undefined) player.captureItems.masterCharm = 0;
+  if (!Array.isArray(player.eggs)) player.eggs = [];
+
+  // Migrate the previous single-incubator format without losing an active egg.
+  if (!Array.isArray(player.incubatingEggs)) {
+    player.incubatingEggs = player.incubatingEgg
+      ? [{ ...player.incubatingEgg, notified: Boolean(player.incubatingEgg.notified) }]
+      : [];
+  }
+  delete player.incubatingEgg;
+
+  for (const incubation of player.incubatingEggs) {
+    if (incubation.notified === undefined) incubation.notified = false;
+  }
+
+  if (!Number.isInteger(player.lastIncubatorSlots) || player.lastIncubatorSlots < 1) {
+    player.lastIncubatorSlots = getIncubatorSlots(player);
+  }
+
+  if (!Array.isArray(player.pets)) player.pets = [];
+  if (!player.titleProgress || typeof player.titleProgress !== "object") player.titleProgress = {};
+  const titleProgressDefaults = {
+    eggsFound: 0, eggsHatched: 0, ultraAttempts: 0,
+    captureItemsUsed: 0, masterCharmUsed: 0, baitUsed: 0,
+    failedCaptureStreak: 0, failedAtNinety: false,
+    mixerWithoutCharm: false, ultraAtFiveOrLess: false
+  };
+  for (const [key, value] of Object.entries(titleProgressDefaults)) {
+    if (player.titleProgress[key] === undefined) player.titleProgress[key] = value;
+  }
+  if (player.lastFetch === undefined) player.lastFetch = 0;
+  if (player.fetchState === undefined) player.fetchState = null;
+  if (player.pendingHatchChoice === undefined) player.pendingHatchChoice = null;
+  if (player.pendingHatchChoice && Number(player.pendingHatchChoice.expiresAt || 0) <= Date.now()) {
+    player.pendingHatchChoice = null;
+  }
+  if (!player.cooldownReminders || typeof player.cooldownReminders !== "object") player.cooldownReminders = { hunt: false, fetch: false };
+  if (player.cooldownReminders.hunt === undefined) player.cooldownReminders.hunt = false;
+  if (player.cooldownReminders.fetch === undefined) player.cooldownReminders.fetch = false;
+  if (!player.reminderState || typeof player.reminderState !== "object") player.reminderState = { huntDueAt: 0, huntSent: false, fetchDueAt: 0, fetchSent: false, channelId: null };
+  if (!player.weeklyStats || typeof player.weeklyStats !== "object") player.weeklyStats = { points: 0, catches: 0, shinies: 0, legendaries: 0, startRank: null };
+  for (const key of ["points", "catches", "shinies", "legendaries"]) if (!Number.isFinite(player.weeklyStats[key])) player.weeklyStats[key] = 0;
+  if (player.titleProgress.criticalCatch === undefined) player.titleProgress.criticalCatch = false;
+  if (player.titleProgress.perfectCatch === undefined) player.titleProgress.perfectCatch = false;
+  if (player.equippedPetId === undefined) player.equippedPetId = null;
+  if (!Number.isInteger(player.nextPetId) || player.nextPetId < 1) {
+    player.nextPetId = player.pets.reduce((max, pet) => Math.max(max, Number(pet.id) || 0), 0) + 1;
+  }
+  for (const ownedPet of player.pets) {
+    if (LEGACY_PET_KEY_MIGRATION[ownedPet.key]) {
+      ownedPet.key = LEGACY_PET_KEY_MIGRATION[ownedPet.key];
+    }
+
+    // Convert the previous hunt-based Bond progress into Companion XP.
+    if (ownedPet.companionXp === undefined) {
+      ownedPet.companionXp = Math.max(0, Number(ownedPet.bondXp || 0) * COMPANION_XP_PER_SUCCESSFUL_HUNT);
+    }
+    delete ownedPet.bondXp;
+
+    if (ownedPet.affectionEvents === undefined) ownedPet.affectionEvents = 0;
+    if (ownedPet.timesHelped === undefined) ownedPet.timesHelped = 0;
+    if (!ownedPet.personality) ownedPet.personality = "Curious";
+    if (ownedPet.nickname === undefined) ownedPet.nickname = null;
+    if (ownedPet.nickname !== null && typeof ownedPet.nickname !== "string") ownedPet.nickname = null;
+    if (!Number.isFinite(ownedPet.naturalAbilityXp)) ownedPet.naturalAbilityXp = 0;
+    if (!Number.isInteger(ownedPet.naturalAbilityRank) || ownedPet.naturalAbilityRank < 1) ownedPet.naturalAbilityRank = 1;
+    ownedPet.naturalAbilityRank = Math.min(5, ownedPet.naturalAbilityRank);
+    if (!Array.isArray(ownedPet.inheritedAbilities)) ownedPet.inheritedAbilities = [];
+    for (const inherited of ownedPet.inheritedAbilities) {
+      if (!Number.isFinite(inherited.xp)) inherited.xp = 0;
+      if (!Number.isInteger(inherited.rank) || inherited.rank < 1) inherited.rank = 1;
+      inherited.rank = Math.min(5, inherited.rank);
+      if (!inherited.sourceRarity) inherited.sourceRarity = "Common";
+      if (!inherited.sourceName && inherited.sourcePetKey) inherited.sourceName = getPetDefinition(inherited.sourcePetKey)?.name || inherited.sourcePetKey;
+    }
+    if (!ownedPet.progressionV2) {
+      const legacy = getLegacyCompanionLevelInfo(ownedPet.companionXp || 0);
+      const definition = getOwnedPetDefinition(ownedPet);
+      ownedPet.companionXp = companionTotalXpForLevel(legacy.level, definition?.rarity || "Common") +
+        Math.floor((legacy.xpNeeded ? legacy.xpIntoLevel / legacy.xpNeeded : 0) * companionXpRequiredForLevel(legacy.level, definition?.rarity || "Common"));
+      ownedPet.progressionV2 = true;
+    }
+  }
+  if (!Array.isArray(player.discoveredPetKeys)) player.discoveredPetKeys = [];
+  player.discoveredPetKeys = [...new Set([
+    ...player.discoveredPetKeys.map(key => LEGACY_PET_KEY_MIGRATION[key] || key),
+    ...player.pets.map(pet => pet.key)
+  ].filter(key => pets.some(definition => definition.key === key)))];
+  if (player.grandPetCollectionRewardClaimed === undefined) player.grandPetCollectionRewardClaimed = false;
+  if (!player.adminTest || typeof player.adminTest !== "object") {
+    player.adminTest = { distortionKey: null, cooldownBypass: false, generatedPetIds: [], generatedEggIds: [], generatedCatchIds: [] };
+  }
+  if (!Array.isArray(player.adminTest.generatedPetIds)) player.adminTest.generatedPetIds = [];
+  if (!Array.isArray(player.adminTest.generatedEggIds)) player.adminTest.generatedEggIds = [];
+  if (!Array.isArray(player.adminTest.generatedCatchIds)) player.adminTest.generatedCatchIds = [];
+
+  if (!Number.isFinite(player.huntTokens)) player.huntTokens = 0;
+  if (!Number.isFinite(player.lifetimeTokens)) player.lifetimeTokens = 0;
+  if (!Number.isFinite(player.tokensSpent)) player.tokensSpent = 0;
+  if (!Number.isFinite(player.bigGameWins)) player.bigGameWins = 0;
+  if (!Array.isArray(player.bigGamePlacements)) player.bigGamePlacements = [];
+  if (!player.merchantCollection || typeof player.merchantCollection !== "object") player.merchantCollection = {};
+  if (!Array.isArray(player.merchantPurchases)) player.merchantPurchases = [];
+  if (!player.merchantEffects || typeof player.merchantEffects !== "object") player.merchantEffects = {};
+  if (!Number.isFinite(player.merchantGambles)) player.merchantGambles = 0;
+
+  if (player.relics === undefined) player.relics = {};
+  for (const relicKey of RELIC_KEYS) {
+    if (player.relics[relicKey] === undefined) player.relics[relicKey] = 0;
+  }
+
+  return player;
+}
+
+
+
+function getPetDefinition(keyOrName) {
+  const wanted = String(keyOrName || "").trim().toLowerCase();
+  return pets.find(pet => pet.key === wanted || pet.name.toLowerCase() === wanted) || null;
+}
+
+function getOwnedPetDefinition(ownedPet) {
+  return ownedPet ? getPetDefinition(ownedPet.key) : null;
+}
+
+// Nicknames are display-only. Species identity, abilities, artwork, Pet Dex
+// progress, combining, and every gameplay calculation continue using ownedPet.key.
+function getOwnedPetName(ownedPet) {
+  const definition = getOwnedPetDefinition(ownedPet);
+  const nickname = String(ownedPet?.nickname || "").trim();
+  return nickname || definition?.name || ownedPet?.key || "Unknown Pet";
+}
+
+function getOwnedPetIdentity(ownedPet) {
+  const definition = getOwnedPetDefinition(ownedPet);
+  const nickname = String(ownedPet?.nickname || "").trim();
+  if (nickname && definition) return `${nickname} (${definition.name})`;
+  return definition?.name || nickname || ownedPet?.key || "Unknown Pet";
+}
+
+function getPetDisplayIcon(definitionOrKey) {
+  const definition = typeof definitionOrKey === "string"
+    ? getPetDefinition(definitionOrKey)
+    : definitionOrKey;
+
+  if (!definition) return "🐾";
+
+  // Automatically use the custom Discord emoji whose name matches the pet key.
+  // Example: pet key "reef_snapper" uses the server emoji named reef_snapper.
+  const customEmoji = client.emojis.cache.find(
+    emoji => emoji.name?.toLowerCase() === definition.key.toLowerCase()
+  );
+
+  return customEmoji
+    ? `<:${customEmoji.name}:${customEmoji.id}>`
+    : definition.icon;
+}
+
+function getPetArtworkUrl(definitionOrKey) {
+  const definition = typeof definitionOrKey === "string"
+    ? getPetDefinition(definitionOrKey)
+    : definitionOrKey;
+
+  if (!definition) return null;
+
+  const customEmoji = client.emojis.cache.find(
+    emoji => emoji.name?.toLowerCase() === definition.key.toLowerCase()
+  );
+
+  if (!customEmoji) return null;
+  return `https://cdn.discordapp.com/emojis/${customEmoji.id}.png?size=512&quality=lossless`;
+}
+
+function getPetArtworkPath(definitionOrKey) {
+  const definition = typeof definitionOrKey === "string"
+    ? getPetDefinition(definitionOrKey)
+    : definitionOrKey;
+  if (!definition) return null;
+  return findImageFile(definition.image || `${definition.key}.png`);
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getEquippedPet(player) {
+  if (!player || player.equippedPetId === null || player.equippedPetId === undefined) return null;
+  return player.pets.find(pet => String(pet.id) === String(player.equippedPetId)) || null;
+}
+
+function getLegacyCompanionLevelInfo(totalXp) {
+  let level = 1;
+  let xpIntoLevel = Math.max(0, Number(totalXp || 0));
+  while (level < MAX_COMPANION_LEVEL) {
+    const needed = 40 + Math.max(0, level - 1) * 20;
+    if (xpIntoLevel < needed) break;
+    xpIntoLevel -= needed;
+    level++;
+  }
+  return { level, xpIntoLevel, xpNeeded: level >= MAX_COMPANION_LEVEL ? 0 : 40 + Math.max(0, level - 1) * 20 };
+}
+
+function companionXpRequiredForLevel(level, rarity = "Common") {
+  return (PET_XP_BASE[rarity] || PET_XP_BASE.Common) + Math.max(0, level - 1) * 10;
+}
+
+function companionTotalXpForLevel(level, rarity = "Common") {
+  let total = 0;
+  for (let current = 1; current < level; current++) total += companionXpRequiredForLevel(current, rarity);
+  return total;
+}
+
+function getCompanionLevelInfo(ownedPet) {
+  const definition = getOwnedPetDefinition(ownedPet);
+  const rarity = definition?.rarity || "Common";
+  let level = 1;
+  let xpIntoLevel = Math.max(0, Number(ownedPet?.companionXp || 0));
+  while (level < MAX_COMPANION_LEVEL) {
+    const needed = companionXpRequiredForLevel(level, rarity);
+    if (xpIntoLevel < needed) break;
+    xpIntoLevel -= needed;
+    level++;
+  }
+  return { level, xpIntoLevel, xpNeeded: level >= MAX_COMPANION_LEVEL ? 0 : companionXpRequiredForLevel(level, rarity), rarity };
+}
+
+function getPetBondLevel(ownedPet) {
+  const { level } = getCompanionLevelInfo(ownedPet);
+  return Math.min(MAX_PET_BOND_LEVEL, 1 + Math.floor((level - 1) / 5));
+}
+
+function companionXpBar(ownedPet, length = 10) {
+  const info = getCompanionLevelInfo(ownedPet);
+  if (info.level >= MAX_COMPANION_LEVEL) return `Level **${info.level}** | **MAX LEVEL**\n${"█".repeat(length)}`;
+  const filled = Math.max(0, Math.min(length, Math.floor((info.xpIntoLevel / info.xpNeeded) * length)));
+  return `Level **${info.level}** | **${info.xpIntoLevel}/${info.xpNeeded} XP**\n${"█".repeat(filled)}${"░".repeat(length - filled)}`;
+}
+
+function abilityXpRequiredForLevel(level, rarity = "Common") {
+  return h3XpToNext(level);
+}
+
+function getNaturalAbilityLevelInfo(ownedPet) {
+  return {
+    level:Math.max(1,Math.min(5,Number(ownedPet?.naturalAbilityRank || 1))),
+    xpIntoLevel:Math.max(0,Number(ownedPet?.naturalAbilityXp || 0)),
+    xpNeeded:h3XpToNext(ownedPet?.naturalAbilityRank || 1)
+  };
+}
+
+function getInheritedAbilityLevelInfo(inherited) {
+  return {
+    level:Math.max(1,Math.min(5,Number(inherited?.rank || 1))),
+    xpIntoLevel:Math.max(0,Number(inherited?.xp || 0)),
+    xpNeeded:h3XpToNext(inherited?.rank || 1)
+  };
+}
+
+function h3ApplyAbilityXp(holder, amount, natural=false) {
+  let rank=Math.max(1,Math.min(5,Number(natural ? holder.naturalAbilityRank : holder.rank) || 1));
+  let xp=Math.max(0,Number(natural ? holder.naturalAbilityXp : holder.xp) || 0) + Math.max(0,Math.floor(amount));
+  const before=rank;
+  while(rank<5){ const need=h3XpToNext(rank); if(xp<need) break; xp-=need; rank++; }
+  if(rank>=5) xp=0;
+  if(natural){ holder.naturalAbilityRank=rank; holder.naturalAbilityXp=xp; }
+  else { holder.rank=rank; holder.xp=xp; }
+  return {before,after:rank,xp,xpNeeded:h3XpToNext(rank)};
+}
+
+function h3TrainableAbilityRefs(ownedPet) {
+  const def=getOwnedPetDefinition(ownedPet); if(!ownedPet||!def) return [];
+  const refs=[];
+  if((ownedPet.naturalAbilityRank||1)<5) refs.push({ability:def.ability,natural:true,holder:ownedPet});
+  for(const inherited of ownedPet.inheritedAbilities||[]) if((inherited.rank||1)<5) refs.push({ability:inherited.ability,natural:false,holder:inherited});
+  return refs;
+}
+
+function previewPetXpDistribution(ownedPet,totalXp){
+  const amount=Math.max(0,Math.floor(Number(totalXp||0))), refs=h3TrainableAbilityRefs(ownedPet);
+  if(!amount||!refs.length) return {totalXp:amount,abilityCount:refs.length,allocations:[],maxed:!refs.length};
+  const base=Math.floor(amount/refs.length); let rem=amount%refs.length;
+  return {totalXp:amount,abilityCount:refs.length,maxed:false,allocations:refs.map(ref=>({ability:ref.ability,natural:ref.natural,amount:base+(rem-->0?1:0)}))};
+}
+
+function distributePetXpAcrossAbilities(ownedPet, totalXp) {
+  const preview=previewPetXpDistribution(ownedPet,totalXp), levelUps=[];
+  for(const allocation of preview.allocations){
+    const ref=h3TrainableAbilityRefs(ownedPet).find(r=>r.ability===allocation.ability&&r.natural===allocation.natural);
+    if(!ref) continue;
+    const result=h3ApplyAbilityXp(ref.holder,allocation.amount,ref.natural);
+    if(result.after>result.before) levelUps.push(`${abilityDisplayName(allocation.ability)} reached Rank ${h3RankRoman(result.after)}`);
+  }
+  return {...preview,levelUps};
+}
+
+function awardInheritedAbilityXp(ownedPet, amount) {
+  return distributePetXpAcrossAbilities(ownedPet,amount).levelUps;
+}
+
+function formatDistributedPetXp(distribution) {
+  if (!distribution || !distribution.allocations?.length) return "";
+  return distribution.allocations
+    .map(entry => `${entry.natural ? "✨" : "🧬"} **${abilityDisplayName(entry.ability)}:** +${entry.amount} XP`)
+    .join("\n");
+}
+
+function formatAllPetAbilityProgress(ownedPet) {
+  const definition=getOwnedPetDefinition(ownedPet); if(!ownedPet||!definition) return "";
+  const natural=getNaturalAbilityLevelInfo(ownedPet);
+  const lines=[`✨ **${abilityDisplayName(definition.ability)}** — Rank **${h3RankRoman(natural.level)}** | **${natural.level>=5?"MAX":`${natural.xpIntoLevel}/${natural.xpNeeded} XP`}**`];
+  for(const inherited of ownedPet.inheritedAbilities||[]){ const info=getInheritedAbilityLevelInfo(inherited); lines.push(`🧬 **${abilityDisplayName(inherited.ability)}** — Rank **${h3RankRoman(info.level)}** | **${info.level>=5?"MAX":`${info.xpIntoLevel}/${info.xpNeeded} XP`}**`); }
+  return lines.join("\n");
+}
+
+function awardCompanionXp(player, amount, reason = "Companion XP") {
+  const ownedPet=getEquippedPet(player), definition=getOwnedPetDefinition(ownedPet); if(!ownedPet||!definition||amount<=0) return "";
+  const trainer=Math.min(H3_GLOBAL_CAPS.companionTrainer,getPetBonus(player,"companionTrainer"));
+  const adjusted=Math.max(1,Math.round(amount*(1+trainer/100)));
+  const before=getCompanionLevelInfo(ownedPet).level;
+  ownedPet.companionXp=Math.max(0,Number(ownedPet.companionXp||0))+adjusted;
+  const after=getCompanionLevelInfo(ownedPet).level;
+  const abilityPool=reason.includes("Fetch")?ABILITY_XP_PER_FETCH:ABILITY_XP_PER_HUNT;
+  const abilityDistribution=distributePetXpAcrossAbilities(ownedPet,abilityPool);
+  const displayName=getOwnedPetName(ownedPet);
+  return `${getPetDisplayIcon(definition)} **${displayName} gained ${adjusted} Companion XP!** (${reason})\n${companionXpBar(ownedPet)}\n\n**Ability Progress**\n${formatAllPetAbilityProgress(ownedPet)}`+
+    `${after>before?`\n🎉 **LEVEL UP! ${displayName} reached Level ${after}!**`:""}`+
+    `${abilityDistribution.levelUps.length?`\n🧬 **ABILITY RANK UP!** ${abilityDistribution.levelUps.join("\n🧬 **ABILITY RANK UP!** ")}`:""}`;
+}
+
+function abilityDisplayName(ability) {
+  return H3_ABILITY_DEFS?.[ability]?.name || ({ eggFinder:"Egg Finder",shiny:"Shiny Hunter",capture:"Capture",cooldown:"Swift Hunter",points:"Hunter's Spirit",itemFinder:"Treasure Finder" })[ability] || ability;
+}
+
+function abilityBonusAtLevel(ability, baseBonus, level) {
+  if(H3_ABILITY_DEFS?.[ability]) return h3AbilityValue(ability,Math.min(5,Number(level)||1));
+  const extra=Math.max(0,(Number(level)||1)-1);
+  return +(Number(baseBonus||1)+extra).toFixed(2);
+}
+
+function getPetAbilityEntries(ownedPet) {
+  const definition=getOwnedPetDefinition(ownedPet); if(!ownedPet||!definition) return [];
+  const natural=getNaturalAbilityLevelInfo(ownedPet);
+  const entries=[{ability:definition.ability,level:natural.level,baseBonus:definition.baseBonus,natural:true,rarity:definition.rarity,xp:natural.xpIntoLevel,xpNeeded:natural.xpNeeded,sourcePetKey:definition.key,sourceName:definition.name}];
+  for(const inherited of ownedPet.inheritedAbilities||[]){ const info=getInheritedAbilityLevelInfo(inherited); entries.push({ability:inherited.ability,level:info.level,baseBonus:inherited.baseBonus||1,natural:false,rarity:inherited.sourceRarity||"Common",xp:info.xpIntoLevel,xpNeeded:info.xpNeeded,sourcePetKey:inherited.sourcePetKey,sourceName:inherited.sourceName,inherited}); }
+  return entries;
+}
+
+function getKnownPetAbility(ownedPet, ability) {
+  const definition=getOwnedPetDefinition(ownedPet); if(!ownedPet||!definition) return null;
+  if(definition.ability===ability) return {natural:true,ability,definition};
+  const inherited=(ownedPet.inheritedAbilities||[]).find(entry=>entry.ability===ability);
+  return inherited?{natural:false,ability,inherited}:null;
+}
+
+function addSameAbilityCombineXp(ownedPet, ability, sacrificeRarity) {
+  const known=getKnownPetAbility(ownedPet,ability); if(!known) return null;
+  const amount=PET_ABILITY_COMBINE_XP[sacrificeRarity]||PET_ABILITY_COMBINE_XP.Common;
+  const distribution=distributePetXpAcrossAbilities(ownedPet,amount);
+  return {type:"distributed",amount,distribution,text:`🧬 **ABILITY TRAINING!**\nThe sacrificed pet became **${amount} Ability XP**, evenly distributed across every non-maxed ability.\n\n${formatDistributedPetXp(distribution)}\n\n**Ability Progress**\n${formatAllPetAbilityProgress(ownedPet)}`};
+}
+
+function getPetBonus(player, ability) {
+  const ownedPet=getEquippedPet(player); if(!ownedPet) return 0;
+  const definition=getOwnedPetDefinition(ownedPet);
+  const entries=getPetAbilityEntries(ownedPet).filter(entry=>entry.ability===ability&&!(entry.natural&&definition?.signatureAbility));
+  let total=entries.reduce((sum,entry)=>sum+abilityBonusAtLevel(entry.ability,entry.baseBonus,entry.level),0)+copiedPetBonus(player,ability);
+  const caps={capture:H3_GLOBAL_CAPS.capture,points:H3_GLOBAL_CAPS.points,eggFinder:H3_GLOBAL_CAPS.eggFinder,itemFinder:H3_GLOBAL_CAPS.itemFinder,shiny:H3_GLOBAL_CAPS.shiny,companionTrainer:H3_GLOBAL_CAPS.companionTrainer,incubator:H3_GLOBAL_CAPS.incubator,rareTracker:H3_GLOBAL_CAPS.rareTracker,baitSaver:H3_GLOBAL_CAPS.baitSaver,trapMaster:H3_GLOBAL_CAPS.trapMaster,luckyHunter:H3_GLOBAL_CAPS.rewardDouble,persistence:H3_GLOBAL_CAPS.persistence};
+  if(Number.isFinite(caps[ability])) total=Math.min(caps[ability],total);
+  return total;
+}
+
+
+// ==================== H.3.2 LIVE PET ABILITY RUNTIME ====================
+function h32Runtime(player) {
+  if (!player.h3PetRuntime || typeof player.h3PetRuntime !== "object") player.h3PetRuntime = {};
+  const r=player.h3PetRuntime;
+  if (!Number.isFinite(r.successStreak)) r.successStreak=0;
+  if (!Number.isFinite(r.trailProgress)) r.trailProgress=0;
+  if (!Number.isFinite(r.tokenProgress)) r.tokenProgress=0;
+  if (!Number.isFinite(r.treasureProgress)) r.treasureProgress=0;
+  if (!Number.isFinite(r.failureProgress)) r.failureProgress=0;
+  return r;
+}
+function h32AbilityEntry(player,key){ return getPetAbilityEntries(getEquippedPet(player)).find(e=>e.ability===key)||null; }
+function h32AbilityRank(player,key){ return Math.max(0,Number(h32AbilityEntry(player,key)?.level||0)); }
+function h32DateKey(){ return new Date().toISOString().slice(0,10); }
+function h32RecentPackCatch(data,userId){
+  const cutoff=Date.now()-15*60*1000;
+  return (data?.recentHunts||[]).some(h=>h.userId!==userId && Number(h.at||0)>=cutoff);
+}
+function h32PrepareHunt(player,data,userId){
+  const r=h32Runtime(player), effects={capture:0,rare:0,egg:0,item:0,shiny:0,messages:[]};
+  const trailRank=h32AbilityRank(player,'trailSniffer');
+  if(trailRank){ const needed=[0,8,7,6,5,5][trailRank]; if(r.trailProgress>=needed){ effects.rare+=h3AbilityValue('trailSniffer',trailRank); r.trailProgress=0; effects.messages.push(`👣 Trail Sniffer activated: +${h3AbilityValue('trailSniffer',trailRank)}% Rare+ weighting.`); } }
+  const firstRank=h32AbilityRank(player,'firstLight'), today=h32DateKey();
+  if(firstRank && r.firstLightDate!==today){ effects.rare+=h3AbilityValue('firstLight',firstRank); r.firstLightDate=today; effects.messages.push(`🌕 First Light activated: +${h3AbilityValue('firstLight',firstRank)}% Rare+ weighting.`); }
+  const packRank=h32AbilityRank(player,'packHunter');
+  if(packRank && h32RecentPackCatch(data,userId)){ effects.capture+=h3AbilityValue('packHunter',packRank); effects.messages.push(`🤝 Pack Hunter activated: another hunter caught prey recently.`); }
+  const eventRank=h32AbilityRank(player,'eventborn');
+  if(eventRank && (getActiveEvent() || isBigGameActive(data) || getDistortionForPlayer(data,userId))){ const v=h3AbilityValue('eventborn',eventRank); effects.capture+=v; effects.item+=Math.max(1,Math.floor(v/2)); effects.messages.push(`⚡ Eventborn activated during the live event.`); }
+  const cosmicRank=h32AbilityRank(player,'cosmicFortune');
+  if(cosmicRank){ const v=h3AbilityValue('cosmicFortune',cosmicRank); effects.capture+=v; effects.egg+=v; effects.item+=v; effects.shiny+=v/10; }
+  const mixedRank=h32AbilityRank(player,'mixedResults');
+  if(mixedRank){
+    const choices=['capture','egg','item','rare','shiny']; const count=(mixedRank>=5 && Math.random()*100<10)?2:1;
+    const picked=[]; while(picked.length<count){ const k=choices[Math.floor(Math.random()*choices.length)]; if(!picked.includes(k)) picked.push(k); }
+    for(const k of picked){ const v=Math.max(1,mixedRank); if(k==='shiny') effects[k]+=v*.25; else effects[k]+=v*2; }
+    effects.messages.push(`🎲 Mixed Results rolled: ${picked.map(k=>k.toUpperCase()).join(' + ')}${count===2?' JACKPOT!':''}`);
+  }
+  r.currentHunt=effects;
+  return effects;
+}
+function h32Current(player){ return h32Runtime(player).currentHunt || {capture:0,rare:0,egg:0,item:0,shiny:0,messages:[]}; }
+function h32ClearCurrent(player){ delete h32Runtime(player).currentHunt; }
+function h32CaptureDynamicBonus(player,monster,data,userId){
+  const r=h32Runtime(player), cur=h32Current(player); let bonus=Number(cur.capture||0);
+  const bloodRank=h32AbilityRank(player,'bloodhound');
+  if(bloodRank && r.bloodhoundSpecies && r.bloodhoundSpecies===cleanMonsterName(monster.name)) bonus+=h3AbilityValue('bloodhound',bloodRank);
+  const hotRank=h32AbilityRank(player,'hotStreak'); if(hotRank) bonus+=Math.min(h3AbilityValue('hotStreak',hotRank),Math.max(0,r.successStreak));
+  const trophyRank=h32AbilityRank(player,'trophyHunter'); if(trophyRank && isBigGameActive(data||loadData())) bonus+=h3AbilityValue('trophyHunter',trophyRank);
+  return Math.min(H3_GLOBAL_CAPS.capture,Math.max(0,bonus));
+}
+function h32UpgradeEggRarity(rarity){ const order=['Common','Rare','Epic','Legendary']; const i=order.indexOf(rarity); return i>=0&&i<order.length-1?order[i+1]:rarity; }
+function h32MaybeUpgradeEgg(player,rarity){ const rank=h32AbilityRank(player,'nestGuardian'); if(!rank||rarity==='Legendary') return {rarity,upgraded:false}; const chance=h3AbilityValue('nestGuardian',rank); return Math.random()*100<chance?{rarity:h32UpgradeEggRarity(rarity),upgraded:true}:{rarity,upgraded:false}; }
+function h32SuccessEffects(player,data,userId,monster){
+  const r=h32Runtime(player), messages=[]; r.successStreak++;
+  if(h32AbilityRank(player,'trailSniffer')) r.trailProgress++;
+  const tokenRank=h32AbilityRank(player,'tokenFinder'); if(tokenRank && Math.random()*100<h3AbilityValue('tokenFinder',tokenRank)){ const amt=Math.min(H3_GLOBAL_CAPS.tokenBonus,tokenRank>=4?(1+Math.floor(Math.random()*2)):1); player.huntTokens+=amt; player.lifetimeTokens=(player.lifetimeTokens||0)+amt; messages.push(`🪙 Token Finder discovered +${amt} Hunt Token${amt===1?'':'s'}.`); }
+  const hoardRank=h32AbilityRank(player,'tokenHoarder'); if(hoardRank){ r.tokenProgress++; const needed=h3AbilityValue('tokenHoarder',hoardRank); if(r.tokenProgress>=needed){ r.tokenProgress=0; const amt=Math.min(H3_GLOBAL_CAPS.tokenBonus,hoardRank>=3?3:2); player.huntTokens+=amt; player.lifetimeTokens=(player.lifetimeTokens||0)+amt; messages.push(`💰 Token Hoarder triggered: +${amt} Hunt Tokens.`); } }
+  const itemChance=Math.min(H3_GLOBAL_CAPS.itemFinder,getPetBonus(player,'itemFinder')+Number(h32Current(player).item||0));
+  if(itemChance>0 && Math.random()*100<itemChance){ const roll=Math.random()*100; if(roll<55){player.captureItems.berry++;messages.push(`🎒 Treasure Finder discovered a Hunter Berry.`);}else if(roll<80){player.captureItems.honey++;messages.push(`🎒 Treasure Finder discovered Sticky Honey.`);}else if(roll<94){player.bait.rare++;messages.push(`🎒 Treasure Finder discovered Rare Bait.`);}else{player.captureItems.net++;messages.push(`🎒 Treasure Finder discovered an Enchanted Net.`);} }
+  const noseRank=h32AbilityRank(player,'treasureNose'); if(noseRank){ r.treasureProgress++; const needed=h3AbilityValue('treasureNose',noseRank); if(r.treasureProgress>=needed){ r.treasureProgress=0; player.captureItems.berry++; messages.push(`🎁 Treasure Nose guaranteed a Hunter Berry.`); } }
+  const luckyRank=h32AbilityRank(player,'luckyHunter'); if(luckyRank && Math.random()*100<h3AbilityValue('luckyHunter',luckyRank)){ const extra=Math.max(1,Number(monster.points||0)); player.points+=extra; addWeeklyProgress(data,player,extra); messages.push(`🎲 Lucky Hunter doubled ${extra} base Hunter Points.`); }
+  h32ClearCurrent(player); return messages;
+}
+function h32FailureEffects(player,itemKey,monster){
+  const r=h32Runtime(player), messages=[]; r.successStreak=0;
+  const bloodRank=h32AbilityRank(player,'bloodhound'); if(bloodRank){ r.bloodhoundSpecies=cleanMonsterName(monster.name); messages.push(`🐾 Bloodhound marked ${cleanMonsterName(monster.name)} for your next encounter.`); }
+  if(itemKey){
+    let save=false;
+    const trapRank=h32AbilityRank(player,'trapMaster'); if(trapRank && Math.random()*100<h3AbilityValue('trapMaster',trapRank)) save=true;
+    const secondRank=h32AbilityRank(player,'secondChance'); if(secondRank){ r.failureProgress++; const needed=h3AbilityValue('secondChance',secondRank); if(r.failureProgress>=needed){ r.failureProgress=0; save=true; } }
+    if(save){ player.captureItems[itemKey]=(player.captureItems[itemKey]||0)+1; messages.push(`🪤 Your companion preserved the ${CAPTURE_ITEMS[itemKey].name}.`); }
+  }
+  const persistRank=h32AbilityRank(player,'persistence'); let persist=false;
+  if(persistRank && !monster.persistenceRetried && Math.random()*100<h3AbilityValue('persistence',persistRank)){ persist=true; monster.persistenceRetried=true; messages.push(`👻 Persistence! The monster remains for one immediate second attempt.`); }
+  h32ClearCurrent(player); return {messages,persist};
+}
+function h32BaitSave(player,usedBait){ if(!usedBait) return ''; const rank=h32AbilityRank(player,'baitSaver'); if(rank && Math.random()*100<h3AbilityValue('baitSaver',rank)){ player.bait[usedBait]=(player.bait[usedBait]||0)+1; return `\n🧲 **Bait Saver:** Your ${usedBait} bait was preserved!`; } return ''; }
+function h32AbilitySummary(player){
+  const pet=getEquippedPet(player); if(!pet) return [];
+  return getPetAbilityEntries(pet).map(e=>({key:e.ability,name:h3AbilityDef(e.ability).name,icon:h3AbilityDef(e.ability).icon,rank:h3RankRoman(e.level),effect:h3AbilityEffectText(e.ability,e.level),natural:Boolean(e.natural)}));
+}
+
+function getPlayerPetIcon(player) {
+  const ownedPet = getEquippedPet(player);
+  const definition = getOwnedPetDefinition(ownedPet);
+  return definition ? getPetDisplayIcon(definition) : "";
+}
+
+function formatPlayerMention(data, userId) {
+  const icon = getPlayerPetIcon(getPlayer(data, userId));
+  return `${icon ? `${icon} ` : ""}<@${userId}>`;
+}
+
+function formatPlayerName(player, username) {
+  const icon = getPlayerPetIcon(player);
+  return `${icon ? `${icon} ` : ""}${username}`;
+}
+
+function getDistortionForPlayer(data, userId) {
+  const player = getPlayer(data, userId);
+  if (player.adminTest?.distortionKey && DISTORTIONS[player.adminTest.distortionKey]) {
+    return { key: player.adminTest.distortionKey, definition: DISTORTIONS[player.adminTest.distortionKey], test: true };
+  }
+  const active = data.activeDistortion;
+  if (active && !active.ended && Date.now() >= active.startAt && Date.now() < active.endAt && DISTORTIONS[active.key]) {
+    return { key: active.key, definition: DISTORTIONS[active.key], test: false };
+  }
+  return null;
+}
+
+// ==================== DISTORTION COMPANION SIGNATURE ABILITIES ====================
+function getSignaturePet(player) {
+  const owned = getEquippedPet(player);
+  const definition = getOwnedPetDefinition(owned);
+  return owned && definition?.signatureAbility ? { owned, definition, level: getCompanionLevelInfo(owned).level } : null;
+}
+
+function ensureSignatureState(ownedPet) {
+  if (!ownedPet) return {};
+  if (!ownedPet.signatureState || typeof ownedPet.signatureState !== "object") ownedPet.signatureState = {};
+  return ownedPet.signatureState;
+}
+
+function signatureTier(level, low, mid, high) {
+  if (level >= 10) return high;
+  if (level >= 5) return mid;
+  return low;
+}
+
+function signatureAbilityText(ownedPet) {
+  const definition = getOwnedPetDefinition(ownedPet);
+  if (!ownedPet || !definition?.signatureAbility) return null;
+  const level = getCompanionLevelInfo(ownedPet).level;
+  const name = definition.signatureName || definition.signatureAbility;
+  let effect = "";
+  let next = "";
+  switch (definition.signatureAbility) {
+    case "kindled_hunt": effect = `After a failed catch, your next capture gains **+${signatureTier(level,5,7,10)}%**.`; break;
+    case "from_the_ashes": effect = `Every **${signatureTier(level,6,5,4)} successful catches**, gain **+10 Hunter Points** and a bonus egg roll.`; break;
+    case "frozen_time": effect = `Every **${signatureTier(level,4,3,3)} successful catches**, your next hunt cooldown is reduced by **${level>=10?60:50}%**.`; break;
+    case "second_chance": effect = `Failed captures at 25%+ have a **${signatureTier(level,15,20,25)}%** chance to immediately reroll.`; break;
+    case "rune_reader": effect = `Species Knowledge is treated as **${level>=10?2:1} tier${level>=10?'s':''} higher** for capture chance.`; break;
+    case "arcane_duplication": effect = `Egg discoveries have a **${signatureTier(level,10,13,16)}%** chance to duplicate. Impossible Eggs cannot be copied.`; break;
+    case "grave_scavenger": effect = `Every **${signatureTier(level,5,4,3)} successful catches**, uncover a random capture item or bait.`; break;
+    case "veilwalk": effect = `Every **${signatureTier(level,8,7,6)} hunts**, Veilwalk can prevent one failed capture from ending the encounter.`; break;
+    case "written_in_the_stars": effect = `Each hunt has a **${signatureTier(level,10,15,20)}%** chance to gain **+8% capture chance**.`; break;
+    case "paradox": effect = `Successful captures have a **${signatureTier(level,5,7,10)}%** chance to duplicate. Mythic, Ultra Rare, and Unmade creatures are excluded.`; break;
+    case "borrowed_talent": effect = `Each hunt has a **${signatureTier(level,20,30,40)}%** chance to copy another owned companion's natural passive for that hunt.`; break;
+    case "this_wasnt_supposed_to_happen": effect = `Successful normal catches have a **${signatureTier(level,1,2,3)}%** chance to create an immediate Rare-or-better bonus encounter.`; break;
+  }
+  if (level < 5) next = "Level 5 unlocks the next signature upgrade.";
+  else if (level < 10) next = "Level 10 unlocks the final signature upgrade.";
+  else next = "Final signature tier unlocked.";
+  return `❖ **SIGNATURE ABILITY — ${name}**\n${effect}\n*${next}*`;
+}
+
+function getRuneReaderKnowledgeBonus(player, monster) {
+  const sig = getSignaturePet(player);
+  if (!sig || sig.definition.signatureAbility !== "rune_reader") return 0;
+  const encounters = getKnowledgeCount(player, monster);
+  const thresholds = [0,3,5,10,20];
+  const bonuses = [0,5,10,15,20];
+  let idx = 0;
+  for (let i=0;i<thresholds.length;i++) if (encounters >= thresholds[i]) idx=i;
+  const jump = sig.level >= 10 ? 2 : 1;
+  const upgraded = bonuses[Math.min(bonuses.length-1, idx+jump)];
+  return Math.max(0, upgraded - getKnowledgeBonus(encounters));
+}
+
+function getSignatureCaptureBonus(player) {
+  const sig = getSignaturePet(player);
+  if (!sig) return 0;
+  const state = ensureSignatureState(sig.owned);
+  let bonus = 0;
+  if (sig.definition.signatureAbility === "kindled_hunt" && state.kindledReady) bonus += signatureTier(sig.level,5,7,10);
+  if (sig.definition.signatureAbility === "written_in_the_stars" && state.starBonusActive) bonus += 8;
+  return bonus;
+}
+
+function consumeAttemptSignatureState(player) {
+  const sig = getSignaturePet(player);
+  if (!sig) return;
+  const state = ensureSignatureState(sig.owned);
+  if (sig.definition.signatureAbility === "kindled_hunt") state.kindledReady = false;
+  if (sig.definition.signatureAbility === "written_in_the_stars") state.starBonusActive = false;
+}
+
+function prepareSignatureForHunt(player) {
+  const sig = getSignaturePet(player);
+  if (!sig) return "";
+  const state = ensureSignatureState(sig.owned);
+  if (sig.definition.signatureAbility === "written_in_the_stars") {
+    const chance = signatureTier(sig.level,10,15,20);
+    state.starBonusActive = Math.random()*100 < chance;
+    return state.starBonusActive ? `\n\n✨ **WRITTEN IN THE STARS**\n${getOwnedPetName(sig.owned)} foresaw fortune around this hunt. **Capture Chance +8%**` : "";
+  }
+  if (sig.definition.signatureAbility === "borrowed_talent") {
+    state.copiedAbility = null;
+    const chance = signatureTier(sig.level,20,30,40);
+    if (Math.random()*100 < chance) {
+      const candidates = (player.pets||[]).filter(p=>String(p.id)!==String(sig.owned.id)).map(p=>({owned:p,def:getOwnedPetDefinition(p)})).filter(x=>x.def && !x.def.signatureAbility && x.def.ability !== "cooldown");
+      if (candidates.length) {
+        const picked = candidates[Math.floor(Math.random()*candidates.length)];
+        const level = getCompanionLevelInfo(picked.owned).level;
+        state.copiedAbility = { ability:picked.def.ability, baseBonus:picked.def.baseBonus, level, sourceName:getOwnedPetName(picked.owned) };
+        return `\n\n🎭 **BORROWED TALENT**\n${getOwnedPetName(sig.owned)} copied **${getOwnedPetName(picked.owned)}'s ${abilityDisplayName(picked.def.ability)} Lv. ${level}** for this hunt.`;
+      }
+    }
+  }
+  if (sig.definition.signatureAbility === "veilwalk") {
+    state.hunts = (state.hunts||0)+1;
+    const every = signatureTier(sig.level,8,7,6);
+    if (state.hunts >= every) { state.hunts=0; state.veilwalkReady=true; return `\n\n👻 **VEILWALK READY**\nVeilkin can prevent the next failed capture from ending this encounter.`; }
+  }
+  return "";
+}
+
+function copiedPetBonus(player, ability) {
+  const sig = getSignaturePet(player);
+  if (!sig || sig.definition.signatureAbility !== "borrowed_talent") return 0;
+  const copied = ensureSignatureState(sig.owned).copiedAbility;
+  if (!copied || copied.ability !== ability) return 0;
+  return abilityBonusAtLevel(copied.ability,copied.baseBonus,copied.level);
+}
+
+function rollSignatureScavenge(player, sig) {
+  const state=ensureSignatureState(sig.owned); state.successes=(state.successes||0)+1;
+  const every=signatureTier(sig.level,5,4,3); if(state.successes<every) return ""; state.successes=0;
+  const options=["berry","honey","net","rareBait","epicBait"];
+  const pick=options[Math.floor(Math.random()*options.length)];
+  if(pick==="rareBait"){player.bait.rare++; return "💀 **GRAVE SCAVENGER!** Bone Familiar unearthed **1 Rare Bait**.";}
+  if(pick==="epicBait"){player.bait.epic++; return "💀 **GRAVE SCAVENGER!** Bone Familiar unearthed **1 Epic Bait**.";}
+  player.captureItems[pick]++; return `💀 **GRAVE SCAVENGER!** Bone Familiar unearthed **${CAPTURE_ITEMS[pick].name}**.`;
+}
+
+function duplicateDiscoveredEgg(player, distortionEggFound, eggFound) {
+  const sig=getSignaturePet(player); if(!sig || sig.definition.signatureAbility!=="arcane_duplication") return "";
+  const chance=signatureTier(sig.level,10,13,16); if(Math.random()*100>=chance) return "";
+  if(distortionEggFound){
+    const key=Object.entries(DISTORTION_EGGS).find(([,e])=>e===distortionEggFound)?.[0];
+    if(!key || key==="impossible") return "";
+    player.eggs.push({id:`glyph-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,eggKey:key,rarity:"Distortion",foundAt:Date.now(),source:"Arcane Duplication"});
+    player.titleProgress.eggsFound=(player.titleProgress.eggsFound||0)+1;
+    return `🌀 **ARCANE DUPLICATION!** Glyph Wisp copied the egg's magical signature. **You received a second ${distortionEggFound.name}!**`;
+  }
+  if(eggFound){ player.eggs.push({rarity:eggFound,foundAt:Date.now(),source:"Arcane Duplication"}); player.titleProgress.eggsFound=(player.titleProgress.eggsFound||0)+1; return `🌀 **ARCANE DUPLICATION!** Glyph Wisp copied the egg's magical signature. **You received a second ${eggFound} Egg!**`; }
+  return "";
+}
+
+function bonusEggRollFromAshes(player,data,userId) {
+  const distortion=getDistortionForPlayer(data,userId);
+  if(distortion && Math.random()*100 < DISTORTION_EGG_DROP_CHANCE){
+    const key=distortion.definition.eggKey; const egg=DISTORTION_EGGS[key];
+    player.eggs.push({id:`ashes-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,eggKey:key,rarity:"Distortion",foundAt:Date.now(),source:"From the Ashes",adminTest:Boolean(distortion.test)});
+    player.titleProgress.eggsFound=(player.titleProgress.eggsFound||0)+1;
+    return `${egg.icon} **Bonus Egg Roll:** ${egg.name} discovered!`;
+  }
+  const rarity=rollEggRarity(player,data); if(!rarity) return "🥚 **Bonus Egg Roll:** No egg answered the call this time.";
+  player.eggs.push({rarity,foundAt:Date.now(),source:"From the Ashes"}); player.titleProgress.eggsFound=(player.titleProgress.eggsFound||0)+1;
+  return `🥚 **Bonus Egg Roll:** ${rarity} Egg discovered!`;
+}
+
+function createUnwrittenBonusMonster() {
+  const rare=monsters.filter(m=>m.rarity==="Rare"), epic=monsters.filter(m=>m.rarity==="Epic"), legendary=monsters.filter(m=>m.rarity==="Legendary");
+  const roll=Math.random()*100; const pool=roll<55?rare:roll<85?epic:legendary;
+  return pool.length ? {...pool[Math.floor(Math.random()*pool.length)],unwrittenBonus:true} : null;
+}
+
+function getPlayerHuntCooldown(player, data = null, userId = null) {
+  const currentData = data || loadData();
+  if (player.adminTest?.cooldownBypass) return 0;
+  const distortion = userId ? getDistortionForPlayer(currentData, userId) : null;
+  const shatterActive = Boolean(currentData.worldStory?.event?.active && ["collision","stabilize","unmade"].includes(currentData.worldStory.event.stage));
+  let baseCooldown = shatterActive ? WORLD_SHATTER_HUNT_COOLDOWN : (distortion ? DISTORTION_HUNT_COOLDOWN : HUNT_COOLDOWN);
+  if (isBigGameActive(currentData)) baseCooldown = Math.min(baseCooldown, BIG_GAME_COOLDOWN);
+  const sig = getSignaturePet(player);
+  if (sig?.definition.signatureAbility === "frozen_time" && ensureSignatureState(sig.owned).frozenTimeReady) {
+    baseCooldown = Math.floor(baseCooldown * (sig.level >= 10 ? 0.40 : 0.50));
+  }
+  const reductionMinutes = getPetBonus(player, "cooldown");
+  const blessing = getActiveCommunityBlessing(currentData, "cooldown");
+  const blessingReduction = blessing?.definition?.cooldownReductionMs || 0;
+  const minimumCooldown = shatterActive ? 5 * 60 * 1000 : (isBigGameActive(currentData) ? BIG_GAME_COOLDOWN : (distortion ? DISTORTION_HUNT_COOLDOWN : H3_GLOBAL_CAPS.cooldownMinutes * 60 * 1000));
+  return Math.max(
+    minimumCooldown,
+    baseCooldown - reductionMinutes * 60 * 1000 - blessingReduction
+  );
+}
+
+function formatAbilityEffect(entry) {
+  if(H3_ABILITY_DEFS?.[entry.ability]) return h3AbilityEffectText(entry.ability,Math.min(5,Number(entry.level)||1));
+  const bonus=abilityBonusAtLevel(entry.ability,entry.baseBonus,entry.level);
+  return `${abilityDisplayName(entry.ability)} +${bonus}`;
+}
+
+function petPassiveText(player) {
+  const ownedPet = getEquippedPet(player);
+  if (!ownedPet) return "No pet equipped.";
+  const signature = signatureAbilityText(ownedPet);
+  const inherited = getPetAbilityEntries(ownedPet).filter(entry=>!entry.natural).map(entry => `🧬 ${abilityDisplayName(entry.ability)} Lv. ${entry.level}: ${formatAbilityEffect(entry)}`).join("\n");
+  return signature ? `${signature}${inherited ? `\n${inherited}` : ""}` : getPetAbilityEntries(ownedPet).map(entry => `${entry.natural ? "✨" : "🧬"} ${abilityDisplayName(entry.ability)} Lv. ${entry.level}: ${formatAbilityEffect(entry)}`).join("\n");
+}
+
+function petPassiveTextForOwned(ownedPet) {
+  if (!ownedPet) return "Unknown passive.";
+  const signature = signatureAbilityText(ownedPet);
+  const inherited = getPetAbilityEntries(ownedPet).filter(entry=>!entry.natural).map(entry => `Inherited ${abilityDisplayName(entry.ability)} Lv. ${entry.level}: ${formatAbilityEffect(entry)}`).join(" | ");
+  return signature ? `${signature}${inherited ? `\n${inherited}` : ""}` : getPetAbilityEntries(ownedPet).map(entry => `${entry.natural ? "Natural" : "Inherited"} ${abilityDisplayName(entry.ability)} Lv. ${entry.level}: ${formatAbilityEffect(entry)}`).join(" | ");
+}
+
+function getIncubatorSlots(player) {
+  return Math.min(MAX_INCUBATORS,h3InheritedSlotLimit(player));
+}
+function getNewIncubatorUnlockText(player, previousPoints) {
+  const fakeBefore={...player,points:previousPoints};
+  const before=getIncubatorSlots(fakeBefore), after=getIncubatorSlots(player);
+  player.lastIncubatorSlots=after;
+  if(after<=before) return "";
+  return `\n\n🎉 **HUNTER LEVEL ${h3HunterLevel(player)}!**\n🧬 Inherited ability slots: **${before} → ${after}**\n🥚 Incubators: **${before} → ${after}**`;
+}
+
+function isNormalEggPet(definition) {
+  if (!definition) return false;
+
+  // CRITICAL POOL SAFETY:
+  // Normal Common/Rare/Epic/Legendary Eggs may ONLY hatch companions from
+  // the original known habitat collections. Distortion companions and
+  // secret Unmade companions are registered in the master `pets` array so
+  // !pets / !pet / !viewpet / passives can use them, but they must never
+  // leak into the normal egg hatch pool.
+  return Object.prototype.hasOwnProperty.call(PET_COLLECTIONS, definition.habitat);
+}
+
+function choosePetFromEgg(rarity) {
+  const pool = pets.filter(
+    pet => pet.rarity === rarity && isNormalEggPet(pet)
+  );
+
+  if (pool.length === 0) return null;
+
+  if (rarity !== "Legendary") {
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // Legendary normal Eggs use ONLY the original Legendary habitat companions.
+  // Keeping this explicit list also provides a second layer of protection
+  // against future Distortion/secret pets entering the normal egg pool.
+  const weighted = [
+    { key: "verdant_sentinel", weight: 15 },
+    { key: "leviacub", weight: 15 },
+    { key: "titan_spawn", weight: 15 },
+    { key: "infernal_wyrmling", weight: 15 },
+    { key: "white_tyrant_cub", weight: 15 },
+    { key: "storm_emperor_cub", weight: 10 },
+    { key: "hollow_prince", weight: 10 },
+    { key: "astral_spawn", weight: 5 }
+  ].filter(entry => {
+    const definition = getPetDefinition(entry.key);
+    return definition && isNormalEggPet(definition) && definition.rarity === "Legendary";
+  });
+
+  if (weighted.length === 0) {
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  const totalWeight = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+  let roll = Math.random() * totalWeight;
+
+  for (const entry of weighted) {
+    roll -= entry.weight;
+    if (roll < 0) return getPetDefinition(entry.key);
+  }
+
+  return getPetDefinition(weighted[0].key);
+}
+
+function rollEggRarity(player, data = null) {
+  const petBonus = getPetBonus(player, "eggFinder");
+  const emptySlots = Math.max(0, getIncubatorSlots(player) - (player.incubatingEggs || []).length);
+  const nestBonus = Math.min(8, emptySlots * 2);
+  const blessing = getActiveCommunityBlessing(data || loadData(), "eggs");
+  const blessingBonus = blessing?.definition?.eggBonus || 0;
+  const bonus = Math.min(H3_GLOBAL_CAPS.eggFinder, petBonus + Number(h32Current(player).egg || 0)) + nestBonus + blessingBonus;
+  // A modest global increase keeps unlocked incubators useful without flooding inventories.
+  if (Math.random() * 100 < 12 + Math.floor(bonus / 4)) return "Legendary";
+  if (Math.random() * 100 < 24 + Math.floor(bonus / 3)) return "Epic";
+  if (Math.random() * 100 < 36 + Math.floor(bonus / 2)) return "Rare";
+  if (Math.random() * 100 < 60 + bonus) return "Common";
+  return null;
+}
+
+function maybeFindEgg(player, data = null) {
+  const rolled = rollEggRarity(player, data);
+  if (!rolled) return null;
+  const upgrade=h32MaybeUpgradeEgg(player,rolled);
+  const rarity=upgrade.rarity;
+  player.eggs.push({ rarity, foundAt: Date.now(), nestGuardianUpgraded:Boolean(upgrade.upgraded) });
+  player.titleProgress.eggsFound = (player.titleProgress.eggsFound || 0) + 1;
+  return rarity;
+}
+
+function rollPetAffectionEvent(player) {
+  const ownedPet = getEquippedPet(player);
+  const definition = getOwnedPetDefinition(ownedPet);
+  if (!ownedPet || !definition || Math.random() * 100 >= PET_AFFECTION_EVENT_CHANCE) {
+    return { text: "", bonusXp: 0 };
+  }
+
+  const displayName = getOwnedPetName(ownedPet);
+  const events = {
+    Cheerful: `${getPetDisplayIcon(definition)} **${displayName}** celebrates the victory and refuses to leave your side.`,
+    Curious: `${getPetDisplayIcon(definition)} **${displayName}** studies the monster's tracks, then proudly returns to you.`,
+    Loyal: `${getPetDisplayIcon(definition)} **${displayName}** guards you while you recover from the hunt.`,
+    Mischievous: `${getPetDisplayIcon(definition)} **${displayName}** steals a trophy from the battlefield and presents it to you.`,
+    Sleepy: `${getPetDisplayIcon(definition)} **${displayName}** curls up beside you after the hunt, looking unusually content.`,
+    Brave: `${getPetDisplayIcon(definition)} **${displayName}** steps between you and danger without hesitation.`
+  };
+
+  ownedPet.affectionEvents = (ownedPet.affectionEvents || 0) + 1;
+  return {
+    text: events[ownedPet.personality] || events.Curious,
+    bonusXp: COMPANION_XP_AFFECTION_BONUS
+  };
+}
+
+function companionReaction(player, caughtMonster) {
+  const ownedPet = getEquippedPet(player);
+  const definition = getOwnedPetDefinition(ownedPet);
+  if (!ownedPet || !definition || Math.random() * 100 >= PET_REACTION_CHANCE) return { text: "", rewards: [] };
+  const displayName = getOwnedPetName(ownedPet);
+
+  const reactions = {
+    Cheerful: `${getPetDisplayIcon(definition)} **${displayName}** cheers excitedly beside you!`,
+    Curious: `${getPetDisplayIcon(definition)} **${displayName}** carefully inspects the tracks left behind.`,
+    Loyal: `${getPetDisplayIcon(definition)} **${displayName}** stands proudly at your side.`,
+    Mischievous: `${getPetDisplayIcon(definition)} **${displayName}** darts around your new catch and causes a little chaos.`,
+    Sleepy: `${getPetDisplayIcon(definition)} **${displayName}** wakes up just long enough to celebrate.`,
+    Brave: `${getPetDisplayIcon(definition)} **${displayName}** lets out a fearless victory cry!`
+  };
+
+  const rewards = [];
+  const findChance = 3 + getPetBonus(player, "itemFinder");
+  if (Math.random() * 100 < findChance) {
+    const roll = Math.random() * 100;
+    if (roll < 55) {
+      player.captureItems.berry++;
+      rewards.push(`${getPetDisplayIcon(definition)} ${displayName} found a ${CAPTURE_ITEMS.berry.name}!`);
+    } else if (roll < 82) {
+      player.captureItems.honey++;
+      rewards.push(`${getPetDisplayIcon(definition)} ${displayName} found a ${CAPTURE_ITEMS.honey.name}!`);
+    } else if (roll < 96) {
+      player.captureItems.net++;
+      rewards.push(`${getPetDisplayIcon(definition)} ${displayName} found an ${CAPTURE_ITEMS.net.name}!`);
+    } else {
+      player.points += 10;
+      rewards.push(`${getPetDisplayIcon(definition)} ${displayName} found **10 Hunter Points**!`);
+    }
+    ownedPet.timesHelped = (ownedPet.timesHelped || 0) + 1;
+  }
+
+  return { text: reactions[ownedPet.personality] || reactions.Curious, rewards };
+}
+
+function resolveOwnedPet(player, input) {
+  const wanted = String(input || "").trim();
+  const numeric = Number(wanted);
+  if (Number.isInteger(numeric) && numeric > 0) return player.pets[numeric - 1] || null;
+  return player.pets.find(owned =>
+    getOwnedPetDefinition(owned)?.name.toLowerCase() === wanted.toLowerCase() ||
+    String(owned.nickname || "").toLowerCase() === wanted.toLowerCase()
+  ) || null;
+}
+
+function cleanMonsterName(name) {
+  return String(name || "")
+    .replace("✨ Shiny ", "")
+    .replace(/^[\p{Extended_Pictographic}\uFE0F\u200D\s]+/gu, "")
+    .trim();
+}
+
+function getKnowledgeCount(player, monsterOrName) {
+  const name = typeof monsterOrName === "string"
+    ? cleanMonsterName(monsterOrName)
+    : cleanMonsterName(monsterOrName.name);
+
+  return player.knowledge[name] || 0;
+}
+
+function addEncounterKnowledge(player, monster) {
+  const name = cleanMonsterName(monster.name);
+  const event = getActiveEvent();
+  const gain = event?.knowledgeBoost ? 2 : 1;
+  player.knowledge[name] = (player.knowledge[name] || 0) + gain;
+  return player.knowledge[name];
+}
+
+function getKnowledgeBonus(encounters) {
+  if (encounters >= 20) return 20;
+  if (encounters >= 10) return 15;
+  if (encounters >= 5) return 10;
+  if (encounters >= 3) return 5;
+  return 0;
+}
+
+function getKnowledgeRank(encounters) {
+  if (encounters >= 20) return "Mastered";
+  if (encounters >= 10) return "Expert";
+  if (encounters >= 5) return "Experienced";
+  if (encounters >= 3) return "Familiar";
+  return "Learning";
+}
+
+function resolveCaptureItem(input) {
+  if (!input) return null;
+
+  const wanted = input.trim().toLowerCase();
+
+  return Object.entries(CAPTURE_ITEMS).find(([, item]) =>
+    item.aliases.includes(wanted)
+  )?.[0] || null;
+}
+
+function getCommunitySeasonPoints(data) {
+  return Object.values(data.players || {}).reduce(
+    (sum, player) => sum + Math.max(0, Number(player.points || 0)),
+    0
+  );
+}
+
+function cleanupExpiredCommunityBlessings(data) {
+  if (!data.communityBlessings || typeof data.communityBlessings !== "object") {
+    data.communityBlessings = {};
+  }
+
+  const now = Date.now();
+  for (const [relicKey, blessing] of Object.entries(data.communityBlessings)) {
+    if (!blessing || Number(blessing.expiresAt || 0) <= now) {
+      delete data.communityBlessings[relicKey];
+    }
+  }
+}
+
+function getActiveCommunityBlessing(data, type) {
+  cleanupExpiredCommunityBlessings(data);
+  return Object.entries(data.communityBlessings || {})
+    .map(([relicKey, saved]) => ({
+      relicKey,
+      saved,
+      definition: COMMUNITY_BLESSINGS[relicKey]
+    }))
+    .find(entry =>
+      entry.definition &&
+      entry.definition.type === type &&
+      Number(entry.saved?.expiresAt || 0) > Date.now()
+    ) || null;
+}
+
+function applyCommunityPointBlessing(data, points) {
+  const base = Math.max(0, Number(points || 0));
+  const blessing = getActiveCommunityBlessing(data, "points");
+  if (!blessing) return base;
+  return Math.max(base, Math.ceil(base * (blessing.definition.pointMultiplier || 1)));
+}
+
+function getUndiscoveredWorldRelics(data) {
+  return ultraRareMonsters.filter(monster => !data.worldProgress?.[monster.relicKey]);
+}
+
+function discoverWorldRelic(data, relicMonster, source = "community", player = null) {
+  if (!relicMonster || data.worldProgress?.[relicMonster.relicKey]) return null;
+
+  data.worldProgress[relicMonster.relicKey] = true;
+
+  if (player) {
+    player.relics[relicMonster.relicKey] = (player.relics[relicMonster.relicKey] || 0) + 1;
+  }
+
+  const discoveredCount = RELIC_KEYS.filter(key => data.worldProgress?.[key]).length;
+  const allDiscovered = discoveredCount === RELIC_KEYS.length;
+
+  if (allDiscovered) {
+    data.worldShatterUnlocked = true;
+    initializeFinalWarningState(data);
+  } else if (discoveredCount >= 4) {
+    initializeFourOfFiveAnomalyState(data);
+  }
+
+  let blessing = null;
+  if (source === "community" && !allDiscovered) {
+    const definition = COMMUNITY_BLESSINGS[relicMonster.relicKey];
+    if (definition) {
+      blessing = {
+        relicKey: relicMonster.relicKey,
+        name: definition.name,
+        type: definition.type,
+        description: definition.description,
+        startedAt: Date.now(),
+        expiresAt: Date.now() + COMMUNITY_BLESSING_DURATION
+      };
+      data.communityBlessings[relicMonster.relicKey] = blessing;
+    }
+  }
+
+  return {
+    monster: relicMonster,
+    source,
+    discoveredCount,
+    allDiscovered,
+    blessing
+  };
+}
+
+function maybeDiscoverRelicFromFetch(data, player) {
+  const undiscovered = getUndiscoveredWorldRelics(data);
+  if (undiscovered.length === 0) return null;
+  if (Math.random() * 100 >= FETCH_WORLD_RELIC_CHANCE) return null;
+
+  const relicMonster = undiscovered[Math.floor(Math.random() * undiscovered.length)];
+  return discoverWorldRelic(data, relicMonster, "fetch", player);
+}
+
+async function announceWorldRelicDiscovery(channel, result, userId = null) {
+  if (!result || !channel?.isTextBased()) return;
+
+  const monster = result.monster;
+  const progress = `${result.discoveredCount}/${RELIC_KEYS.length}`;
+  const worldData = loadData();
+  const shatterWhen = worldData.worldStory?.shatterScheduledAt ? `<t:${Math.floor(worldData.worldStory.shatterScheduledAt/1000)}:F> (<t:${Math.floor(worldData.worldStory.shatterScheduledAt/1000)}:R>)` : "the next available weekend";
+
+  if (result.source === "community") {
+    if (result.allDiscovered) {
+      await sendWorldEvent(channel, 
+        `# ⚠️ THE WORLD HAS STOPPED MOVING.\n\n` +
+        `For one impossible moment, every monster falls silent.\n` +
+        `Every companion looks toward the horizon.\n\n` +
+        `${monster.relicName} has awakened through the combined efforts of the entire Monster Hunt community.\n\n` +
+        `🌍 **WORLD PROGRESS: ${progress}**\n\n` +
+        `The five World Relics begin to resonate.\n` +
+        `Ancient seals crack somewhere beyond sight...\n\n` +
+        `**The fragments were never pieces of a key. They were pieces of a seal.**\n\n` +
+        `🚨 A major community event is being prepared for **${shatterWhen}**.`
+      ).catch(() => null);
+      return;
+    }
+
+    const blessing = COMMUNITY_BLESSINGS[monster.relicKey];
+    await sendWorldEvent(channel, 
+      `# 🌍 THE WORLD TREMBLES...\n\n` +
+      `Across every habitat, monsters suddenly grow restless. Companions stop in their tracks and stare toward the horizon...\n\n` +
+      `Then a pulse of ancient energy erupts from somewhere deep beneath the world.\n\n` +
+      `💎 **A WORLD RELIC HAS BEEN DISCOVERED!**\n` +
+      `${monster.relicName}\n\n` +
+      `The relic was not discovered by a single Hunter.\n` +
+      `**It was awakened by the combined efforts of the entire Monster Hunt community.**\n\n` +
+      `🌍 **WORLD PROGRESS: ${progress}**\n\n` +
+      `✨ **COMMUNITY BLESSING ACTIVATED — 24 HOURS**\n` +
+      `${blessing?.icon || "✨"} **${blessing?.name || "World Blessing"}:** ${blessing?.description || "The world favors the Hunters."}\n\n` +
+      `Whatever is sleeping beyond the world has noticed you.`
+    ).catch(() => null);
+    return;
+  }
+
+  if (result.source === "fetch") {
+    await sendWorldEvent(channel, 
+      `# 🌍 A WORLD RELIC HAS BEEN DISCOVERED!\n\n` +
+      `${userId ? `<@${userId}>'s companion` : "A companion"} returned carrying something that should not have been found...\n\n` +
+      `💎 **${monster.relicName}**\n` +
+      `*${monster.relicDescription}*\n\n` +
+      `🌍 **WORLD PROGRESS: ${progress}**\n\n` +
+      `${result.allDiscovered
+        ? `The final unknown Relic has been uncovered. Ancient seals begin to crack...\n\n**The fragments were never pieces of a key. They were pieces of a seal.**\n\n🚨 A major community event is being prepared for **${shatterWhen}**.`
+        : result.discoveredCount === 4 ? `Four Relics now resonate at once.\n\n🚨 **WORLD STABILITY: CRITICAL**\nSomething remains missing.` : `Something beyond the world stirs.`}`
+    ).catch(() => null);
+    return;
+  }
+
+  if (result.source === "ultra") {
+    await sendWorldEvent(channel,
+      `# 💎 A WORLD RELIC HAS BEEN RECOVERED!\n\n` +
+      `${userId ? `<@${userId}>` : "A Hunter"} recovered **${monster.relicName}** from ${cleanMonsterName(monster.name)}.\n\n` +
+      `🌍 **WORLD PROGRESS: ${progress}**\n\n` +
+      `${result.allDiscovered
+        ? `For one impossible moment, every monster falls silent.\n\nThe five Relics begin to resonate.\n\n**The fragments were never pieces of a key. They were pieces of a seal.**\n\n🚨 A major community event is being prepared for **${shatterWhen}**.`
+        : result.discoveredCount === 4 ? `Four Relics now resonate somewhere within the hunting grounds.\n\n🚨 **WORLD STABILITY: CRITICAL**\nReality is no longer repairing itself cleanly.` : `Something beyond the world has noticed you.`}`
+    ).catch(() => null);
+  }
+}
+
+async function processCommunityWorldProgress() {
+  const data = loadData();
+  cleanupExpiredCommunityBlessings(data);
+
+  const totalPoints = getCommunitySeasonPoints(data);
+  const awarded = new Set((data.worldCommunityMilestonesAwarded || []).map(Number));
+  const nextThreshold = COMMUNITY_WORLD_THRESHOLDS.find(value => totalPoints >= value && !awarded.has(value));
+
+  if (!nextThreshold) {
+    saveData(data);
+    return;
+  }
+
+  const undiscovered = getUndiscoveredWorldRelics(data);
+  if (undiscovered.length === 0) {
+    data.worldCommunityMilestonesAwarded.push(nextThreshold);
+    saveData(data);
+    return;
+  }
+
+  // A hidden community milestone always discovers a currently-undiscovered Relic.
+  const relicMonster = undiscovered[Math.floor(Math.random() * undiscovered.length)];
+  const result = discoverWorldRelic(data, relicMonster, "community");
+
+  data.worldCommunityMilestonesAwarded.push(nextThreshold);
+  saveData(data);
+
+  const channel = client.channels.cache.get(MONSTER_CHANNEL_ID);
+  await announceWorldRelicDiscovery(channel, result);
+}
+
+function getLeaderPoints(data, excludedId = null) {
+  return Math.max(0, ...Object.entries(data.players || {}).filter(([id]) => id !== excludedId).map(([, p]) => Number(p.points || 0)));
+}
+
+// H.10 IMPORTANT: Comeback catch/point assistance remains active during Distortions.
+function getComebackTier(data, player, userId = null) {
+  const leaderPoints = getLeaderPoints(data, userId);
+  const playerPoints = Math.max(0, Number(player.points || 0));
+  const behind = Math.max(0, leaderPoints - playerPoints);
+
+  // Comeback strength now scales with how far behind the current leader
+  // a player is as a percentage of the leader's score. This keeps the
+  // system useful even when season scores grow into the thousands.
+  const behindPercent = leaderPoints > 0
+    ? Math.max(0, Math.min(1, behind / leaderPoints))
+    : 0;
+
+  // 80%+ behind: +250% points (3.5x total) and +8% capture chance.
+  if (behindPercent >= 0.80) {
+    return {
+      behind,
+      behindPercent,
+      pointMultiplier: 3.50,
+      catchBonus: 8,
+      label: "+250%"
+    };
+  }
+
+  // 65%-79.99% behind: +200% points (3x total) and +6% capture chance.
+  if (behindPercent >= 0.65) {
+    return {
+      behind,
+      behindPercent,
+      pointMultiplier: 3.00,
+      catchBonus: 6,
+      label: "+200%"
+    };
+  }
+
+  // 50%-64.99% behind: +150% points (2.5x total) and +5% capture chance.
+  if (behindPercent >= 0.50) {
+    return {
+      behind,
+      behindPercent,
+      pointMultiplier: 2.50,
+      catchBonus: 5,
+      label: "+150%"
+    };
+  }
+
+  // 35%-49.99% behind: +100% points (2x total) and +4% capture chance.
+  if (behindPercent >= 0.35) {
+    return {
+      behind,
+      behindPercent,
+      pointMultiplier: 2.00,
+      catchBonus: 4,
+      label: "+100%"
+    };
+  }
+
+  // 20%-34.99% behind: +50% points (1.5x total) and +3% capture chance.
+  if (behindPercent >= 0.20) {
+    return {
+      behind,
+      behindPercent,
+      pointMultiplier: 1.50,
+      catchBonus: 3,
+      label: "+50%"
+    };
+  }
+
+  // 10%-19.99% behind: +25% points (1.25x total) and +2% capture chance.
+  if (behindPercent >= 0.10) {
+    return {
+      behind,
+      behindPercent,
+      pointMultiplier: 1.25,
+      catchBonus: 2,
+      label: "+25%"
+    };
+  }
+
+  // Less than 10% behind the leader receives no comeback assistance.
+  return {
+    behind,
+    behindPercent,
+    pointMultiplier: 1,
+    catchBonus: 0,
+    label: null
+  };
+}
+
+function isWeeklyCompetitionActive(data) {
+  return Boolean(data.weeklyCompetition?.active && Date.now() >= data.weeklyCompetition.startsAt);
+}
+
+function addWeeklyProgress(data, player, points, monster = null) {
+  if (!isWeeklyCompetitionActive(data)) return;
+  player.weeklyStats.points += Math.max(0, points || 0);
+  if (monster) {
+    player.weeklyStats.catches++;
+    if (monster.shiny) player.weeklyStats.shinies++;
+    if (monster.rarity === "Legendary") player.weeklyStats.legendaries++;
+  }
+}
+
+function petAbilityCapacity(player) {
+  return 1 + h3InheritedSlotLimit(player); // natural + inherited slots
+}
+
+function perfectCatchLoot(player) {
+  const roll = Math.random() * 100;
+  if (roll < 35) { player.captureItems.berry++; return CAPTURE_ITEMS.berry.name; }
+  if (roll < 58) { player.captureItems.honey++; return CAPTURE_ITEMS.honey.name; }
+  if (roll < 73) { player.captureItems.net++; return CAPTURE_ITEMS.net.name; }
+  if (roll < 85) { player.bait.rare++; return "🔵 Rare Bait"; }
+  if (roll < 93) { player.bait.epic++; return "🟣 Epic Bait"; }
+  if (roll < 98) { player.bait.legendary++; return "🟠 Legendary Bait"; }
+  if (roll < 99.5) { player.captureItems.masterCharm++; return CAPTURE_ITEMS.masterCharm.name; }
+  const rarity = rollEggRarity(player) || "Common";
+  player.eggs.push({ rarity, foundAt: Date.now(), source: "Perfect Catch" });
+  player.titleProgress.eggsFound = (player.titleProgress.eggsFound || 0) + 1;
+  return `${EGG_TYPES[rarity]?.icon || "🥚"} ${rarity} Egg`;
+}
+
+function fetchFlavor(definition, personality, returning = false, ownedPet = null) {
+  const displayName = ownedPet ? getOwnedPetName(ownedPet) : definition.name;
+  const starts = {
+    Cheerful: `${displayName} bounds away with unstoppable enthusiasm!`,
+    Curious: `${displayName} follows a mysterious trail into the distance.`,
+    Loyal: `${displayName} gives you one last determined look before setting out.`,
+    Mischievous: `${displayName} vanishes suspiciously quickly. This is probably fine.`,
+    Sleepy: `${displayName} yawns, stretches, and slowly wanders off to search.`,
+    Brave: `${displayName} charges into the wilds without a second thought!`
+  };
+  const returns = {
+    Cheerful: `${displayName} comes racing back, proudly showing off its haul!`,
+    Curious: `${displayName} returns after investigating every strange sound along the way.`,
+    Loyal: `${displayName} returns directly to your side with supplies carefully protected.`,
+    Mischievous: `${displayName} returns looking far too innocent and drops its findings at your feet.`,
+    Sleepy: `${displayName} returns with supplies... and immediately curls up for a nap.`,
+    Brave: `${displayName} marches back triumphantly from its adventure!`
+  };
+  return (returning ? returns : starts)[personality] || (returning ? returns.Curious : starts.Curious);
+}
+
+function rollFetchRewards(data, player, ownedPet, definition) {
+  const relicDiscovery = maybeDiscoverRelicFromFetch(data, player);
+
+  // A World Relic jackpot replaces the normal Fetch haul so the moment stays special
+  // and does not add another large stack of regular supplies.
+  if (relicDiscovery) {
+    return {
+      rewards: [`💎 **${relicDiscovery.monster.relicName}**`],
+      relicDiscovery
+    };
+  }
+
+  const rewards = [];
+
+  // Fetch quantity stays conservative. Rarity mostly improves QUALITY.
+  const quantityRoll = Math.random() * 100;
+  const quantityChances = {
+    Common:    { two: 5,  three: 0.25 },
+    Rare:      { two: 8,  three: 0.5 },
+    Epic:      { two: 12, three: 1 },
+    Legendary: { two: 16, three: 2 }
+  };
+  const quantity = quantityChances[definition.rarity] || quantityChances.Common;
+  const count = quantityRoll < quantity.three
+    ? 3
+    : (quantityRoll < quantity.three + quantity.two ? 2 : 1);
+
+  const rarityQualityBoost = {
+    Common: 0,
+    Rare: 4,
+    Epic: 8,
+    Legendary: 12
+  }[definition.rarity] || 0;
+
+  const fetchBlessing = getActiveCommunityBlessing(data, "fetch");
+  const blessingQualityBoost = fetchBlessing?.definition?.fetchQualityBonus || 0;
+  const ability = definition.ability;
+
+  for (let i = 0; i < count; i++) {
+    let roll = Math.random() * 100 + rarityQualityBoost + blessingQualityBoost;
+
+    // Hidden specialties influence what the pet tends to find, not quantity.
+    if (ability === "eggFinder") roll -= 12;
+    if (ability === "itemFinder") roll += 3;
+    if (ability === "capture") roll += 2;
+
+    roll = Math.max(0, Math.min(100, roll));
+
+    if (roll < 8) {
+      const rarity = rollEggRarity(player, data) || "Common";
+      player.eggs.push({ rarity, foundAt: Date.now(), source: "Fetch" });
+      player.titleProgress.eggsFound = (player.titleProgress.eggsFound || 0) + 1;
+      rewards.push(`${EGG_TYPES[rarity]?.icon || "🥚"} **${rarity} Egg**`);
+    } else if (roll < 38) {
+      player.captureItems.berry++;
+      rewards.push(CAPTURE_ITEMS.berry.name);
+    } else if (roll < 57) {
+      player.captureItems.honey++;
+      rewards.push(CAPTURE_ITEMS.honey.name);
+    } else if (roll < 70) {
+      player.bait.rare++;
+      rewards.push("🔵 Rare Bait");
+    } else if (roll < 80) {
+      player.captureItems.net++;
+      rewards.push(CAPTURE_ITEMS.net.name);
+    } else if (roll < 88) {
+      player.bait.epic++;
+      rewards.push("🟣 Epic Bait");
+    } else if (roll < 94) {
+      player.bait.legendary++;
+      rewards.push("🟠 Legendary Bait");
+    } else if (roll < 96) {
+      player.captureItems.masterCharm++;
+      rewards.push(CAPTURE_ITEMS.masterCharm.name);
+    } else {
+      const basePts = 5 + Math.floor(Math.random() * 6);
+      const pts = applyCommunityPointBlessing(data, basePts);
+      player.points += pts;
+      addWeeklyProgress(data, player, pts);
+      rewards.push(`⭐ **${pts} Hunter Points**`);
+    }
+  }
+
+  return { rewards, relicDiscovery: null };
+}
+
+function calculateCaptureChance(player, monster, itemKey = null, data = null, userId = null) {
+  const event = getActiveEvent();
+  const comeback = getComebackTier(data || loadData(), player, userId);
+  const isMixerMonster = cleanMonsterName(monster.name) === "Mixer Monster";
+  const encounters = getKnowledgeCount(player, monster);
+  const runeReaderBonus = isMixerMonster ? 0 : getRuneReaderKnowledgeBonus(player, monster);
+  const knowledgeBonus = isMixerMonster ? 0 : getKnowledgeBonus(encounters) + runeReaderBonus;
+  const eventBonus = isMixerMonster ? 0 : (event?.captureBoost ? 10 : 0);
+  const petBonus = isMixerMonster ? 0 : Math.min(H3_GLOBAL_CAPS.capture, getPetBonus(player, "capture") + h32CaptureDynamicBonus(player, monster, data || loadData(), userId) + getSignatureCaptureBonus(player));
+  const comebackBonus = isMixerMonster ? 0 : comeback.catchBonus;
+  const item = itemKey ? CAPTURE_ITEMS[itemKey] : null;
+
+  if (item?.guaranteed) {
+    return {
+      total: 100,
+      base: monster.chance,
+      knowledgeBonus,
+      eventBonus,
+      itemBonus: item.bonus,
+      petBonus,
+      comebackBonus,
+      guaranteed: true
+    };
+  }
+
+  const total = Math.min(
+    MAX_CAPTURE_CHANCE,
+    monster.chance + knowledgeBonus + eventBonus + petBonus + comebackBonus + (item?.bonus || 0)
+  );
+
+  return {
+    total,
+    base: monster.chance,
+    knowledgeBonus,
+    eventBonus,
+    itemBonus: item?.bonus || 0,
+    petBonus,
+    comebackBonus,
+    guaranteed: false
+  };
+}
+
+
+function buildCaptureChoices(player, monster) {
+  const choices = [
+    {
+      number: 1,
+      itemKey: null,
+      label: "🎯 Normal Throw",
+      chance: calculateCaptureChance(player, monster).total
+    }
+  ];
+
+  for (const itemKey of ["berry", "honey", "net", "masterCharm"]) {
+    if ((player.captureItems[itemKey] || 0) <= 0) continue;
+
+    const item = CAPTURE_ITEMS[itemKey];
+    choices.push({
+      number: choices.length + 1,
+      itemKey,
+      label: `${item.name} x${player.captureItems[itemKey]}`,
+      chance: calculateCaptureChance(player, monster, itemKey).total
+    });
+  }
+
+  return choices;
+}
+
+function captureChoicesText(choices) {
+  return choices
+    .map(choice =>
+      `${choice.number}️⃣ ${choice.label} — **${choice.chance}%**`
+    )
+    .join("\n");
+}
+
+
+// ==================== H.8.3 SUCCESSFUL HUNT LOOT ====================
+// Every successful standard catch has a modest chance to uncover one useful
+// hunting supply. Rarer monsters are more likely to leave something behind.
+// Companion Treasure Finder / reaction loot remains a separate bonus roll.
+function h83SuccessfulHuntSupplyDrop(player, monster) {
+  if (!player || !monster) return null;
+  if (monster.distortionEncounter || monster.worldShatterEncounter) return null;
+
+  const chanceByRarity = {
+    Common:8,
+    Rare:14,
+    Epic:22,
+    Legendary:32,
+    Mythic:40,
+    Secret:40,
+    Event:22
+  };
+  const chance=Number(chanceByRarity[monster.rarity]||8);
+  if (Math.random()*100 >= chance) return null;
+
+  const roll=Math.random()*100;
+  if (roll < 42) {
+    player.captureItems.berry=Number(player.captureItems.berry||0)+1;
+    return `🍓 Hunt Loot: 1 ${CAPTURE_ITEMS.berry.name}`;
+  }
+  if (roll < 70) {
+    player.captureItems.honey=Number(player.captureItems.honey||0)+1;
+    return `🍯 Hunt Loot: 1 ${CAPTURE_ITEMS.honey.name}`;
+  }
+  if (roll < 85) {
+    player.bait.rare=Number(player.bait.rare||0)+1;
+    return `🔵 Hunt Loot: 1 Rare Bait`;
+  }
+  if (roll < 96) {
+    player.captureItems.net=Number(player.captureItems.net||0)+1;
+    return `🕸️ Hunt Loot: 1 ${CAPTURE_ITEMS.net.name}`;
+  }
+  player.bait.epic=Number(player.bait.epic||0)+1;
+  return `🟣 Hunt Loot: 1 Epic Bait`;
+}
+
+async function performCaptureAttempt(message, userId, itemKey = null) {
+  const data = loadData();
+  const player = getPlayer(data, userId);
+
+  if (!player.currentMonster) {
+    return message.reply("That monster is no longer available. Use `!hunt` to find another one.");
+  }
+
+  if (itemKey && (player.captureItems[itemKey] || 0) <= 0) {
+    return message.reply(`You no longer have any ${CAPTURE_ITEMS[itemKey].name}.`);
+  }
+
+  const monster = player.currentMonster;
+  let bountyCaptureResult = null;
+  const chanceInfo = calculateCaptureChance(player, monster, itemKey, data, userId);
+  let roll = Math.floor(Math.random() * 100) + 1;
+  let criticalCatch = roll === 100;
+  let perfectCatch = roll === 1;
+  let signatureAttemptText = "";
+
+  if (itemKey) {
+    player.captureItems[itemKey]--;
+    player.titleProgress.captureItemsUsed = (player.titleProgress.captureItemsUsed || 0) + 1;
+    if (itemKey === "masterCharm") {
+      player.titleProgress.masterCharmUsed = (player.titleProgress.masterCharmUsed || 0) + 1;
+    }
+  }
+
+  let caught = criticalCatch || chanceInfo.guaranteed || roll <= chanceInfo.total;
+  const rimeSig = getSignaturePet(player);
+  if (!caught && chanceInfo.total >= 25 && rimeSig?.definition.signatureAbility === "second_chance") {
+    const procChance = signatureTier(rimeSig.level,15,20,25);
+    if (Math.random()*100 < procChance) {
+      const firstRoll = roll;
+      roll = Math.floor(Math.random()*100)+1;
+      criticalCatch = roll === 100; perfectCatch = roll === 1;
+      caught = criticalCatch || chanceInfo.guaranteed || roll <= chanceInfo.total;
+      signatureAttemptText = `\n\n❄️ **RIME SPRITE — SECOND CHANCE!**\nThe monster began to escape, but time froze. **Reroll: ${firstRoll} → ${roll}**`;
+    }
+  }
+  consumeAttemptSignatureState(player);
+  const event = getActiveEvent();
+
+  if (caught) {
+    let pointsEarned = monster.points;
+    // Double Points Day was removed for Season 2 balance. Hunter's Fortune is a
+    // true flat +2 that is added AFTER multipliers, so high-frequency hunters
+    // cannot amplify it with comeback or community point multipliers.
+    const eventFlatBonus = event?.flatPointBonus && !monster.distortionEncounter && !monster.worldShatterEncounter
+      ? event.flatPointBonus
+      : 0;
+    pointsEarned += getPetBonus(player, "points");
+    const comeback = getComebackTier(data, player, userId);
+    const baseBeforeComeback = pointsEarned;
+    pointsEarned = Math.max(pointsEarned, Math.ceil(pointsEarned * comeback.pointMultiplier));
+    if (criticalCatch) pointsEarned += CRITICAL_CATCH_BONUS_POINTS;
+    pointsEarned = applyCommunityPointBlessing(data, pointsEarned);
+    pointsEarned += eventFlatBonus;
+    const comebackExtra = pointsEarned - eventFlatBonus - baseBeforeComeback - (criticalCatch ? CRITICAL_CATCH_BONUS_POINTS : 0);
+
+    const previousPoints = player.points;
+    player.points += pointsEarned;
+    addWeeklyProgress(data, player, pointsEarned, monster);
+    player.caught.push(monster);
+    player.lifetimeCaught.push({ ...monster });
+    recordRecentHunt(data, userId, monster, pointsEarned, "Monster Hunt");
+    player.currentMonster = null;
+
+    // H.2D.6: Bounty monsters use the SAME capture roll as normal hunts.
+    // Only a successful capture changes the live Bounty into trophy-turn-in state.
+    if (monster.bountyEncounter) {
+      const liveBounty = ensureBountyData(data);
+      const target = bountyTarget(data);
+      if (
+        liveBounty.active &&
+        liveBounty.status === "hunting" &&
+        target &&
+        target.key === monster.bountyTargetKey
+      ) {
+        liveBounty.status = "awaiting_turnin";
+        liveBounty.catcherId = userId;
+        liveBounty.trophyHolderId = userId;
+        player.bountyTrophies ||= {};
+        player.bountyTrophies[target.key] = Number(player.bountyTrophies[target.key] || 0) + 1;
+        bountyCaptureResult = { targetName:target.name, trophy:target.trophy, image:target.image, target:true };
+      }
+    } else if (monster.bountyTrailEncounter) {
+      const liveBounty = ensureBountyData(data);
+      const target = bountyTarget(data);
+      if (
+        liveBounty.active &&
+        liveBounty.status === "hunting" &&
+        target &&
+        target.key === monster.bountyTargetKey
+      ) {
+        const tracker=bountyTrackingReward(data,userId);
+        liveBounty.clueLevel=Math.min(target.clues.length-1,Number(liveBounty.clueLevel||0)+1);
+        bountyCaptureResult={
+          target:false,
+          clue:bountyClue(data),
+          trackingChance:tracker.chance,
+          clues:tracker.clues
+        };
+      }
+    }
+
+    updateQuestProgress(player, "catch", monster);
+
+    const bonusRewards = giveCatchBonusBait(player, monster);
+    const huntSupplyDrop = h83SuccessfulHuntSupplyDrop(player, monster);
+    if (huntSupplyDrop) bonusRewards.push(huntSupplyDrop);
+    const perfectLoot = perfectCatch ? perfectCatchLoot(player) : null;
+    if (criticalCatch) player.titleProgress.criticalCatch = true;
+    if (perfectCatch) player.titleProgress.perfectCatch = true;
+    const distortionEggFound = maybeFindDistortionEgg(player, monster, data);
+    const eggFound = distortionEggFound ? null : maybeFindEgg(player, data);
+    const worldShatterCatch = registerWorldShatterCatch(data, userId, monster);
+    const signatureMessages = [];
+    if (worldShatterCatch.text) signatureMessages.push(worldShatterCatch.text);
+    const sig = getSignaturePet(player);
+    if (sig?.definition.signatureAbility === "from_the_ashes") {
+      const state=ensureSignatureState(sig.owned); state.successes=(state.successes||0)+1;
+      const every=signatureTier(sig.level,6,5,4);
+      if(state.successes>=every){ state.successes=0; player.points+=10; addWeeklyProgress(data,player,10); signatureMessages.push(`🔥 **FROM THE ASHES!** Ashbound Familiar manifested **+10 Hunter Points**.\n${bonusEggRollFromAshes(player,data,userId)}`); }
+    }
+    if (sig?.definition.signatureAbility === "frozen_time") {
+      const state=ensureSignatureState(sig.owned); state.successes=(state.successes||0)+1; const every=signatureTier(sig.level,4,3,3);
+      if(state.successes>=every){state.successes=0;state.frozenTimeReady=true;signatureMessages.push(`❄️ **FROZEN TIME!** Your next hunt cooldown is reduced by **${sig.level>=10?60:50}%**.`);}
+    }
+    if (sig?.definition.signatureAbility === "grave_scavenger") { const text=rollSignatureScavenge(player,sig); if(text) signatureMessages.push(text); }
+    const dupEggText = duplicateDiscoveredEgg(player,distortionEggFound,eggFound); if(dupEggText) signatureMessages.push(dupEggText);
+    if (sig?.definition.signatureAbility === "paradox" && monster.rarity !== "Mythic" && monster.rarity !== "Ultra Rare" && monster.habitat !== "The Unmade" && Math.random()*100 < signatureTier(sig.level,5,7,10)) {
+      const duplicate={...monster,paradoxDuplicate:true}; player.caught.push(duplicate); player.lifetimeCaught.push({...duplicate}); player.points += pointsEarned; addWeeklyProgress(data,player,pointsEarned,duplicate); updateQuestProgress(player,"catch",duplicate); signatureMessages.push(`🌀 **PARADOX**\nReality stutters. You remember catching **${cleanMonsterName(monster.name)}** twice. Apparently... **you did.**\n**Second copy added +${pointsEarned} points.**`);
+    }
+    let unwrittenBonusMonster = null;
+    if (sig?.definition.signatureAbility === "this_wasnt_supposed_to_happen" && !monster.distortionEncounter && monster.rarity !== "Mythic" && Math.random()*100 < signatureTier(sig.level,1,2,3)) {
+      unwrittenBonusMonster=createUnwrittenBonusMonster();
+      if(unwrittenBonusMonster) signatureMessages.push(`✒️ **THIS WASN'T SUPPOSED TO HAPPEN**\nThe Unwritten reaches toward the Monster Dex. Something that wasn't there before... **is.**\nA Rare-or-better bonus encounter has been created.`);
+    }
+    const reaction = companionReaction(player, monster);
+    const affectionEvent = rollPetAffectionEvent(player);
+    const companionXpText = awardCompanionXp(
+      player,
+      COMPANION_XP_PER_SUCCESSFUL_HUNT + affectionEvent.bonusXp,
+      affectionEvent.bonusXp > 0 ? "Successful Hunt + Affection Event" : "Successful Hunt"
+    );
+    const incubatorUnlockText = getNewIncubatorUnlockText(player, previousPoints);
+    const isMixerMonster = cleanMonsterName(monster.name) === "Mixer Monster";
+    player.titleProgress.failedCaptureStreak = 0;
+    if (isMixerMonster && itemKey !== "masterCharm") {
+      player.titleProgress.mixerWithoutCharm = true;
+    }
+
+    const mixerUnlocks = isMixerMonster
+      ? unlockSecretReward(
+          player,
+          MIXER_MONSTER.secretAchievement,
+          MIXER_MONSTER.titleReward
+        )
+      : [];
+
+    const automaticTitleUnlocks = checkTitleUnlocks(player);
+
+    const hunterName = seasonMomentPlayerName(data, message.author.id);
+    addSeasonMoment(data, {
+      type: "first_catch",
+      playerId: message.author.id,
+      icon: "🐾",
+      text: `${hunterName} made the first successful catch of the season: ${cleanMonsterName(monster.name)}.`,
+      uniqueKey: "season:first_catch"
+    });
+
+    if (monster.shiny) {
+      addSeasonMoment(data, {
+        type: "first_shiny",
+        playerId: message.author.id,
+        icon: "✨",
+        text: `${hunterName} discovered the season's first Shiny: ${cleanMonsterName(monster.name)}!`,
+        uniqueKey: "season:first_shiny"
+      });
+    }
+
+    if (monster.rarity === "Legendary") {
+      addSeasonMoment(data, {
+        type: "first_legendary",
+        playerId: message.author.id,
+        icon: "🐉",
+        text: `${hunterName} captured the season's first Legendary monster: ${cleanMonsterName(monster.name)}!`,
+        uniqueKey: "season:first_legendary"
+      });
+    }
+
+    if (eggFound) {
+      addSeasonMoment(data, {
+        type: "first_egg",
+        playerId: message.author.id,
+        icon: "🥚",
+        text: `${hunterName} uncovered the season's first ${eggFound} Egg.`,
+        uniqueKey: "season:first_egg"
+      });
+    }
+
+    if (isMixerMonster) {
+      addSeasonMoment(data, {
+        type: "mixer_capture",
+        playerId: message.author.id,
+        icon: "🌌",
+        text: `${hunterName} captured the mythical Mixer Monster!`
+      });
+    }
+
+    if (criticalCatch) addSeasonMoment(data, { type: "critical_catch", playerId: userId, icon: "💯", text: `${hunterName} rolled a Natural 100 and made a Critical Catch on ${cleanMonsterName(monster.name)}!` });
+    if (perfectCatch) addSeasonMoment(data, { type: "perfect_catch", playerId: userId, icon: "🎯", text: `${hunterName} rolled a Natural 1 and made a Perfect Catch on ${cleanMonsterName(monster.name)}!` });
+    recordPointMilestoneMoments(data, message.author.id, previousPoints, player.points);
+    const huntTokenText = awardHuntTokens(data, player, userId, monster);
+    const h3AbilityMessages = h32SuccessEffects(player,data,userId,monster);
+    // A successful catch consumes any Bloodhound mark for this species.
+    if (h32Runtime(player).bloodhoundSpecies === cleanMonsterName(monster.name)) h32Runtime(player).bloodhoundSpecies = null;
+    if (unwrittenBonusMonster) {
+      player.currentMonster = unwrittenBonusMonster;
+      player.lastHunt = 0;
+    }
+    saveData(data);
+    await announceTitleUnlocks(message, automaticTitleUnlocks);
+
+    if (isMixerMonster) {
+      await message.channel.send(
+        `🌌━━━━━━━━━━━━━━━━━━━━━━🌌\n\n` +
+        `✨ **THE MIXER MONSTER HAS BEEN CAPTURED!** ✨\n\n` +
+        `${formatPlayerMention(data, message.author.id)} captured the rarest creature in Monster Hunt!\n` +
+        `🏆 **+${pointsEarned} Hunter Points**\n` +
+        `🌌 **Achievement:** ${MIXER_MONSTER.secretAchievement}\n` +
+        `✨ **Title:** ${MIXER_MONSTER.titleReward}\n\n` +
+        `🌌━━━━━━━━━━━━━━━━━━━━━━🌌`
+      );
+    }
+
+    const captureReply = await message.reply(
+      buildMonsterEmbed(
+        monster,
+        `✅ You caught ${monster.name}!`,
+        `${itemKey ? `**Item Used:** ${CAPTURE_ITEMS[itemKey].name}\n` : "**Method:** Normal Throw\n"}` +
+        `**Final Capture Chance:** ${chanceInfo.total}%\n` +
+        `**Roll:** ${roll}\n` +
+        `${criticalCatch ? `\n💯 **CRITICAL CATCH!** A Natural 100 overrides the odds!\n🏆 **Critical Bonus: +${CRITICAL_CATCH_BONUS_POINTS} points**\n` : ""}` +
+        `${perfectCatch ? `\n🎯 **PERFECT CATCH!** Natural 1 bonus loot: **${perfectLoot}**\n` : ""}` +
+        `${comebackExtra > 0 ? `🔥 **Comeback Bonus: +${comebackExtra} points**\n` : ""}` +
+        `**+${pointsEarned} points**` +
+        `${huntTokenText}` +
+        `${h3AbilityMessages.length ? `\n\n🐾 **PET ABILITIES**\n${h3AbilityMessages.join("\n")}` : ""}` +
+        `${signatureAttemptText}` +
+        `${signatureMessages.length ? `\n\n❖ **SIGNATURE ABILITY**\n${signatureMessages.join("\n\n")}` : ""}` +
+        `${distortionEggFound ? `\n\n🌀 **DISTORTION EGG FOUND!**\n${distortionEggFound.icon} You discovered a **${distortionEggFound.name}**!` : ""}` +
+        `${eggFound ? `\n\n🥚 **EGG FOUND!**\n${EGG_TYPES[eggFound]?.icon || "🥚"} You discovered a **${eggFound} Egg**!` : ""}` +
+        `${reaction.text ? `\n\n🐾 **Companion Reaction**\n${reaction.text}` : ""}` +
+        `${reaction.rewards.length > 0 ? `\n${reaction.rewards.join("\n")}` : ""}` +
+        `${affectionEvent.text ? `\n\n❤️ **Affection Event**\n${affectionEvent.text}` : ""}` +
+        `${companionXpText ? `\n\n⭐ **Companion Progress**\n${companionXpText}` : ""}` +
+        `${bonusRewards.length > 0 ? `\n\n**Bonus Rewards:**\n${bonusRewards.join("\n")}` : ""}` +
+        `${incubatorUnlockText}` +
+        `${formatSecretUnlocks(mixerUnlocks)}`
+      )
+    );
+    if (unwrittenBonusMonster) {
+      const bonusChance = calculateCaptureChance(player, unwrittenBonusMonster, null, data, userId);
+      await message.channel.send(buildMonsterEmbed(unwrittenBonusMonster, `✒️ UNWRITTEN BONUS ENCOUNTER — ${unwrittenBonusMonster.name}`, `**Rarity:** ${unwrittenBonusMonster.rarity}\n**Capture Chance:** ${bonusChance.total}%\n\nThis encounter ignores the hunt cooldown. Use \`!catch\` to attempt the capture.`));
+    }
+    if (worldShatterCatch.reveal) {
+      const freshShatterData = loadData();
+      await revealUnmade(freshShatterData, false);
+    }
+    if (bountyCaptureResult?.target) {
+      await message.channel.send(
+        `📜 **BOUNTY TARGET CAPTURED!**\n\n` +
+        `${formatPlayerMention(data, userId)} successfully captured **${bountyCaptureResult.targetName}** using the normal capture system.\n` +
+        `🏆 Trophy recovered: **${bountyCaptureResult.trophy}**\n\n` +
+        `The bounty is not complete until the catcher returns the trophy with \`!turninbounty\` or the Activity **Return Trophy** button.`
+      ).catch(() => null);
+    } else if (bountyCaptureResult && !bountyCaptureResult.target) {
+      await message.channel.send(
+        `🔎 **BOUNTY CLUE FOUND!**\n\n` +
+        `${formatPlayerMention(data, userId)} caught a creature along the bounty trail and uncovered a new clue:\n` +
+        `**${bountyCaptureResult.clue}**\n\n` +
+        `🎯 Their next Bounty Hunt now has a **${bountyCaptureResult.trackingChance}%** chance to find the actual target.`
+      ).catch(() => null);
+    }
+    return captureReply;
+  }
+
+  const failureSig = getSignaturePet(player);
+  const failureMessages = [];
+  const h3Failure = h32FailureEffects(player,itemKey,monster);
+  failureMessages.push(...h3Failure.messages);
+  let keepEncounter = Boolean(h3Failure.persist);
+  if (failureSig?.definition.signatureAbility === "kindled_hunt") { ensureSignatureState(failureSig.owned).kindledReady = true; failureMessages.push(`🔥 **KINDLED HUNT!** Your failed catch fuels Ember Imp. Your next capture attempt gains **+${signatureTier(failureSig.level,5,7,10)}%**.`); }
+  if (failureSig?.definition.signatureAbility === "veilwalk" && ensureSignatureState(failureSig.owned).veilwalkReady) { ensureSignatureState(failureSig.owned).veilwalkReady=false; keepEncounter=true; failureMessages.push(`👻 **VEILWALK!** The monster starts to escape, but Veilkin pulls it back through the Veil. **The encounter remains active — use \`!catch\` to try again.**`); }
+  player.currentMonster = keepEncounter ? monster : null;
+  saveData(data);
+
+  const encounters = getKnowledgeCount(player, monster);
+  const knowledgeBonus = getKnowledgeBonus(encounters);
+
+  return message.reply(
+    buildMonsterEmbed(
+      monster,
+      `❌ ${monster.name} escaped!`,
+      `${itemKey ? `**Item Used:** ${CAPTURE_ITEMS[itemKey].name}\n` : "**Method:** Normal Throw\n"}` +
+      `**Final Capture Chance:** ${chanceInfo.total}%\n` +
+      `**Roll:** ${roll}` +
+      `${signatureAttemptText}` +
+      `${failureMessages.length ? `\n\n❖ **SIGNATURE ABILITY**\n${failureMessages.join("\n")}` : ""}` +
+      `\n\n📚 You learned from the encounter!\n` +
+      `**${cleanMonsterName(monster.name)} Knowledge:** ${encounters} encounter${encounters === 1 ? "" : "s"}\n` +
+      `**Future Catch Bonus:** +${knowledgeBonus}%`
+    )
+  );
+}
+
+function captureItemInventoryText(player) {
+  return (
+    `${CAPTURE_ITEMS.berry.name}: **${player.captureItems.berry}** (+10%)\n` +
+    `${CAPTURE_ITEMS.honey.name}: **${player.captureItems.honey}** (+20%)\n` +
+    `${CAPTURE_ITEMS.net.name}: **${player.captureItems.net}** (+30%)\n` +
+    `${CAPTURE_ITEMS.masterCharm.name}: **${player.captureItems.masterCharm}** (guaranteed)`
+  );
+}
+
+function findImageFile(filename) {
+  if (!filename) return null;
+
+  const searchFolders = [
+    __dirname,
+    path.join(__dirname, "images"),
+    path.join(__dirname, "images", "merchant"),
+    path.join(__dirname, "assets"),
+    path.join(__dirname, "assets", "images"),
+    path.join(__dirname, "assets", "images", "merchant"),
+    path.join(__dirname, "public"),
+    path.join(__dirname, "public", "images"),
+    path.join(__dirname, "src"),
+    path.join(__dirname, "src", "images")
+  ];
+
+  const wanted = path.basename(filename).toLowerCase();
+  for (const folder of searchFolders) {
+    if (!fs.existsSync(folder)) continue;
+    const exactPath = path.join(folder, filename);
+    if (fs.existsSync(exactPath) && fs.statSync(exactPath).isFile()) return exactPath;
+    try {
+      const matchingFile = fs.readdirSync(folder).find(file => file.toLowerCase() === wanted);
+      if (matchingFile) {
+        const matchedPath = path.join(folder, matchingFile);
+        if (fs.statSync(matchedPath).isFile()) return matchedPath;
+      }
+    } catch (error) {
+      console.error(`Could not search image folder ${folder}:`, error.message);
+    }
+  }
+  return null;
+}
+
+function getMonsterImage(monster) {
+  if (!monster) return null;
+  const cleanName = cleanMonsterName(monster.name || "");
+  const distortionMonsters = Object.values(DISTORTIONS).flatMap(definition => definition.monsters || []);
+  const allMonsters = [...monsters, MIXER_MONSTER, ...eventMonsters, ...ultraRareMonsters, ...distortionMonsters];
+  const match = allMonsters.find(candidate =>
+    candidate.key === monster.key ||
+    cleanMonsterName(candidate.name).toLowerCase() === cleanName.toLowerCase()
+  );
+  return findImageFile(monster.image || match?.image);
+}
+
+function buildMonsterEmbed(
+  monster,
+  title,
+  description
+) {
+  const imagePath = getMonsterImage(monster);
+
+  const files = imagePath
+    ? [new AttachmentBuilder(imagePath)]
+    : [];
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description);
+
+  if (imagePath) {
+    embed.setImage(
+      `attachment://${path.basename(imagePath)}`
+    );
+  }
+
+  return {
+    embeds: [embed],
+    files
+  };
+}
+
+function dateKey() {
+  const now = new Date();
+  return `${now.getMonth() + 1}-${now.getDate()}`;
+}
+
+function dailySeed(date = new Date()) {
+  // Use the Mountain calendar date so the Daily Event changes at the same time
+  // for every player regardless of Railway/server timezone.
+  const d = getMountainDateTimeParts(date).date;
+  return d.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+}
+
+const DAILY_EVENT_POOL = [
+  { id: "shinyStorm", name: "✨ Shiny Storm Day", description: "Shiny odds are tripled today!", shinyBoost: true },
+  { id: "legendaryRift", name: "🐉 Legendary Rift Day", description: "Legendary monsters are easier to find today!", legendaryBoost: true },
+  { id: "moonfenFrenzy", name: "🌙 Moonfen Frenzy Day", description: "Moonfen monsters are much more common today!", habitatBoost: "Moonfen" },
+  { id: "baitBonanza", name: "🪤 Bait Bonanza", description: "All bait rewards are doubled today!", doubleBait: true },
+  { id: "treasureDay", name: "💎 Treasure Hunter Day", description: "Treasure drops are three times more likely today!", treasureBoost: true },
+  { id: "hunterLuck", name: "🍀 Lucky Hunter Day", description: "All normal capture chances are increased by 10% today!", captureBoost: true },
+  { id: "knowledgeSurge", name: "📚 Knowledge Surge Day", description: "Every monster encounter counts as 2 Species Knowledge encounters today!", knowledgeBoost: true },
+  { id: "huntersFortune", name: "💰 Hunter's Fortune Day", description: "Every successful normal catch earns +2 bonus Hunter Points today!", flatPointBonus: 2 },
+  { id: "tokenRush", name: "🪙 Token Rush Day", description: "Every successful normal catch earns +1 Hunt Token today!", tokenRush: true }
+];
+
+function getActiveEvent(date = new Date()) {
+  const parts = getMountainDateTimeParts(date);
+  const today = parts.date.slice(5).replace(/^0/, "").replace("-0", "-");
+
+  if (today === "7-4") {
+    return {
+      id: "july4",
+      name: "🎆 4th of July Event",
+      description: "Special event monsters can appear during hunts!",
+      eventMonsterChance: 35
+    };
+  }
+
+  // Every day is guaranteed to have an event. The previous day's result is
+  // checked so the same event can never repeat on back-to-back days.
+  const seed = dailySeed(date);
+  let index = seed % DAILY_EVENT_POOL.length;
+  const yesterday = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+  const previousIndex = dailySeed(yesterday) % DAILY_EVENT_POOL.length;
+  if (index === previousIndex) index = (index + 1 + (seed % (DAILY_EVENT_POOL.length - 1))) % DAILY_EVENT_POOL.length;
+  return { ...DAILY_EVENT_POOL[index] };
+}
+
+function applyShiny(monster, player = null, data = null) {
+  const event = getActiveEvent();
+  const blessing = getActiveCommunityBlessing(data || loadData(), "shiny");
+  const blessingBonus = blessing?.definition?.shinyBonus || 0;
+
+  const chance =
+    (event?.shinyBoost ? SHINY_CHANCE * 3 : SHINY_CHANCE) +
+    getPetBonus(player, "shiny") +
+    Math.min(H3_GLOBAL_CAPS.shiny, Number(h32Current(player).shiny || 0)) +
+    blessingBonus;
+
+  const shinyRoll =
+    Math.floor(Math.random() * 100) + 1;
+
+  if (
+    monster.rarity !== "Event" &&
+    shinyRoll <= chance
+  ) {
+    monster.shiny = true;
+    monster.points += 10;
+    monster.name = `✨ Shiny ${monster.name}`;
+  } else {
+    monster.shiny = false;
+  }
+
+  return monster;
+}
+
+function weightedDistortionMonster(definition) {
+  const weighted = [];
+  for (const monster of definition.monsters) {
+    const weight = monster.rarity === "Common" ? 40 :
+      monster.rarity === "Rare" ? 25 :
+      monster.rarity === "Epic" ? 8 :
+      monster.rarity === "Legendary" ? 2 :
+      monster.name === "NULL" ? 1 : 12;
+    for (let i = 0; i < weight; i++) weighted.push(monster);
+  }
+  return { ...weighted[Math.floor(Math.random() * weighted.length)] };
+}
+
+function getRandomMonsterForPlayer(player, data, userId) {
+  const ws = data.worldStory?.event;
+  if (ws?.active && ["collision","stabilize","unmade"].includes(ws.stage)) {
+    if (!ws.participants || typeof ws.participants !== "object") ws.participants = {};
+    if (!ws.participants[userId]) ws.participants[userId] = { planes: {}, catches: 0, attacks: 0 };
+    const roll = Math.random() * 100;
+    if (ws.stage === "unmade") {
+      if (roll < 60) {
+        const monster = weightedDistortionMonster(DISTORTIONS.unmade);
+        monster.distortionKey = "unmade"; monster.distortionEncounter = true; monster.worldShatterEncounter = true;
+        return monster;
+      }
+      if (roll < 90) {
+        const key = WORLD_KNOWN_DISTORTION_KEYS[Math.floor(Math.random()*WORLD_KNOWN_DISTORTION_KEYS.length)];
+        const monster = weightedDistortionMonster(DISTORTIONS[key]);
+        monster.distortionKey = key; monster.distortionEncounter = true; monster.worldShatterEncounter = true;
+        return monster;
+      }
+      return { ...getRandomMonster(player), worldShatterEncounter: true };
+    }
+    if (roll < 80) {
+      const key = WORLD_KNOWN_DISTORTION_KEYS[Math.floor(Math.random()*WORLD_KNOWN_DISTORTION_KEYS.length)];
+      const monster = weightedDistortionMonster(DISTORTIONS[key]);
+      monster.distortionKey = key; monster.distortionEncounter = true; monster.worldShatterEncounter = true;
+      return monster;
+    }
+    return { ...getRandomMonster(player), worldShatterEncounter: true };
+  }
+  const distortion = getDistortionForPlayer(data, userId);
+  if (distortion && Math.random() * 100 < DISTORTION_EVENT_MONSTER_CHANCE) {
+    const monster = weightedDistortionMonster(distortion.definition);
+    monster.distortionKey = distortion.key;
+    monster.distortionEncounter = true;
+    monster.adminTest = distortion.test;
+    return monster;
+  }
+  return getRandomMonster(player);
+}
+
+function getEggDisplay(egg) {
+  if (egg?.eggKey && DISTORTION_EGGS[egg.eggKey]) {
+    const d = DISTORTION_EGGS[egg.eggKey];
+    return `${d.icon} **${d.name}**`;
+  }
+  return `${EGG_TYPES[egg?.rarity]?.icon || "🥚"} **${egg?.rarity || "Unknown"} Egg**`;
+}
+
+function chooseDistortionPet(eggKey) {
+  const egg = DISTORTION_EGGS[eggKey];
+  if (!egg) return null;
+  const roll = Math.random() * 100;
+  let total = 0;
+  for (const choice of egg.pets) {
+    total += choice.weight;
+    if (roll < total) return getPetDefinition(choice.key);
+  }
+  return getPetDefinition(egg.pets[egg.pets.length - 1].key);
+}
+
+function maybeFindDistortionEgg(player, monster, data) {
+  if (!monster?.distortionEncounter || !monster.distortionKey) return null;
+  const inUnmadeShatter = Boolean(monster.worldShatterEncounter && data.worldStory?.event?.active && data.worldStory.event.stage === "unmade" && monster.distortionKey === "unmade");
+  const dropChance = inUnmadeShatter ? WORLD_SHATTER_IMPOSSIBLE_EGG_CHANCE : DISTORTION_EGG_DROP_CHANCE;
+  if (Math.random() * 100 >= dropChance) return null;
+  const definition = DISTORTIONS[monster.distortionKey];
+  if (!definition) return null;
+  const eggKey = definition.eggKey;
+  const id = `dist-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+  player.eggs.push({ id, eggKey, rarity: "Distortion", foundAt: Date.now(), source: definition.name, adminTest: Boolean(monster.adminTest) });
+  player.titleProgress.eggsFound = (player.titleProgress.eggsFound || 0) + 1;
+  if (monster.adminTest) player.adminTest.generatedEggIds.push(id);
+  return DISTORTION_EGGS[eggKey];
+}
+
+function getRandomMonster(player) {
+  const event = getActiveEvent();
+
+  // The Mixer Monster is a separate Mythic encounter and is unaffected by
+  // events, habitat boosts, bait, and shiny rolls.
+  if (Math.random() * 100 < MIXER_MONSTER_ENCOUNTER_CHANCE) {
+    return { ...MIXER_MONSTER };
+  }
+
+  let monster = null;
+
+  const h3RareBoost = Math.min(H3_GLOBAL_CAPS.rareTracker, getPetBonus(player,"rareTracker") + Number(h32Current(player).rare || 0));
+  if (h3RareBoost > 0 && Math.random()*100 < h3RareBoost) {
+    const rarePlus = monsters.filter(m => ["Rare","Epic","Legendary"].includes(m.rarity));
+    if (rarePlus.length) {
+      const weighted=[];
+      for (const m of rarePlus) { const w=m.rarity==="Rare"?7:m.rarity==="Epic"?3:1; for(let i=0;i<w;i++) weighted.push(m); }
+      return applyShiny({ ...weighted[Math.floor(Math.random()*weighted.length)] }, player);
+    }
+  }
+
+  if (
+    event?.eventMonsterChance &&
+    Math.random() * 100 <
+      event.eventMonsterChance
+  ) {
+    return {
+      ...eventMonsters[
+        Math.floor(
+          Math.random() *
+            eventMonsters.length
+        )
+      ]
+    };
+  }
+
+  if (
+    event?.legendaryBoost &&
+    Math.random() < 0.25
+  ) {
+    const legendaries = monsters.filter(
+      m => m.rarity === "Legendary"
+    );
+
+    return applyShiny({
+      ...legendaries[
+        Math.floor(
+          Math.random() *
+            legendaries.length
+        )
+      ]
+    }, player);
+  }
+
+  if (
+    event?.habitatBoost &&
+    Math.random() < 0.4
+  ) {
+    const habitatPool = monsters.filter(
+      m => m.habitat === event.habitatBoost
+    );
+
+    return applyShiny({
+      ...habitatPool[
+        Math.floor(Math.random() * habitatPool.length)
+      ]
+    }, player);
+  }
+
+  if (
+    player?.activeBait === "rare" &&
+    Math.random() < 0.5
+  ) {
+    const rares = monsters.filter(
+      m => m.rarity === "Rare"
+    );
+
+    monster = {
+      ...rares[
+        Math.floor(
+          Math.random() *
+            rares.length
+        )
+      ]
+    };
+  } else if (
+    player?.activeBait === "epic" &&
+    Math.random() < 0.35
+  ) {
+    const epics = monsters.filter(
+      m => m.rarity === "Epic"
+    );
+
+    monster = {
+      ...epics[
+        Math.floor(
+          Math.random() *
+            epics.length
+        )
+      ]
+    };
+  } else if (
+    player?.activeBait === "legendary" &&
+    Math.random() < 0.25
+  ) {
+    const legendaries = monsters.filter(
+      m => m.rarity === "Legendary"
+    );
+
+    monster = {
+      ...legendaries[
+        Math.floor(
+          Math.random() *
+            legendaries.length
+        )
+      ]
+    };
+  } else {
+    monster = {
+      ...monsters[
+        Math.floor(
+          Math.random() *
+            monsters.length
+        )
+      ]
+    };
+  }
+
+  return applyShiny(monster, player);
+}
+
+function formatTime(ms) {
+  const mins = Math.ceil(ms / 60000);
+
+  const hours = Math.floor(mins / 60);
+  const minutes = mins % 60;
+
+  return hours > 0
+    ? `${hours}h ${minutes}m`
+    : `${minutes}m`;
+}
+
+function generateDailyQuests() {
+  return [...questPool]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3)
+    .map(q => ({
+      ...q,
+      progress: 0
+    }));
+}
+
+function rerollUnfinishedDailyQuests(player) {
+  const completed = (player.dailyQuests || []).filter(q => q.progress >= q.goal);
+  const unfinished = (player.dailyQuests || []).filter(q => q.progress < q.goal);
+
+  if (unfinished.length === 0) {
+    return { changed: false, reason: "complete" };
+  }
+
+  const usedIds = new Set(completed.map(q => q.id));
+  const oldUnfinishedIds = new Set(unfinished.map(q => q.id));
+  const replacements = [];
+
+  for (const oldQuest of unfinished) {
+    let candidates = questPool.filter(q =>
+      !usedIds.has(q.id) &&
+      !oldUnfinishedIds.has(q.id)
+    );
+
+    if (candidates.length === 0) {
+      candidates = questPool.filter(q =>
+        !usedIds.has(q.id) &&
+        q.id !== oldQuest.id
+      );
+    }
+
+    if (candidates.length === 0) {
+      candidates = questPool.filter(q => q.id !== oldQuest.id);
+    }
+
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+
+    if (!chosen) {
+      replacements.push({ ...oldQuest });
+      usedIds.add(oldQuest.id);
+      continue;
+    }
+
+    replacements.push({ ...chosen, progress: 0 });
+    usedIds.add(chosen.id);
+  }
+
+  player.dailyQuests = [...completed, ...replacements];
+
+  return {
+    changed: true,
+    completed,
+    unfinished,
+    replacements
+  };
+}
+
+function formatDailyQuestList(player) {
+  return (player.dailyQuests || [])
+    .map(q =>
+      `${q.progress >= q.goal ? "✅" : "⬜"} ${q.text} (${q.progress}/${q.goal})`
+    )
+    .join("\n");
+}
+
+function getDailyRerollStatus(player) {
+  const used = Math.max(0, Number(player.dailyRerollsUsed || 0));
+
+  if (used < DAILY_FREE_REROLLS) {
+    return {
+      available: true,
+      costType: "free",
+      text: "🎟️ **Next reroll: FREE**"
+    };
+  }
+
+  if (used < DAILY_MAX_REROLLS) {
+    return {
+      available: true,
+      costType: "berry",
+      text: `🍓 **Next reroll: ${DAILY_SECOND_REROLL_BERRY_COST} Hunter Berry**`
+    };
+  }
+
+  return {
+    available: false,
+    costType: "none",
+    text: "🔒 **No rerolls remaining today.**"
+  };
+}
+
+function getResetDate(date = new Date()) {
+  const mountainTime = new Date(
+    date.toLocaleString("en-US", {
+      timeZone: "America/Denver"
+    })
+  );
+
+  if (mountainTime.getHours() < 5) {
+    mountainTime.setDate(
+      mountainTime.getDate() - 1
+    );
+  }
+
+  return mountainTime.toDateString();
+}
+
+function hasClaimedDailyRewardToday(player) {
+  const currentResetDate = getResetDate();
+
+  // New format: the reset-date string is stored directly.
+  if (typeof player.dailyReward === "string") {
+    return player.dailyReward === currentResetDate;
+  }
+
+  // Backward compatibility for existing save data that stored a timestamp.
+  if (typeof player.dailyReward === "number" && player.dailyReward > 0) {
+    return getResetDate(new Date(player.dailyReward)) === currentResetDate;
+  }
+
+  return false;
+}
+
+function resetDaily(player) {
+  const today = getResetDate();
+
+  if (player.lastDaily !== today) {
+    player.dailyQuests = generateDailyQuests();
+    player.dailyClaimed = false;
+    player.dailyRerollsUsed = 0;
+    player.lastDaily = today;
+    player.huntCount = 0;
+  }
+}
+function canClaimDaily() {
+  const now = new Date();
+
+  const mountainTime = new Date(
+    now.toLocaleString("en-US", {
+      timeZone: "America/Denver"
+    })
+  );
+
+  return mountainTime.getHours() >= 5;
+}
+function updateQuestProgress(player, type, monster = null) {
+  player.dailyQuests.forEach(q => {
+    if (type === "hunt" && q.id === "hunt3") q.progress++;
+    if (type === "catch" && q.id === "catch2") q.progress++;
+    if (type === "catch" && q.id === "catchRare" && monster.rarity === "Rare") q.progress++;
+    if (type === "catch" && q.id === "catchEpic" && monster.rarity === "Epic") q.progress++;
+    if (type === "catch" && q.id === "catchLegendary" && monster.rarity === "Legendary") q.progress++;
+
+    if (q.progress > q.goal) q.progress = q.goal;
+  });
+}
+
+function giveRandomDailyReward(player, data = null) {
+  const roll = Math.floor(Math.random() * 100) + 1;
+
+  if (roll <= 25) {
+    const points = applyCommunityPointBlessing(data || loadData(), 5);
+    player.points += points;
+    return `💰 +${points} Points`;
+  }
+
+  if (roll <= 45) {
+    const points = applyCommunityPointBlessing(data || loadData(), 10);
+    player.points += points;
+    return `💰 +${points} Points`;
+  }
+
+  if (roll <= 55) {
+    const points = applyCommunityPointBlessing(data || loadData(), 20);
+    player.points += points;
+    return `💰 +${points} Points`;
+  }
+
+  if (roll <= 68) {
+    player.bait.rare++;
+    return "🪤 1 Rare Bait";
+  }
+
+  if (roll <= 76) {
+    player.bait.epic++;
+    return "🪤 1 Epic Bait";
+  }
+
+  if (roll <= 80) {
+    player.bait.legendary++;
+    return "🪤 1 Legendary Bait";
+  }
+
+  if (roll <= 90) {
+    player.captureItems.berry++;
+    return `${CAPTURE_ITEMS.berry.name}`;
+  }
+
+  if (roll <= 96) {
+    player.captureItems.honey++;
+    return `${CAPTURE_ITEMS.honey.name}`;
+  }
+
+  if (roll <= 99) {
+    player.captureItems.net++;
+    return `${CAPTURE_ITEMS.net.name}`;
+  }
+
+  player.captureItems.masterCharm++;
+  return `${CAPTURE_ITEMS.masterCharm.name}`;
+}
+
+function unlockedAchievements(player) {
+  return achievements.filter(a => a.check(player)).map(a => a.name);
+}
+
+function getAvailableTitles(player) {
+  checkTitleUnlocks(player);
+  return [...new Set(player.unlockedTitles || [])];
+}
+
+function unlockSecretReward(player, achievementName, titleName) {
+  const unlocked = [];
+
+  if (!player.secretAchievements.includes(achievementName)) {
+    player.secretAchievements.push(achievementName);
+  }
+
+  if (!player.unlockedTitles.includes(titleName)) {
+    player.unlockedTitles.push(titleName);
+    unlocked.push({ achievement: achievementName, title: titleName });
+  }
+
+  return unlocked;
+}
+
+function evaluatePetCollectionRewards(data, player) {
+  const unlocked = [];
+  unlocked.grandRewardGranted = false;
+  const discoveredKeys = new Set(player.discoveredPetKeys || []);
+
+  for (const [habitat, reward] of Object.entries(PET_COLLECTIONS)) {
+    const habitatKeys = pets
+      .filter(pet => pet.habitat === habitat)
+      .map(pet => pet.key);
+
+    if (habitatKeys.length > 0 && habitatKeys.every(key => discoveredKeys.has(key))) {
+      unlocked.push(...unlockSecretReward(player, reward.achievement, reward.title));
+    }
+  }
+
+  const knownCollectionPets = pets.filter(pet => Object.prototype.hasOwnProperty.call(PET_COLLECTIONS, pet.habitat));
+  if (knownCollectionPets.every(pet => discoveredKeys.has(pet.key))) {
+    unlocked.push(...unlockSecretReward(
+      player,
+      GRAND_PET_COLLECTION_REWARD.achievement,
+      GRAND_PET_COLLECTION_REWARD.title
+    ));
+
+    if (!player.grandPetCollectionRewardClaimed) {
+      player.grandPetCollectionRewardClaimed = true;
+      player.points += GRAND_PET_COLLECTION_REWARD.pointReward;
+      addWeeklyProgress(data, player, GRAND_PET_COLLECTION_REWARD.pointReward);
+      player.eggs.push({
+        rarity: GRAND_PET_COLLECTION_REWARD.eggRarity,
+        foundAt: Date.now(),
+        source: GRAND_PET_COLLECTION_REWARD.achievement
+      });
+      player.titleProgress.eggsFound = (player.titleProgress.eggsFound || 0) + 1;
+
+      for (const title of GRAND_PET_COLLECTION_REWARD.legendaryTitles) {
+        unlocked.push(...unlockSecretReward(
+          player,
+          `${GRAND_PET_COLLECTION_REWARD.achievement}: ${title}`,
+          title
+        ));
+      }
+      unlocked.grandRewardGranted = true;
+    }
+  }
+
+  const unmadeMonsterNames = new Set(["The Misplaced", "Stitchmaw", "The Empty Knight", "The Forgotten", "NULL"]);
+  const unmadeMonstersCaught = new Set(
+    [...(player.caught || []), ...(player.lifetimeCaught || [])]
+      .map(monster => cleanMonsterName(monster.name))
+      .filter(name => unmadeMonsterNames.has(name))
+  );
+  const hasUnmadePets = discoveredKeys.has("mimicling") && discoveredKeys.has("the_unwritten");
+  if (unmadeMonstersCaught.size === 5 && hasUnmadePets) {
+    unlocked.push(...unlockSecretReward(
+      player,
+      "What Was Never Made",
+      "You Were Never Here"
+    ));
+  }
+
+  return unlocked;
+}
+
+function petCollectionProgressText(player) {
+  const discoveredKeys = new Set(player.discoveredPetKeys || []);
+
+  return Object.entries(PET_COLLECTIONS).map(([habitat, reward]) => {
+    const habitatPets = pets.filter(pet => pet.habitat === habitat);
+    const collected = habitatPets.filter(pet => discoveredKeys.has(pet.key)).length;
+    const complete = collected === habitatPets.length;
+
+    return (
+      `${complete ? "✅" : "⬜"} ${reward.icon} **${habitat}: ${collected}/${habitatPets.length}**` +
+      `${complete ? ` — Title: **${reward.title}**` : ""}`
+    );
+  }).join("\n");
+}
+
+function evaluateUltraSecretRewards(player) {
+  const unlocked = [];
+
+  if (RELIC_KEYS.every(key => (player.relics[key] || 0) > 0)) {
+    const reward = ULTRA_META_ACHIEVEMENTS.allRelics;
+    unlocked.push(...unlockSecretReward(player, reward.achievement, reward.title));
+  }
+
+  if (ultraRareMonsters.every(monster => player.ultraCaughtKeys.includes(monster.key))) {
+    const reward = ULTRA_META_ACHIEVEMENTS.allCaught;
+    unlocked.push(...unlockSecretReward(player, reward.achievement, reward.title));
+  }
+
+  if (ultraRareMonsters.every(monster => player.ultraSummonedKeys.includes(monster.key))) {
+    const reward = ULTRA_META_ACHIEVEMENTS.allSummoned;
+    unlocked.push(...unlockSecretReward(player, reward.achievement, reward.title));
+  }
+
+  if ((player.ultraParticipationCount || 0) >= 100) {
+    const reward = ULTRA_META_ACHIEVEMENTS.veteran;
+    unlocked.push(...unlockSecretReward(player, reward.achievement, reward.title));
+  }
+
+  return unlocked;
+}
+
+function formatSecretUnlocks(unlocks) {
+  if (!unlocks.length) return "";
+
+  return unlocks.map(unlock =>
+    `\n\n🏆 **SECRET ACHIEVEMENT UNLOCKED!**\n` +
+    `**${unlock.achievement}**\n` +
+    `✨ **New Equipable Title:** **${unlock.title}**\n` +
+    `Use \`!title ${unlock.title}\` to equip it.`
+  ).join("");
+}
+
+async function announceGrandPetCollectionReward(channel, data, userId) {
+  const titleLines = GRAND_PET_COLLECTION_REWARD.legendaryTitles
+    .map(title => `🟠 **${title}**`)
+    .join("\n");
+  return sendRoleImageAnnouncement(
+    channel,
+    `🏆━━━━━━━━━━━━━━━━━━━━━━🏆\n\n` +
+    `# MASTER BEAST TAMER\n\n` +
+    `${formatPlayerMention(data, userId)} has permanently discovered all **32 standard habitat companions!**\n\n` +
+    `⭐ **+${GRAND_PET_COLLECTION_REWARD.pointReward} Hunter Points**\n` +
+    `🟡 **+1 Legendary Egg**\n` +
+    `🌈 **Master Beast Tamer** — Mythic Title\n` +
+    `${titleLines}\n\n` +
+    `Every standard habitat species will remain permanently checked in their Pet Dex.\n\n` +
+    `🏆━━━━━━━━━━━━━━━━━━━━━━🏆`,
+    null,
+    false
+  );
+}
+
+function getDexStats(data) {
+  const stats = {};
+
+  [...monsters, MIXER_MONSTER, ...eventMonsters, ...ultraRareMonsters].forEach(m => {
+    stats[m.name] = {
+      rarity: m.rarity,
+      chance: m.chance ?? m.catchChance,
+      caught: 0,
+      firstCaughtBy: null
+    };
+  });
+
+  for (const [userId, player] of Object.entries(data.players)) {
+    for (const monster of player.caught || []) {
+      const cleanName = monster.name.replace("✨ Shiny ", "");
+      if (!stats[cleanName]) continue;
+
+      stats[cleanName].caught += 1;
+
+      if (!stats[cleanName].firstCaughtBy) {
+        stats[cleanName].firstCaughtBy = userId;
+      }
+    }
+  }
+
+  return stats;
+}
+
+function giveCatchBonusBait(player, monster) {
+  const rewards = [];
+  const event = getActiveEvent();
+
+  if (monster.rarity === "Legendary" || monster.rarity === "Mythic" || monster.rarity === "Secret") {
+    const roll = Math.floor(Math.random() * 100) + 1;
+
+    if (roll <= 50) {
+      player.bait.rare++;
+      rewards.push("🪤 1 Rare Bait");
+    }
+
+    if (roll <= 15) {
+      player.bait.epic++;
+      rewards.push("🪤 1 Epic Bait");
+    }
+
+    if (roll <= 5) {
+      player.bait.legendary++;
+      rewards.push("🪤 1 Legendary Bait");
+    }
+  }
+
+  
+
+
+
+const treasureChance =
+  event?.treasureBoost ? 15 : 5;
+
+const treasure =
+  Math.floor(Math.random() * 100) + 1;
+
+  if (treasure <= treasureChance) {
+    player.bait.rare++;
+    rewards.push("🎁 Treasure Drop: 1 Rare Bait");
+  }
+
+  if (treasure <= 2) {
+    player.bait.epic++;
+    rewards.push("🎁 Treasure Drop: 1 Epic Bait");
+  }
+
+  if (treasure <= 1) {
+    player.bait.legendary++;
+    rewards.push("🎁 Treasure Drop: 1 Legendary Bait");
+  }
+
+
+if (event?.doubleBait) {
+  const extraRewards = [...rewards];
+
+  extraRewards.forEach(reward => {
+    if (reward.includes("Rare Bait")) {
+      player.bait.rare++;
+      rewards.push("🪤 Bonus Rare Bait");
+    }
+
+    if (reward.includes("Epic Bait")) {
+      player.bait.epic++;
+      rewards.push("🪤 Bonus Epic Bait");
+    }
+
+    if (reward.includes("Legendary Bait")) {
+      player.bait.legendary++;
+      rewards.push("🪤 Bonus Legendary Bait");
+    }
+  });
+}
+  const captureItemRoll = Math.floor(Math.random() * 100) + 1;
+
+  if (captureItemRoll <= 12) {
+    player.captureItems.berry++;
+    rewards.push(CAPTURE_ITEMS.berry.name);
+  }
+
+  if (captureItemRoll <= 5) {
+    player.captureItems.honey++;
+    rewards.push(CAPTURE_ITEMS.honey.name);
+  }
+
+  if (captureItemRoll <= 2) {
+    player.captureItems.net++;
+    rewards.push(CAPTURE_ITEMS.net.name);
+  }
+
+  if (captureItemRoll === 1 && ["Legendary", "Mythic", "Secret"].includes(monster.rarity)) {
+    player.captureItems.masterCharm++;
+    rewards.push(CAPTURE_ITEMS.masterCharm.name);
+  }
+
+  return rewards;
+}
+
+
+function getUltraMonster(keyOrName) {
+  const wanted = String(keyOrName || "").trim().toLowerCase();
+  return ultraRareMonsters.find(monster =>
+    monster.key.toLowerCase() === wanted ||
+    cleanMonsterName(monster.name).toLowerCase() === wanted ||
+    monster.relicCommand.toLowerCase() === wanted ||
+    cleanMonsterName(monster.relicName).toLowerCase() === wanted
+  ) || null;
+}
+
+function getMountainHour() {
+  return Number(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Denver",
+    hour: "numeric",
+    hour12: false
+  }).format(new Date()));
+}
+
+function isMountainNight() {
+  const hour = getMountainHour();
+  return hour >= 19 || hour < 7;
+}
+
+function ultraRelicInventoryText(player) {
+  const owned = ultraRareMonsters
+    .filter(monster => (player.relics[monster.relicKey] || 0) > 0)
+    .map(monster =>
+      `${monster.relicName}: **${player.relics[monster.relicKey]}**\n` +
+      `↳ Sacrifice with \`!summon ${monster.relicCommand}\``
+    );
+
+  return owned.length > 0
+    ? owned.join("\n\n")
+    : "You do not currently own any Ultra Rare Relics.";
+}
+
+function getUltraStateStatus(state, now = Date.now()) {
+  if (!state) return "none";
+  if (state.resolved) return "resolved";
+  if (now < state.startAt) return "scheduled";
+  if (now >= state.endAt) return "expired";
+  return "active";
+}
+
+function getUltraCatchChance(monster, state, now = Date.now()) {
+  if (monster.key === "worldeater") {
+    const elapsedTicks = Math.floor((now - state.startAt) / (5 * 60 * 1000));
+    return Math.max(1, monster.catchChance - elapsedTicks);
+  }
+
+  return monster.catchChance;
+}
+
+function getUltraParticipantReward(monster, state) {
+  return ULTRA_PARTICIPANT_REWARD;
+}
+
+function getUltraCooldownMs(monster, state) {
+  if (monster.key === "chronovore") {
+    const modifierMinutes = Number(state.cooldownModifierMinutes || 0);
+    return Math.max(60 * 1000, ULTRA_HUNT_COOLDOWN + modifierMinutes * 60 * 1000);
+  }
+
+  return ULTRA_HUNT_COOLDOWN;
+}
+
+function ensureUltraAbilityState(state) {
+  if (!state.personalEffects || typeof state.personalEffects !== "object") {
+    state.personalEffects = {};
+  }
+  if (state.cooldownModifierMinutes === undefined) state.cooldownModifierMinutes = 0;
+  if (state.abilityTickCount === undefined) state.abilityTickCount = 0;
+}
+
+function getUltraPersonalEffect(state, userId) {
+  ensureUltraAbilityState(state);
+  if (!state.personalEffects[userId]) {
+    state.personalEffects[userId] = {
+      markedPenalty: 0,
+      starBlessing: 0
+    };
+  }
+  return state.personalEffects[userId];
+}
+
+function getUltraPersonalBonusText(monster, state, userId) {
+  const effect = getUltraPersonalEffect(state, userId);
+  const lines = [];
+
+  if (effect.markedPenalty > 0) {
+    lines.push(`👁️ **All-Seeing Mark:** -${effect.markedPenalty}% on your next attempt`);
+  }
+  if (effect.starBlessing > 0) {
+    lines.push(`🌠 **Fallen Star Blessing:** +${effect.starBlessing}% on your next attempt`);
+  }
+
+  if (monster.key === "chronovore") {
+    const cooldownMinutes = Math.round(getUltraCooldownMs(monster, state) / 60000);
+    lines.push(`⏳ **Time Distortion:** Ultra Hunt cooldown is currently ${cooldownMinutes} minutes`);
+  }
+
+  return lines.length > 0 ? lines.join("\n") : "No temporary Ultra effects.";
+}
+
+function calculateUltraCaptureChance(monster, state, itemKey = null, userId = null) {
+  const baseChance = getUltraCatchChance(monster, state);
+  const item = itemKey ? CAPTURE_ITEMS[itemKey] : null;
+  const effect = userId
+    ? getUltraPersonalEffect(state, userId)
+    : { markedPenalty: 0, starBlessing: 0 };
+
+  const personalBonus = (effect.starBlessing || 0) - (effect.markedPenalty || 0);
+
+  if (item?.guaranteed) {
+    return {
+      total: 100,
+      base: baseChance,
+      itemBonus: item.bonus,
+      personalBonus,
+      guaranteed: true
+    };
+  }
+
+  return {
+    total: Math.max(
+      1,
+      Math.min(MAX_CAPTURE_CHANCE, baseChance + (item?.bonus || 0) + personalBonus)
+    ),
+    base: baseChance,
+    itemBonus: item?.bonus || 0,
+    personalBonus,
+    guaranteed: false
+  };
+}
+
+function buildUltraCaptureChoices(player, monster, state, userId = null) {
+  const choices = [{
+    number: 1,
+    itemKey: null,
+    label: "🎯 Normal Throw",
+    chance: calculateUltraCaptureChance(monster, state, null, userId).total
+  }];
+
+  for (const itemKey of ["berry", "honey", "net", "masterCharm"]) {
+    if ((player.captureItems[itemKey] || 0) <= 0) continue;
+    const item = CAPTURE_ITEMS[itemKey];
+    choices.push({
+      number: choices.length + 1,
+      itemKey,
+      label: `${item.name} x${player.captureItems[itemKey]}`,
+      chance: calculateUltraCaptureChance(monster, state, itemKey, userId).total
+    });
+  }
+
+  return choices;
+}
+
+function ultraAbilityText(monster) {
+  if (!monster?.abilityName) return "";
+  return (
+    `\n\n⚠️ **Special Ability: ${monster.abilityName}**\n` +
+    `${monster.abilityDescription}`
+  );
+}
+
+function buildUltraMonsterEmbed(monster, title, description, { thumbnail = false } = {}) {
+  const imagePath = getMonsterImage(monster);
+  const files = [];
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description);
+
+  if (imagePath) {
+    const filename = path.basename(imagePath);
+    const attachment = new AttachmentBuilder(imagePath, { name: filename });
+    files.push(attachment);
+
+    const attachmentUrl = `attachment://${filename}`;
+    if (thumbnail) embed.setThumbnail(attachmentUrl);
+    else embed.setImage(attachmentUrl);
+  }
+
+  return { embeds: [embed], files };
+}
+
+async function performUltraCaptureAttempt(message, monsterKey, itemKey = null) {
+  const data = loadData();
+  const state = data.ultraRareState;
+  const monster = getUltraMonster(monsterKey);
+
+  if (!state || getUltraStateStatus(state) !== "active" || state.resolved || !monster || state.monsterKey !== monsterKey) {
+    return message.reply("That Ultra Rare Hunt has already ended.");
+  }
+
+  if (monster.personality === "night" && !isMountainNight()) {
+    return message.reply("👻 The Shadow Wraith can only be hunted at night in Mountain Time.");
+  }
+
+  const player = getPlayer(data, message.author.id);
+  const participant = state.participants[message.author.id] || { attempts: 0, lastAttempt: 0 };
+  const ultraCooldownMs = getUltraCooldownMs(monster, state);
+  const timeLeft = ultraCooldownMs - (Date.now() - participant.lastAttempt);
+
+  if (timeLeft > 0) {
+    return message.reply(`⏳ You can use \`!ultrahunt\` again in **${formatTime(timeLeft)}**.`);
+  }
+
+  if (itemKey && (player.captureItems[itemKey] || 0) <= 0) {
+    return message.reply(`You no longer have any ${CAPTURE_ITEMS[itemKey].name}.`);
+  }
+
+  const chanceInfo = calculateUltraCaptureChance(monster, state, itemKey, message.author.id);
+  const roll = Math.floor(Math.random() * 100) + 1;
+
+  if (itemKey) player.captureItems[itemKey]--;
+
+  participant.attempts++;
+  participant.lastAttempt = Date.now();
+  state.participants[message.author.id] = participant;
+  player.titleProgress.ultraAttempts = (player.titleProgress.ultraAttempts || 0) + 1;
+  if (chanceInfo.total <= 5 && (chanceInfo.guaranteed || roll <= chanceInfo.total)) {
+    player.titleProgress.ultraAtFiveOrLess = true;
+  }
+
+  const personalEffect = getUltraPersonalEffect(state, message.author.id);
+  personalEffect.markedPenalty = 0;
+  personalEffect.starBlessing = 0;
+
+  if (chanceInfo.guaranteed || roll <= chanceInfo.total) {
+    saveData(data);
+    return resolveUltraCatch(message, monster, state, roll, chanceInfo.total, itemKey);
+  }
+
+  state.failedAttempts = (state.failedAttempts || 0) + 1;
+  const automaticTitleUnlocks = checkTitleUnlocks(player);
+  saveData(data);
+  await announceTitleUnlocks(message, automaticTitleUnlocks);
+
+  let personalityText = "";
+  if (monster.key === "worldeater") {
+    personalityText = `\n🌑 Reality continues collapsing. Current base chance: **${getUltraCatchChance(monster, state)}%**.`;
+  } else if (monster.key === "thousandeyes") {
+    personalityText = "\n👁️ Its gaze searches for another hunter to mark.";
+  } else if (monster.key === "chronovore") {
+    personalityText = `\n⏳ Current Ultra cooldown: **${Math.round(getUltraCooldownMs(monster, state) / 60000)} minutes**.`;
+  } else if (monster.key === "astralcolossus") {
+    personalityText = "\n🌠 Another fallen star may soon choose a hunter.";
+  } else if (monster.key === "harbinger") {
+    personalityText = "\n💀 After the halfway point, it may vanish without warning.";
+  }
+
+  return message.reply(buildUltraMonsterEmbed(
+    monster,
+    `❌ ${monster.name} escaped your attempt!`,
+    `${itemKey ? `**Item Used:** ${CAPTURE_ITEMS[itemKey].name}\n` : "**Method:** Normal Throw\n"}` +
+    `**Base Catch Chance:** ${chanceInfo.base}%\n` +
+    `${chanceInfo.itemBonus > 0 ? `**Item Bonus:** +${chanceInfo.itemBonus}%\n` : ""}` +
+    `${chanceInfo.personalBonus !== 0 ? `**Ultra Ability Modifier:** ${chanceInfo.personalBonus > 0 ? "+" : ""}${chanceInfo.personalBonus}%\n` : ""}` +
+    `**Final Catch Chance:** ${chanceInfo.total}%\n` +
+    `**Roll:** ${roll}${personalityText}\n\n` +
+    `Try again when your Ultra cooldown ends while the event remains active.`,
+    { thumbnail: true }
+  ));
+}
+
+
+function getMountainDateParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Denver",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    weekday: "short"
+  });
+
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date)
+      .filter(part => part.type !== "literal")
+      .map(part => [part.type, part.value])
+  );
+
+  const weekdayIndexes = {
+    Mon: 0,
+    Tue: 1,
+    Wed: 2,
+    Thu: 3,
+    Fri: 4,
+    Sat: 5,
+    Sun: 6
+  };
+
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour) % 24,
+    minute: Number(parts.minute),
+    weekdayIndex: weekdayIndexes[parts.weekday]
+  };
+}
+
+function getMountainWeekKey(date = new Date()) {
+  const parts = getMountainDateParts(date);
+  const localNoonUtc = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 12));
+  localNoonUtc.setUTCDate(localNoonUtc.getUTCDate() - parts.weekdayIndex);
+
+  const year = localNoonUtc.getUTCFullYear();
+  const month = String(localNoonUtc.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(localNoonUtc.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getWeightedUltraSpawnMinute() {
+  const roll = Math.random() * 100;
+
+  // 25% chance: Morning, 5:00 AM-10:59 AM Mountain Time.
+  if (roll < 25) {
+    return 5 * 60 + Math.floor(Math.random() * (6 * 60));
+  }
+
+  // 35% chance: Afternoon, 11:00 AM-4:59 PM Mountain Time.
+  if (roll < 60) {
+    return 11 * 60 + Math.floor(Math.random() * (6 * 60));
+  }
+
+  // 40% chance: Evening, 5:00 PM-11:59 PM Mountain Time.
+  return 17 * 60 + Math.floor(Math.random() * (7 * 60));
+}
+
+function createUltraWeeklySchedule(date = new Date()) {
+  const availableDays = [0, 1, 2, 3, 4, 5, 6];
+  const selectedDays = [];
+
+  while (selectedDays.length < ULTRA_RANDOM_EVENTS_PER_WEEK) {
+    const index = Math.floor(Math.random() * availableDays.length);
+    selectedDays.push(availableDays.splice(index, 1)[0]);
+  }
+
+  const events = selectedDays
+    .sort((a, b) => a - b)
+    .map(dayIndex => ({
+      dayIndex,
+      minuteOfDay: getWeightedUltraSpawnMinute(),
+      completed: false
+    }));
+
+  return {
+    weekKey: getMountainWeekKey(date),
+    events
+  };
+}
+
+function ensureUltraWeeklySchedule(data, date = new Date()) {
+  const weekKey = getMountainWeekKey(date);
+
+  if (!data.ultraWeeklySchedule || data.ultraWeeklySchedule.weekKey !== weekKey) {
+    data.ultraWeeklySchedule = createUltraWeeklySchedule(date);
+    return true;
+  }
+
+  // Mid-week migration: older deployments may already have only 3 scheduled Ultras.
+  // Add future slots until this week's schedule reaches the new 5-event target.
+  const events = data.ultraWeeklySchedule.events || (data.ultraWeeklySchedule.events = []);
+  if (events.length >= ULTRA_RANDOM_EVENTS_PER_WEEK) return false;
+
+  const parts = getMountainDateParts(date);
+  const currentMinuteOfWeek = parts.weekdayIndex * 1440 + parts.hour * 60 + parts.minute;
+  let attempts = 0;
+  while (events.length < ULTRA_RANDOM_EVENTS_PER_WEEK && attempts < 200) {
+    attempts++;
+    const dayIndex = parts.weekdayIndex + Math.floor(Math.random() * (7 - parts.weekdayIndex));
+    let minuteOfDay = getWeightedUltraSpawnMinute();
+    let minuteOfWeek = dayIndex * 1440 + minuteOfDay;
+    if (minuteOfWeek <= currentMinuteOfWeek + 30) {
+      if (dayIndex !== parts.weekdayIndex) continue;
+      minuteOfDay = Math.min(1439, parts.hour * 60 + parts.minute + 30 + Math.floor(Math.random() * 180));
+      minuteOfWeek = dayIndex * 1440 + minuteOfDay;
+    }
+    const tooClose = events.some(event => Math.abs((event.dayIndex * 1440 + event.minuteOfDay) - minuteOfWeek) < 90);
+    if (tooClose) continue;
+    events.push({ dayIndex, minuteOfDay, completed: false });
+  }
+  events.sort((a, b) => (a.dayIndex * 1440 + a.minuteOfDay) - (b.dayIndex * 1440 + b.minuteOfDay));
+  return true;
+}
+
+function getDueWeeklyUltraEvent(schedule, date = new Date()) {
+  if (!schedule?.events) return null;
+
+  const parts = getMountainDateParts(date);
+  const currentMinuteOfWeek = parts.weekdayIndex * 1440 + parts.hour * 60 + parts.minute;
+
+  return schedule.events
+    .filter(event => !event.completed)
+    .sort((a, b) => (a.dayIndex * 1440 + a.minuteOfDay) - (b.dayIndex * 1440 + b.minuteOfDay))
+    .find(event => currentMinuteOfWeek >= event.dayIndex * 1440 + event.minuteOfDay) || null;
+}
+
+function completeDueWeeklyUltraEvents(data, date = new Date()) {
+  ensureUltraWeeklySchedule(data, date);
+
+  const parts = getMountainDateParts(date);
+  const currentMinuteOfWeek = parts.weekdayIndex * 1440 + parts.hour * 60 + parts.minute;
+  let completedCount = 0;
+
+  for (const event of data.ultraWeeklySchedule?.events || []) {
+    const eventMinuteOfWeek = event.dayIndex * 1440 + event.minuteOfDay;
+    if (!event.completed && currentMinuteOfWeek >= eventMinuteOfWeek) {
+      event.completed = true;
+      completedCount++;
+    }
+  }
+
+  return completedCount;
+}
+
+async function processWeeklyUltraSchedule(channel) {
+  const data = loadData();
+  const scheduleChanged = ensureUltraWeeklySchedule(data);
+  if (scheduleChanged) saveData(data);
+
+  if ((data.ultraAdminPauseUntil || 0) > Date.now()) {
+    return;
+  }
+
+  const dueEvent = getDueWeeklyUltraEvent(data.ultraWeeklySchedule);
+
+  if (!dueEvent) {
+    return;
+  }
+
+  const currentStatus = getUltraStateStatus(data.ultraRareState);
+  if (["scheduled", "active"].includes(currentStatus)) {
+    return;
+  }
+
+  const monster = selectRandomUltraMonster();
+  const started = await announceUltraHunt(channel, monster);
+  if (!started) return;
+
+  const freshData = loadData();
+  ensureUltraWeeklySchedule(freshData);
+  const matchingEvent = freshData.ultraWeeklySchedule.events.find(event =>
+    !event.completed &&
+    event.dayIndex === dueEvent.dayIndex &&
+    event.minuteOfDay === dueEvent.minuteOfDay
+  );
+
+  if (matchingEvent) matchingEvent.completed = true;
+  saveData(freshData);
+}
+
+function selectRandomUltraMonster({ summoned = false } = {}) {
+  let pool = [...ultraRareMonsters];
+  if (!isMountainNight()) {
+    pool = pool.filter(monster => monster.personality !== "night");
+  }
+  if (summoned) pool = [...ultraRareMonsters];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+async function getMonsterHuntChannel() {
+  h4RefreshChannelRouting();
+  const cached = client.channels.cache.get(MONSTER_CHANNEL_ID);
+  if (cached && cached.isTextBased()) return cached;
+
+  const fetched = await client.channels.fetch(MONSTER_CHANNEL_ID).catch(error => {
+    console.error("Failed to fetch Monster Hunt channel:", error);
+    return null;
+  });
+
+  return fetched && fetched.isTextBased() ? fetched : null;
+}
+
+async function getEggsPetsChannel() {
+  h4RefreshChannelRouting();
+  const cached = client.channels.cache.get(EGGS_PETS_CHANNEL_ID);
+  if (cached && cached.isTextBased()) return cached;
+
+  const fetched = await client.channels.fetch(EGGS_PETS_CHANNEL_ID).catch(error => {
+    console.error("Failed to fetch Eggs & Pets channel:", error);
+    return null;
+  });
+
+  return fetched && fetched.isTextBased() ? fetched : null;
+}
+
+function scheduleUltraArrivalCheck(startAt) {
+  const delay = Math.max(0, startAt - Date.now() + 1000);
+
+  setTimeout(async () => {
+    try {
+      const channel = await getMonsterHuntChannel();
+      if (!channel) {
+        console.error("Ultra Rare arrival timer could not find the Monster Hunt channel.");
+        return;
+      }
+
+      await processUltraState(channel);
+    } catch (error) {
+      console.error("Ultra Rare dedicated arrival timer failed:", error);
+    }
+  }, delay);
+}
+
+async function announceUltraHunt(channel, monster, sourceUserId = null) {
+  const data = loadData();
+  const existingStatus = getUltraStateStatus(data.ultraRareState);
+  if (["scheduled", "active"].includes(existingStatus)) return false;
+
+  const now = Date.now();
+  const startAt = now;
+  const durationMs = monster.durationMinutes * 60 * 1000;
+
+  data.ultraRareState = {
+    monsterKey: monster.key,
+    startAt,
+    endAt: startAt + durationMs,
+    participants: {},
+    failedAttempts: 0,
+    personalEffects: {},
+    cooldownModifierMinutes: 0,
+    abilityTickCount: 0,
+    lastPersonalityTick: startAt,
+    sourceUserId,
+    resolved: false,
+    returnScheduled: false
+  };
+  saveData(data);
+
+  const ultraMessage = buildUltraMonsterEmbed(
+    monster,
+    `🚨 ULTRA RARE HUNT — ${monster.name} has appeared!`,
+    `*${monster.spawnText}*
+
+` +
+    `**Starting Catch Chance:** ${monster.catchChance}%
+` +
+    `**Event Length:** ${monster.durationMinutes} minutes
+` +
+    `**Ultra Hunt Cooldown:** 5 minutes
+
+` +
+    `${monster.description}` +
+    `${ultraAbilityText(monster)}
+
+` +
+    `Use \`!ultrahunt\` to view your available catch choices.
+
+` +
+    `🏆 Catcher Reward: **${ULTRA_CATCHER_REWARD} points**
+` +
+    `🎉 Other participants earn at least **${ULTRA_PARTICIPANT_REWARD} points** if it is caught.`
+  );
+
+  await channel.send({
+    content: `<@&${MONSTER_NOTIFY_ROLE}>`,
+    embeds: ultraMessage.embeds,
+    files: ultraMessage.files
+  });
+  return true;
+}
+
+async function scheduleSummonedUltra(channel, monster, userId) {
+  const data = loadData();
+  const existingStatus = getUltraStateStatus(data.ultraRareState);
+  if (["scheduled", "active"].includes(existingStatus)) return false;
+
+  const now = Date.now();
+  const startAt = now + ULTRA_SUMMON_DELAY;
+  data.ultraRareState = {
+    monsterKey: monster.key,
+    startAt,
+    endAt: startAt + monster.durationMinutes * 60 * 1000,
+    participants: {},
+    failedAttempts: 0,
+    personalEffects: {},
+    cooldownModifierMinutes: 0,
+    abilityTickCount: 0,
+    lastPersonalityTick: startAt,
+    sourceUserId: userId,
+    resolved: false,
+    summoned: true,
+    announcedActive: false,
+    returnScheduled: false
+  };
+  addSeasonMoment(data, {
+    type: "ultra_summon",
+    playerId: userId,
+    icon: "🔮",
+    text: `${seasonMomentPlayerName(data, userId)} sacrificed ${monster.relicName} to summon ${cleanMonsterName(monster.name)}.`
+  });
+
+  saveData(data);
+
+  // Use a dedicated timer for this summon. The saved-state monitor remains
+  // as a fallback if the bot restarts before the five-minute timer ends.
+  scheduleUltraArrivalCheck(startAt);
+
+  await channel.send(
+    `<@&${MONSTER_NOTIFY_ROLE}>\n\n` +
+    `💎 **A RELIC HAS BEEN SACRIFICED!**\n\n` +
+    `<@${userId}> sacrificed **${monster.relicName}**.\n` +
+    `*${monster.spawnText}*\n\n` +
+    `${monster.name} will appear <t:${Math.floor(startAt / 1000)}:R>!\n` +
+    `Prepare to use \`!ultrahunt\`.`
+  );
+  return true;
+}
+
+async function finishUltraHunt(channel, reason = "expired") {
+  const data = loadData();
+  const state = data.ultraRareState;
+  if (!state || state.resolved) return;
+
+  const monster = getUltraMonster(state.monsterKey);
+  if (!monster) {
+    data.ultraRareState = null;
+    saveData(data);
+    return;
+  }
+
+  state.resolved = true;
+  const participantIds = Object.keys(state.participants || {});
+
+  const participationUnlockMessages = [];
+
+  for (const userId of participantIds) {
+    const participant = getPlayer(data, userId);
+    participant.points += ULTRA_ESCAPE_REWARD;
+    participant.ultraParticipationCount = (participant.ultraParticipationCount || 0) + 1;
+
+    const newUnlocks = evaluateUltraSecretRewards(participant);
+    if (newUnlocks.length > 0) {
+      participationUnlockMessages.push({ userId, unlocks: newUnlocks });
+    }
+  }
+
+  addSeasonMoment(data, {
+    type: "ultra_escape",
+    icon: "💨",
+    text: `${cleanMonsterName(monster.name)} ${reason === "fled" ? "fled early" : "escaped"} after facing ${participantIds.length} hunter${participantIds.length === 1 ? "" : "s"}.`
+  });
+
+  saveData(data);
+
+  const reasonText = reason === "fled"
+    ? `${monster.name} sensed danger and vanished before the hunt ended!`
+    : `${monster.name} escaped before anyone could capture it.`;
+
+  await channel.send(
+    `💨 **THE ULTRA RARE ESCAPED!**\n\n` +
+    `${reasonText}\n\n` +
+    `${participantIds.length > 0
+      ? `Everyone who participated earned **${ULTRA_ESCAPE_REWARD} points** for the effort.`
+      : "No hunters were able to attempt the event."}`
+  );
+
+  for (const rewardMessage of participationUnlockMessages) {
+    await channel.send(
+      `${formatPlayerMention(data, rewardMessage.userId)}${formatSecretUnlocks(rewardMessage.unlocks)}`
+    );
+  }
+
+  if (monster.personality === "return" && !state.returnScheduled && Math.random() < 0.5) {
+    const returnAt = Date.now() + (60 + Math.floor(Math.random() * 121)) * 60 * 1000;
+    const returnData = loadData();
+    returnData.ultraRareState = {
+      monsterKey: monster.key,
+      startAt: returnAt,
+      endAt: returnAt + monster.durationMinutes * 60 * 1000,
+      participants: {},
+      failedAttempts: 0,
+      personalEffects: {},
+      cooldownModifierMinutes: 0,
+      abilityTickCount: 0,
+      lastPersonalityTick: returnAt,
+      sourceUserId: null,
+      resolved: false,
+      summoned: false,
+      announcedActive: false,
+      returning: true,
+      returnScheduled: true
+    };
+    saveData(returnData);
+
+    await channel.send(
+      `🔥 A trail of embers remains in the sky...\n` +
+      `The Phoenix Queen may not be finished with this world.`
+    );
+  } else {
+    const fresh = loadData();
+    if (fresh.ultraRareState?.resolved) {
+      fresh.ultraRareState = null;
+      saveData(fresh);
+    }
+  }
+}
+
+async function processUltraState(channel) {
+  const data = loadData();
+  const state = data.ultraRareState;
+  if (!state) return;
+
+  const monster = getUltraMonster(state.monsterKey);
+  if (!monster) {
+    data.ultraRareState = null;
+    saveData(data);
+    return;
+  }
+
+  const now = Date.now();
+  const status = getUltraStateStatus(state, now);
+
+  if (status === "scheduled") return;
+
+  if (status === "expired") {
+    return finishUltraHunt(channel, "expired");
+  }
+
+  if (status !== "active") return;
+
+  if (!state.announcedActive) {
+    // Post the arrival first. Only mark it announced after Discord confirms
+    // the message was sent, so a temporary send failure can retry next minute.
+    try {
+      const ultraMessage = buildUltraMonsterEmbed(
+        monster,
+        `🚨 THE SUMMONED ULTRA RARE HAS ARRIVED — ${monster.name}`,
+        `*${monster.spawnText}*
+
+` +
+        `**Current Catch Chance:** ${getUltraCatchChance(monster, state)}%
+` +
+        `**Event Length:** ${monster.durationMinutes} minutes
+` +
+        `**Ultra Hunt Cooldown:** 5 minutes
+
+` +
+        `${monster.description}` +
+        `${ultraAbilityText(monster)}
+
+` +
+        `Use \`!ultrahunt\` to view your available catch choices.`
+      );
+
+      await channel.send({
+        content: `<@&${MONSTER_NOTIFY_ROLE}>`,
+        embeds: ultraMessage.embeds,
+        files: ultraMessage.files
+      });
+
+      const announcedData = loadData();
+      if (
+        announcedData.ultraRareState &&
+        announcedData.ultraRareState.monsterKey === monster.key &&
+        !announcedData.ultraRareState.resolved
+      ) {
+        announcedData.ultraRareState.announcedActive = true;
+        announcedData.ultraRareState.activeAnnouncementSentAt = Date.now();
+        saveData(announcedData);
+      }
+    } catch (error) {
+      console.error("Failed to post Ultra Rare arrival announcement. It will retry next minute:", error);
+      return;
+    }
+  }
+
+  ensureUltraAbilityState(state);
+
+  const elapsedTicks = Math.floor((now - state.lastPersonalityTick) / (5 * 60 * 1000));
+  if (elapsedTicks <= 0) return;
+
+  for (let tick = 0; tick < elapsedTicks; tick++) {
+    state.lastPersonalityTick += 5 * 60 * 1000;
+    state.abilityTickCount++;
+
+    const participantIds = Object.keys(state.participants || {});
+
+    if (monster.key === "worldeater") {
+      await channel.send(
+        `🌑 **REALITY COLLAPSE!**\n\n` +
+        `${monster.name} consumes another piece of the battlefield.\n` +
+        `Base catch chance is now **${getUltraCatchChance(monster, state, state.lastPersonalityTick)}%**.`
+      );
+    }
+
+    if (monster.key === "thousandeyes" && participantIds.length > 0) {
+      const targetId = participantIds[Math.floor(Math.random() * participantIds.length)];
+      const effect = getUltraPersonalEffect(state, targetId);
+      effect.markedPenalty = 5;
+
+      await channel.send(
+        `👁️ **ALL-SEEING GAZE!**\n\n` +
+        `${formatPlayerMention(data, targetId)} has been marked by ${monster.name}.\n` +
+        `Their next Ultra attempt suffers **-5% catch chance**.`
+      );
+    }
+
+    if (monster.key === "chronovore") {
+      state.cooldownModifierMinutes = Math.random() < 0.5 ? -2 : 2;
+      const cooldownMinutes = Math.round(getUltraCooldownMs(monster, state) / 60000);
+      const accelerated = state.cooldownModifierMinutes < 0;
+
+      await channel.send(
+        `⏳ **TIME DISTORTION!**\n\n` +
+        `${accelerated ? "Time accelerates around the battlefield." : "Time slows to a painful crawl."}\n` +
+        `Ultra Hunt cooldown is now **${cooldownMinutes} minutes** until the next distortion.`
+      );
+    }
+
+    if (monster.key === "astralcolossus" && participantIds.length > 0) {
+      const targetId = participantIds[Math.floor(Math.random() * participantIds.length)];
+      const effect = getUltraPersonalEffect(state, targetId);
+      effect.starBlessing = 5;
+
+      await channel.send(
+        `🌠 **FALLING STAR!**\n\n` +
+        `A fallen star chooses ${formatPlayerMention(data, targetId)}!\n` +
+        `Their next Ultra attempt gains **+5% catch chance**.`
+      );
+    }
+
+    if (monster.key === "harbinger") {
+      const elapsedFromStart = state.lastPersonalityTick - state.startAt;
+      if (elapsedFromStart >= 15 * 60 * 1000) {
+        await channel.send(
+          `💀 **SOUL FLIGHT!**\n\n` +
+          `${monster.name} raises its lantern as the wandering souls pull it toward the darkness...`
+        );
+
+        if (Math.random() < 0.2) {
+          saveData(data);
+          return finishUltraHunt(channel, "fled");
+        }
+
+        await channel.send(`${monster.name} remains for now—but the lantern burns brighter.`);
+      }
+    }
+  }
+
+  saveData(data);
+}
+
+function maybeAwardUltraRelic(data, player, monster) {
+  const roll = Math.floor(Math.random() * 100) + 1;
+  if (roll > ULTRA_RELIC_DROP_CHANCE) return null;
+
+  const firstDiscovery = !data.worldProgress?.[monster.relicKey];
+
+  // If this Relic was already discovered, the catcher can still receive another physical copy.
+  if (!firstDiscovery) {
+    player.relics[monster.relicKey] = (player.relics[monster.relicKey] || 0) + 1;
+    return { firstDiscovery: false, worldShatterUnlockedNow: false };
+  }
+
+  const result = discoverWorldRelic(data, monster, "ultra", player);
+  return {
+    firstDiscovery: true,
+    worldShatterUnlockedNow: Boolean(result?.allDiscovered),
+    discoveryResult: result
+  };
+}
+
+async function resolveUltraCatch(message, monster, state, roll, chance, itemKey = null) {
+  const data = loadData();
+  const freshState = data.ultraRareState;
+
+  if (!freshState || freshState.resolved || freshState.monsterKey !== monster.key) {
+    return message.reply("That Ultra Rare Hunt has already ended.");
+  }
+
+  freshState.resolved = true;
+
+  const catcher = getPlayer(data, message.author.id);
+  const caughtMonster = {
+    name: monster.name,
+    rarity: "Ultra Rare",
+    points: ULTRA_CATCHER_REWARD,
+    chance,
+    image: monster.image,
+    shiny: false
+  };
+
+  const catcherPointReward = applyCommunityPointBlessing(data, ULTRA_CATCHER_REWARD);
+  catcher.points += catcherPointReward;
+  catcher.caught.push(caughtMonster);
+  catcher.lifetimeCaught.push({ ...caughtMonster });
+
+  if (!catcher.ultraCaughtKeys.includes(monster.key)) {
+    catcher.ultraCaughtKeys.push(monster.key);
+  }
+
+  const catcherUnlocks = [
+    ...unlockSecretReward(catcher, monster.secretAchievement, monster.titleReward)
+  ];
+
+  const participantReward = getUltraParticipantReward(monster, freshState);
+  const participantIds = Object.keys(freshState.participants || {});
+  const otherParticipants = participantIds.filter(userId => userId !== message.author.id);
+  const participantUnlockMessages = [];
+
+  for (const userId of participantIds) {
+    const participant = getPlayer(data, userId);
+    participant.ultraParticipationCount = (participant.ultraParticipationCount || 0) + 1;
+
+    if (userId !== message.author.id) {
+      participant.points += applyCommunityPointBlessing(data, participantReward);
+    }
+
+    const newUnlocks = evaluateUltraSecretRewards(participant);
+    if (newUnlocks.length > 0) {
+      participantUnlockMessages.push({ userId, unlocks: newUnlocks });
+    }
+  }
+
+  const relicResult = maybeAwardUltraRelic(data, catcher, monster);
+  catcherUnlocks.push(...evaluateUltraSecretRewards(catcher));
+  const automaticTitleUnlocks = checkTitleUnlocks(catcher);
+
+  const ultraHunterName = seasonMomentPlayerName(data, message.author.id);
+  addSeasonMoment(data, {
+    type: "ultra_capture",
+    playerId: message.author.id,
+    icon: "⚔️",
+    text: `${ultraHunterName} captured ${cleanMonsterName(monster.name)} during an Ultra Hunt!`
+  });
+
+  if (relicResult) {
+    addSeasonMoment(data, {
+      type: "first_relic",
+      playerId: message.author.id,
+      icon: "💎",
+      text: `${ultraHunterName} recovered the season's first Ultra Relic: ${monster.relicName}.`,
+      uniqueKey: "season:first_relic"
+    });
+  }
+
+  recordPointMilestoneMoments(
+    data,
+    message.author.id,
+    catcher.points - ULTRA_CATCHER_REWARD,
+    catcher.points
+  );
+
+  // If an Ultra Hunt overlaps Big Game Hunt, only the successful catcher earns
+  // the Ultra Rare token reward. Participation points remain unchanged.
+  const ultraTokenText = awardHuntTokens(data, catcher, message.author.id, caughtMonster, { allowDaily: false });
+
+  saveData(data);
+  await announceTitleUnlocks(message, automaticTitleUnlocks);
+
+  await message.channel.send(
+    buildMonsterEmbed(
+      caughtMonster,
+      `🎉 ${formatPlayerName(catcher, message.author.username)} captured ${caughtMonster.name}!`,
+      `**Catch Chance:** ${chance}%\n` +
+      `**Roll:** ${roll}\n\n` +
+      `🏆 ${formatPlayerMention(data, message.author.id)} earned **${catcherPointReward} points**!\n` +
+      `${otherParticipants.length > 0
+        ? `🎉 ${otherParticipants.length} other participant${otherParticipants.length === 1 ? "" : "s"} earned **${participantReward} points each**!`
+        : "You were the only participant in the hunt."}` +
+      `${ultraTokenText}` +
+      formatSecretUnlocks(catcherUnlocks)
+    )
+  );
+
+  for (const rewardMessage of participantUnlockMessages) {
+    await message.channel.send(
+      `${formatPlayerMention(data, rewardMessage.userId)}${formatSecretUnlocks(rewardMessage.unlocks)}`
+    );
+  }
+
+  if (relicResult) {
+    await message.channel.send(
+      `💎 **RELIC FOUND!**\n\n` +
+      `${formatPlayerMention(data, message.author.id)} received **${monster.relicName}**!\n` +
+      `*${monster.relicDescription}*\n\n` +
+      `Sacrifice it later with \`!summon ${monster.relicCommand}\`.`
+    );
+    if (relicResult.firstDiscovery && relicResult.discoveryResult) {
+      await announceWorldRelicDiscovery(message.channel, relicResult.discoveryResult, message.author.id);
+    }
+  }
+
+  const cleanupData = loadData();
+  if (cleanupData.ultraRareState?.resolved) {
+    cleanupData.ultraRareState = null;
+    saveData(cleanupData);
+  }
+}
+
+function giveQuestBonusBait(player) {
+  const bonusRoll = Math.floor(Math.random() * 100) + 1;
+  const rewards = [];
+
+  if (bonusRoll <= 25) {
+    player.bait.rare++;
+    rewards.push("🪤 1 Rare Bait");
+  }
+
+  if (bonusRoll <= 10) {
+    player.bait.epic++;
+    rewards.push("🪤 1 Epic Bait");
+  }
+
+  if (bonusRoll <= 2) {
+    player.bait.legendary++;
+    rewards.push("🪤 1 Legendary Bait");
+  }
+
+  return rewards;
+}
+
+async function checkReadyEggNotifications() {
+  const data = loadData();
+  const now = Date.now();
+  const petChannel = await getEggsPetsChannel();
+  let changed = false;
+
+  for (const [userId] of Object.entries(data.players || {})) {
+    const player = getPlayer(data, userId);
+    const prefs = ensureH4NotificationPrefs(player);
+
+    for (const incubation of player.incubatingEggs || []) {
+      if (Number(incubation.readyAt || 0) > now || incubation.notified) continue;
+
+      const rarity = incubation.rarity || "Common";
+
+      if (prefs.eggReady && petChannel?.isTextBased()) {
+        await petChannel.send({
+          content:
+            `<@${userId}> 🥚✨ **Your ${rarity} Egg is ready to hatch!**\n` +
+            `Open **Monster Hunt → Eggs** and press **Hatch** to meet your new companion.`,
+          allowedMentions:{ users:[userId], roles:[] }
+        }).catch(error => console.error("Egg-ready channel notification failed:", error));
+      }
+
+      incubation.notified = true;
+      changed = true;
+    }
+  }
+
+  if (changed) saveData(data);
+}
+
+function getMountainDateTimeParts(date = new Date()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: SEASON_LAUNCH_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    })
+      .formatToParts(date)
+      .filter(part => part.type !== "literal")
+      .map(part => [part.type, part.value])
+  );
+
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    hour: Number(parts.hour),
+    minute: Number(parts.minute)
+  };
+}
+
+async function fetchLaunchChannels() {
+  const channels = [];
+
+  for (const channelId of SEASON_LAUNCH_CHANNEL_IDS) {
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+
+    if (!channel || !channel.isTextBased?.() || !channel.guild) {
+      console.error(`Season launch: channel ${channelId} could not be found or is not a guild text channel.`);
+      continue;
+    }
+
+    channels.push(channel);
+  }
+
+  return channels;
+}
+
+async function openSeasonLaunchChannels() {
+  const channels = await fetchLaunchChannels();
+
+  if (channels.length !== SEASON_LAUNCH_CHANNEL_IDS.length) {
+    throw new Error(
+      `Only ${channels.length}/${SEASON_LAUNCH_CHANNEL_IDS.length} launch channels could be loaded.`
+    );
+  }
+
+  for (const channel of channels) {
+    for (const roleId of SEASON_LAUNCH_ROLE_IDS) {
+      await channel.permissionOverwrites.edit(roleId, {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+        AddReactions: true
+      });
+    }
+
+    console.log(`Season launch: opened #${channel.name} (${channel.id}).`);
+  }
+}
+
+async function sendSeasonLaunchAnnouncement() {
+  const channel = await client.channels
+    .fetch(SEASON_LAUNCH_ANNOUNCEMENT_CHANNEL_ID)
+    .catch(() => null);
+
+  if (!channel?.isTextBased?.()) {
+    throw new Error("Season launch announcement channel could not be found.");
+  }
+
+  await channel.send({
+    content:
+      `<@&${MONSTER_NOTIFY_ROLE}>\n\n` +
+      `🌌━━━━━━━━━━━━━━━━━━━━━━🌌\n\n` +
+      `🐉 **MONSTER HUNT: SEASON 2 HAS BEGUN!** 🐉\n\n` +
+      `The world is alive once again...\n\n` +
+      `🌲 **40 brand-new monsters** await discovery.\n` +
+      `🥚 Find mysterious **Eggs**.\n` +
+      `🐾 Hatch and train powerful **Companions**.\n` +
+      `⭐ Earn Companion XP and strengthen pet abilities.\n` +
+      `🏆 Unlock exclusive **Titles and Achievements**.\n` +
+      `📖 Complete your **Monster Dex and Pet Dex**.\n` +
+      `🌌 Discover creatures hidden beyond the known world.\n` +
+      `⚔️ Face **Ultra Monsters** with unique abilities.\n\n` +
+      `🎯 **Use \`!hunt\` to begin your first adventure.**\n\n` +
+      `❓ **Need help or a refresher?**\n` +
+      `📖 Start with \`!monsterhelp\`\n` +
+      `🐉 Read the rules with \`!monsterrules\`\n` +
+      `🥚 Learn about eggs and pets with \`!pethelp\`\n\n` +
+      `Good luck, Hunters...\n` +
+      `May fortune be on your side. 🌌\n\n` +
+      `🌌━━━━━━━━━━━━━━━━━━━━━━🌌`,
+    allowedMentions: {
+      roles: [MONSTER_NOTIFY_ROLE]
+    }
+  });
+
+  console.log("Season launch: announcement sent.");
+}
+
+async function checkOneTimeSeasonLaunch() {
+  const now = getMountainDateTimeParts();
+
+  if (now.date !== SEASON_LAUNCH_DATE) return;
+
+  const currentMinutes = now.hour * 60 + now.minute;
+  const launchMinutes = 12 * 60;
+
+  if (currentMinutes < launchMinutes) return;
+
+  const data = loadData();
+
+  if (!data.seasonLaunch.channelsOpened) {
+    await openSeasonLaunchChannels();
+    data.seasonLaunch.channelsOpened = true;
+    saveData(data);
+  }
+
+  if (!data.seasonLaunch.announcementSent) {
+    await sendSeasonLaunchAnnouncement();
+    data.seasonLaunch.announcementSent = true;
+    saveData(data);
+  }
+}
+
+async function processFetchReturnsAndReminders() {
+  const data = loadData();
+  const huntChannel = await getMonsterHuntChannel();
+  const petChannel = await getEggsPetsChannel();
+  let changed = false;
+
+  for (const [userId, playerRaw] of Object.entries(data.players || {})) {
+    const player = getPlayer(data, userId);
+
+    // H.5: Fetch resolves server-side even if Discord is temporarily unavailable.
+    // The Activity can then show the same result on the Home screen.
+    if (player.fetchState && !player.fetchState.completed && Date.now() >= player.fetchState.readyAt) {
+      const ownedPet = player.pets.find(p => String(p.id) === String(player.fetchState.petId));
+      const definition = getOwnedPetDefinition(ownedPet);
+      if (ownedPet && definition) {
+        const fetchResult = rollFetchRewards(data, player, ownedPet, definition);
+        const rewards = fetchResult.rewards;
+        const xpText = awardCompanionXp(player, FETCH_COMPANION_XP, "Fetch Adventure");
+        const returnFlavor = fetchFlavor(definition, ownedPet.personality, true, ownedPet);
+
+        player.fetchState.result = {
+          petName:getOwnedPetName(ownedPet),
+          petKey:definition.key,
+          petImage:definition.image || null,
+          petIcon:definition.icon || "🐾",
+          rewards:[...rewards],
+          xpText,
+          flavor:returnFlavor
+        };
+        player.fetchState.completed = true;
+        player.fetchState.completedAt = Date.now();
+        player.fetchState.activityResultSeen = false;
+        changed = true;
+
+        if (petChannel?.isTextBased()) {
+          const embed = new EmbedBuilder()
+            .setTitle(`🐾 ${getOwnedPetName(ownedPet)} Returned!`)
+            .setDescription(`${returnFlavor}\n\n**Found:**\n${rewards.map(x => `• ${x}`).join("\n")}\n\n⭐ ${xpText}`);
+          const art = getPetArtworkUrl(definition); if (art) embed.setImage(art);
+          await petChannel.send({
+            content:`<@${userId}>`,
+            embeds:[embed],
+            allowedMentions:{users:[userId],roles:[]}
+          }).catch(() => null);
+
+          if (fetchResult.relicDiscovery) {
+            await announceWorldRelicDiscovery(petChannel, fetchResult.relicDiscovery, userId);
+          }
+        }
+      } else {
+        player.fetchState.completed = true;
+        player.fetchState.completedAt = Date.now();
+        player.fetchState.activityResultSeen = false;
+        player.fetchState.result = { rewards:[], xpText:"", flavor:"Your companion returned from Fetch." };
+        changed = true;
+      }
+    }
+
+    // H.4.1: Hunt and Fetch cooldown-ready alerts are opt-in personal
+    // channel mentions. Alert roles are used as the preference switch only;
+    // the role itself is NOT pinged, avoiding server-wide spam each time one
+    // player's cooldown finishes.
+    for (const type of ["hunt", "fetch"]) {
+      const dueKey = `${type}DueAt`, sentKey = `${type}Sent`;
+      const due = player.reminderState?.[dueKey] && !player.reminderState[sentKey] && Date.now() >= player.reminderState[dueKey];
+      if (!due) continue;
+
+      const prefs = ensureH4NotificationPrefs(player);
+
+      if (type === "hunt") {
+        if (prefs.huntReady && huntChannel?.isTextBased()) {
+          await huntChannel.send({
+            content:`<@${userId}> 🏹 **Your Hunt is ready!** Open **Monster Hunt → Hunt** or use \`!hunt\`.`,
+            allowedMentions:{ users:[userId], roles:[] }
+          }).catch(error => console.error("Hunt-ready channel notification failed:", error));
+        }
+        player.reminderState.huntSent = true;
+        changed = true;
+        continue;
+      }
+
+      if (prefs.fetchReady && petChannel?.isTextBased()) {
+        await petChannel.send({
+          content:`<@${userId}> 🐾 **Your companion is ready to Fetch again!** Use \`!fetch\`.`,
+          allowedMentions:{ users:[userId], roles:[] }
+        }).catch(error => console.error("Fetch-ready channel notification failed:", error));
+      }
+      player.reminderState.fetchSent = true;
+      changed = true;
+    }
+  }
+  if (changed) saveData(data);
+}
+
+function currentRanks(data) {
+  return Object.entries(data.players || {}).sort((a,b) => (b[1].points||0)-(a[1].points||0)).reduce((acc,[id],i) => (acc[id]=i+1,acc),{});
+}
+
+async function processWeeklyCompetition() {
+  const data = loadData();
+  const weekly = data.weeklyCompetition;
+  const channel = client.channels.cache.get(MONSTER_CHANNEL_ID);
+  if (!weekly.active && Date.now() >= weekly.startsAt) {
+    weekly.active = true; weekly.weekStartedAt = weekly.startsAt; weekly.lastResultsAt = 0;
+    const ranks = currentRanks(data);
+    for (const [id,p] of Object.entries(data.players || {})) p.weeklyStats = { points:0,catches:0,shinies:0,legendaries:0,startRank:ranks[id]||null };
+    saveData(data);
+    if (channel?.isTextBased()) await channel.send(`# 🏆 WEEKLY MONSTER HUNT HAS BEGUN!\n\nEveryone starts at **0 Weekly Points** while Season Points remain untouched.\nResults will be announced next Monday after the **5:00 AM Mountain Time** reset. Good luck, Hunters! 🏹`).catch(()=>null);
+    return;
+  }
+  if (!weekly.active) return;
+  const weekMs = 7*24*60*60*1000;
+  if (Date.now() < weekly.weekStartedAt + weekMs) return;
+  const entries = Object.entries(data.players || {}).sort((a,b)=>(b[1].weeklyStats?.points||0)-(a[1].weeklyStats?.points||0));
+  const ranksNow = currentRanks(data);
+  const winner = entries[0];
+  let text = `# 🏆 Weekly Monster Hunt Results!\n\n`;
+  entries.slice(0,3).forEach(([id,p],i)=> text += `${["🥇","🥈","🥉"][i]} <@${id}> — **${p.weeklyStats?.points||0} points**\n`);
+  if (winner && (winner[1].weeklyStats?.points||0)>0) { winner[1].bait.epic += WEEKLY_WINNER_BAIT_REWARD; text += `\n🏅 <@${winner[0]}> earned **1 Epic Bait** and the honor of **Hunter of the Week!**`; }
+  const shiny = [...entries].sort((a,b)=>(b[1].weeklyStats?.shinies||0)-(a[1].weeklyStats?.shinies||0))[0];
+  const legends = [...entries].sort((a,b)=>(b[1].weeklyStats?.legendaries||0)-(a[1].weeklyStats?.legendaries||0))[0];
+  const comeback = [...entries].sort((a,b)=>((a[1].weeklyStats?.startRank||ranksNow[a[0]]||0)-ranksNow[a[0]])-((b[1].weeklyStats?.startRank||ranksNow[b[0]]||0)-ranksNow[b[0]]))[0];
+  if (shiny && (shiny[1].weeklyStats?.shinies||0)>0) text += `\n✨ Most Shinies: <@${shiny[0]}> — **${shiny[1].weeklyStats.shinies}**`;
+  if (legends && (legends[1].weeklyStats?.legendaries||0)>0) text += `\n🐉 Most Legendaries: <@${legends[0]}> — **${legends[1].weeklyStats.legendaries}**`;
+  if (comeback) text += `\n📈 Biggest Comeback: <@${comeback[0]}>`;
+  text += `\n\nA brand-new weekly hunt begins now. Weekly scores reset; Season Points remain.`;
+  if (channel?.isTextBased()) await channel.send(text).catch(()=>null);
+  const ranks = currentRanks(data);
+  for (const [id,p] of Object.entries(data.players || {})) p.weeklyStats = { points:0,catches:0,shinies:0,legendaries:0,startRank:ranks[id]||null };
+  weekly.lastResultsAt = Date.now(); weekly.weekStartedAt += weekMs;
+  while (weekly.weekStartedAt + weekMs <= Date.now()) weekly.weekStartedAt += weekMs;
+  saveData(data);
+}
+
+// ==================== WORLD STORY / WORLD SHATTER ENGINE ====================
+async function getTextChannel(channelId) {
+  const cached = client.channels.cache.get(channelId);
+  if (cached?.isTextBased()) return cached;
+  const fetched = await client.channels.fetch(channelId).catch(() => null);
+  return fetched?.isTextBased() ? fetched : null;
+}
+
+async function getAnnouncementChannel() {
+  h4RefreshChannelRouting();
+  return getTextChannel(H4_ANNOUNCEMENT_CHANNEL_ID);
+}
+
+const H4_NOTIFICATION_DEFAULTS = Object.freeze({
+  huntReady: false,
+  eggReady: false,
+  fetchReady: false,
+  huntAlerts: false,
+  merchantAlerts: false,
+  bigHuntAlerts: false,
+  bountyAlerts: false,
+  worldEventAlerts: false
+});
+
+const H4_ROLE_PREFS = Object.freeze({
+  huntReady: H4_HUNT_READY_ROLE_ID,
+  eggReady: H4_EGG_READY_ROLE_ID,
+  fetchReady: H4_FETCH_ALERT_ROLE_ID,
+  huntAlerts: H4_HUNT_ALERT_ROLE_ID,
+  merchantAlerts: H4_MERCHANT_ALERT_ROLE_ID,
+  bigHuntAlerts: H4_BIG_HUNT_ALERT_ROLE_ID,
+  bountyAlerts: H4_BOUNTY_ALERT_ROLE_ID,
+  worldEventAlerts: H4_WORLD_EVENT_ALERT_ROLE_ID
+});
+
+function ensureH4NotificationPrefs(player) {
+  if (!player.notificationPrefs || typeof player.notificationPrefs !== "object") {
+    player.notificationPrefs = {};
+  }
+  for (const [key, value] of Object.entries(H4_NOTIFICATION_DEFAULTS)) {
+    if (typeof player.notificationPrefs[key] !== "boolean") player.notificationPrefs[key] = value;
+  }
+  return player.notificationPrefs;
+}
+
+async function h4SetMemberAlertRole(userId, roleId, enabled) {
+  const guild = client.guilds.cache.first();
+  if (!guild || !roleId) return { ok:false, error:"Discord server is unavailable." };
+  const member = await guild.members.fetch(userId).catch(() => null);
+  if (!member) return { ok:false, error:"Could not find your Discord server membership." };
+  try {
+    if (enabled) await member.roles.add(roleId, "Monster Hunt notification preference");
+    else await member.roles.remove(roleId, "Monster Hunt notification preference");
+    return { ok:true };
+  } catch (error) {
+    console.error("H.4 role preference update failed:", error);
+    return { ok:false, error:"The bot could not update that alert role. Make sure it has Manage Roles and sits above the alert roles." };
+  }
+}
+
+async function h4NotificationPrefsPayload(data, userId) {
+  const player = getPlayer(data, userId);
+  const prefs = ensureH4NotificationPrefs(player);
+  const guild = client.guilds.cache.first();
+  const member = guild ? await guild.members.fetch(userId).catch(() => null) : null;
+  const result = { ...prefs };
+  if (member) {
+    for (const [key, roleId] of Object.entries(H4_ROLE_PREFS)) {
+      result[key] = member.roles.cache.has(roleId);
+      prefs[key] = result[key];
+    }
+  }
+  saveData(data);
+  return {
+    preferences: result,
+    testing: h4UsingTestChannel(),
+    publicChannelId: h4UsingTestChannel() ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_HUNT_CHANNEL_ID,
+    announcementChannelId: h4UsingTestChannel() ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID
+  };
+}
+
+async function h4UpdateNotificationPreference(data, userId, key, enabled) {
+  if (!(key in H4_NOTIFICATION_DEFAULTS)) return { ok:false, error:"Unknown notification preference." };
+  const player = getPlayer(data, userId);
+  const prefs = ensureH4NotificationPrefs(player);
+  const value = Boolean(enabled);
+  const roleId = H4_ROLE_PREFS[key];
+  if (roleId) {
+    const roleResult = await h4SetMemberAlertRole(userId, roleId, value);
+    if (!roleResult.ok) return roleResult;
+  }
+  prefs[key] = value;
+  saveData(data);
+  return { ok:true, key, enabled:value, preferences:{...prefs} };
+}
+
+async function h4SendPlayerDm(userId, content) {
+  try {
+    const discordUser = await client.users.fetch(userId);
+    await discordUser.send(content);
+    return true;
+  } catch (error) {
+    console.error(`H.4 DM failed for ${userId}:`, error);
+    return false;
+  }
+}
+
+function h4RoleMention(roleId) {
+  return roleId ? `<@&${roleId}>` : "";
+}
+
+async function h4PostSuccessfulActivityCatch(user, monster, rewards = {}) {
+  h4RefreshChannelRouting();
+  const channel = await getMonsterHuntChannel();
+  if (!channel?.isTextBased()) return null;
+  const rarity = monster?.rarity || "Unknown";
+  const habitat = monster?.habitat || "Unknown";
+  const pointText = Number(rewards.points || 0) ? `⭐ **+${Number(rewards.points || 0)} Hunter Points**\n` : "";
+  const tokenText = Number(rewards.tokens || 0) ? `🪙 **+${Number(rewards.tokens || 0)} Hunt Tokens**\n` : "";
+  const eggText = Number(rewards.eggs || 0) ? `🥚 **+${Number(rewards.eggs || 0)} Egg${Number(rewards.eggs || 0) === 1 ? "" : "s"}**\n` : "";
+  return channel.send(buildMonsterEmbed(
+    monster,
+    `${monster?.shiny ? "✨ SHINY CAPTURE" : "🏹 MONSTER CAUGHT"} — ${monster?.name || "Unknown Monster"}`,
+    `<@${user.id}> made a successful Activity capture!\n\n` +
+    `**Rarity:** ${rarity}\n**Habitat:** ${habitat}\n\n` +
+    `${pointText}${tokenText}${eggText}`
+  )).catch(error => { console.error("H.4 public catch feed failed:", error); return null; });
+}
+
+async function sendWorldEvent(sourceChannel, content, filename = null, pingEveryone = false) {
+  const source = await getAnnouncementChannel() || (sourceChannel?.isTextBased() ? sourceChannel : await getTextChannel(MONSTER_CHANNEL_ID));
+  const imagePath = filename ? findImageFile(filename) : null;
+  if (!source?.isTextBased()) return null;
+  const finalContent = pingEveryone
+    ? `${h4RoleMention(H4_WORLD_EVENT_ALERT_ROLE_ID)}\n\n${content}`
+    : content;
+  const payload = {
+    content: finalContent,
+    allowedMentions: pingEveryone ? { roles: [H4_WORLD_EVENT_ALERT_ROLE_ID] } : { parse: [] }
+  };
+  if (imagePath) payload.files = [new AttachmentBuilder(imagePath)];
+  return source.send(payload).catch(error => { console.error("World event send failed:", error); return null; });
+}
+
+function nextWorldShatterSaturday(now = Date.now()) {
+  const minAt = now + WORLD_SHATTER_MIN_NOTICE;
+  const parts = getMountainDateTimeParts(new Date(now));
+  const base = new Date(`${parts.date}T12:00:00Z`);
+  for (let add=0; add<15; add++) {
+    const d = new Date(base); d.setUTCDate(base.getUTCDate()+add);
+    if (d.getUTCDay() !== 6) continue;
+    const dateString = d.toISOString().slice(0,10);
+    const ts = mountainLocalTimestamp(dateString,20,0);
+    if (ts >= minAt) return ts;
+  }
+  return now + 7*24*60*60*1000;
+}
+
+function migratePendingWorldShatterToEightPm(data) {
+  const ws = data.worldStory;
+  if (!ws || ws.worldShatterEightPmMigrationDone) return false;
+  let changed = false;
+
+  // Move the already-triggered pending Saturday finale from 7:00 PM to 8:00 PM
+  // once, without changing any discovered Relics or story progress.
+  if (ws.shatterScheduledAt && !ws.event?.active && !ws.postShatter) {
+    const parts = getMountainDateTimeParts(new Date(ws.shatterScheduledAt));
+    if (parts.hour === 19) {
+      ws.shatterScheduledAt = mountainLocalTimestamp(parts.date, 20, 0);
+      ws.beats = buildFinalWarningBeats(ws.finalWarningStartedAt || Date.now(), ws.shatterScheduledAt);
+      ws.missedStart = false;
+      changed = true;
+    }
+  }
+  ws.worldShatterEightPmMigrationDone = true;
+  return true || changed;
+}
+
+function initializeFourOfFiveAnomalyState(data) {
+  const ws = data.worldStory;
+  if (!ws || ws.postShatter || ["final_warning","scheduled","event","complete"].includes(ws.phase)) return;
+  if (ws.phase !== "anomaly") {
+    ws.phase = "anomaly";
+    ws.anomalyIndex = 0;
+    ws.nextAnomalyAt = Date.now() + (45 + Math.floor(Math.random()*46))*60*1000;
+  }
+}
+
+function buildFinalWarningBeats(startAt, shatterAt) {
+  const span = Math.max(1, shatterAt-startAt);
+  const candidates = [
+    { at:startAt+Math.floor(span*.20), key:"fluctuation" },
+    { at:startAt+Math.floor(span*.45), key:"collision" },
+    { at:startAt+Math.floor(span*.70), key:"stability" },
+    { at:shatterAt-24*60*60*1000, key:"24h" },
+    { at:shatterAt-2*60*60*1000, key:"2h" },
+    { at:shatterAt-15*60*1000, key:"15m" }
+  ].filter(x=>x.at > startAt + 5*60*1000 && x.at < shatterAt);
+  const seen = new Set();
+  return candidates.sort((a,b)=>a.at-b.at).filter(x=>{const bucket=Math.floor(x.at/(10*60*1000)); if(seen.has(bucket)) return false; seen.add(bucket); return true;}).map(x=>({...x,sent:false,skipped:false}));
+}
+
+function initializeFinalWarningState(data) {
+  const ws = data.worldStory;
+  if (!ws || ws.postShatter || ws.phase === "complete" || ws.event?.active) return;
+  if (!ws.finalWarningStartedAt) ws.finalWarningStartedAt = Date.now();
+  if (!ws.shatterScheduledAt) ws.shatterScheduledAt = nextWorldShatterSaturday(ws.finalWarningStartedAt);
+  ws.phase = "final_warning";
+  ws.beats = buildFinalWarningBeats(ws.finalWarningStartedAt, ws.shatterScheduledAt);
+}
+
+function worldStabilityForBeat(key) {
+  return ({ fluctuation:72, collision:41, stability:17, "24h":8, "2h":4, "15m":1 })[key] ?? 50;
+}
+
+function finalWarningBeatText(beat, ws) {
+  const eventTs = Math.floor(ws.shatterScheduledAt/1000);
+  if (beat.key === "fluctuation") return `⚠️ **REALITY FLUCTUATION**\n\nA breach appeared for less than a second.\nNo known planar signature was detected.\n\n**WORLD STABILITY: ${worldStabilityForBeat(beat.key)}%**`;
+  if (beat.key === "collision") return `🚨 **PLANAR COLLISION DETECTED**\n\nShattered Frost energy has been detected inside an Infernal Rift.\nThis should be impossible.\n\n**WORLD STABILITY: ${worldStabilityForBeat(beat.key)}%**`;
+  if (beat.key === "stability") return `🚨 **WORLD STABILITY: ${worldStabilityForBeat(beat.key)}%**\n\nDistortions are no longer closing completely.\nSomething is pushing against reality from the other side.`;
+  if (beat.key === "24h") return `# 🚨 EMERGENCY HUNT NOTICE\n\nWorld stability has reached critical failure.\nAll available Monster Hunters are requested to report <t:${eventTs}:F> (<t:${eventTs}:R>).\n\n**This is not a normal Distortion.**\nCome prepared.`;
+  if (beat.key === "2h") return `# 🚨 WORLD SHATTER — 2 HOURS\n\n**WORLD STABILITY: 4%**\nHunters are advised to prepare bait, capture items, and companions.\n\n**All available hunters will be needed.**`;
+  return `# ⛔ WORLD SHATTER — 15 MINUTES\n\n**WORLD STABILITY: 1%**\n\nWe can't stop it anymore.`;
+}
+
+const FOUR_OF_FIVE_ANOMALIES = [
+  `⚠️ **REALITY FLUCTUATION DETECTED**\n\nFor exactly eleven seconds, every shadow in the hunting grounds pointed in the same direction.\n\nThere was nothing there.\n\n**World stability continues to deteriorate.**`,
+  `⚠️ **UNKNOWN PHENOMENON**\n\nHunters reported seeing creatures from the Shattered Frost wandering near traces of Infernal Rift energy.\n\nThese creatures should not be capable of existing in the same environment.\n\n**Something is causing the planes to overlap.**`,
+  `🚨 **WORLD STABILITY: CRITICAL**\n\nFour unknown Relic signatures now resonate within the hunting grounds.\nReality is no longer repairing itself cleanly after Distortions.\n\n**Whatever happens next may be permanent.**`,
+  `⚠️ **PLANAR ECHO**\n\nA doorway appeared in the ruins today.\nIt opened onto five different skies at once.\n\nThe doorway vanished before anyone could cross it.`
+];
+
+function worldShatterStatusText(data) {
+  const ws=data.worldStory||{}; const ev=ws.event;
+  const schedule=ws.shatterScheduledAt ? `<t:${Math.floor(ws.shatterScheduledAt/1000)}:F> (<t:${Math.floor(ws.shatterScheduledAt/1000)}:R>)` : "Not scheduled";
+  let text=`🌎 **WORLD SHATTER STATUS**\nPhase: **${ws.phase||"dormant"}**\nScheduled: ${schedule}\nPost-Shatter: **${ws.postShatter?"Yes":"No"}**\nOutcome: **${ws.outcome||"Pending"}**\nUnmade replacement chance: **${Number(ws.unmadeReplacementChance||0)}%**${ws.architectRematchAt?`\nArchitect rematch: <t:${Math.floor(ws.architectRematchAt/1000)}:F>`:""}`;
+  if(ev?.active){ text += `\n\n💥 Event Stage: **${ev.stage}**\nParticipants: **${Object.keys(ev.participants||{}).length}**`; if(ev.stage==="stabilize") text += `\n${WORLD_KNOWN_DISTORTION_KEYS.map(k=>`${DISTORTIONS[k].icon} ${DISTORTIONS[k].name}: **${ev.stability?.[k]||0}/${WORLD_SHATTER_STABILITY_GOAL}**`).join("\n")}`; if(ev.stage==="boss") text += `\n👁️ Architect HP: **${Math.max(0,ev.bossHp||0)}/${ev.bossMaxHp||0}**`; }
+  return text;
+}
+
+async function startWorldShatter(data, forced=false) {
+  if (!WORLD_SHATTER_ENABLED) return false;
+  const ws=data.worldStory; if(ws.event?.active) return false;
+  const now=Date.now();
+  ws.phase="event"; ws.event={active:true,stage:"collision",startedAt:now,stageEndsAt:now+WORLD_SHATTER_COLLISION_DURATION,participants:{},stability:Object.fromEntries(WORLD_KNOWN_DISTORTION_KEYS.map(k=>[k,0])),bossHp:0,bossMaxHp:0,bossEndsAt:0,stabilizationFailed:false};
+  data.activeDistortion=null;
+  for(const p of Object.values(data.players||{})) p.lastHunt=0;
+  addSeasonMoment(data,{type:"world_shatter",icon:"💥",text:"The five World Relics shattered the seal and the World Shatter began.",uniqueKey:"world:shatter:start"});
+  saveData(data);
+  const channel=await getTextChannel(MONSTER_CHANNEL_ID);
+  await sendWorldEvent(channel,`@everyone\n\n# 💥 WORLD SHATTER\n\nThe sky fractures.\nInfernal flame pours through frozen ruins. Arcane oceans hang above spectral kingdoms while stars burn through daylight.\n\n**The five known planes are collapsing into ours.**\n\n⚡ \`!hunt\` cooldown: **10 minutes**\n🔄 Everyone can hunt **RIGHT NOW.**\n\nFor the next phase, creatures from every known Distortion can appear.\n\n**And something else is pushing through.**`,`world_shatter.png`,true);
+  return true;
+}
+
+async function beginStabilization(data) {
+  const ev=data.worldStory?.event; if(!ev?.active) return;
+  ev.stage="stabilize"; ev.stageStartedAt=Date.now(); ev.stageEndsAt=Date.now()+WORLD_SHATTER_STABILIZE_MAX_DURATION;
+  saveData(data); const channel=await getTextChannel(MONSTER_CHANNEL_ID);
+  await sendWorldEvent(channel,`# 🌀 STABILIZE THE BREACHES\n\nThe collision can be slowed—but only by capturing creatures tied to each plane.\n\n${WORLD_KNOWN_DISTORTION_KEYS.map(k=>`${DISTORTIONS[k].icon} **${DISTORTIONS[k].name}** — 0/${WORLD_SHATTER_STABILITY_GOAL}`).join("\n")}\n\nEvery successful Distortion catch adds **+1 Stability** to its matching breach.\n⚡ \`!hunt\` remains **10 minutes**.`,null,false);
+}
+
+async function revealUnmade(data, timedOut=false) {
+  const ev=data.worldStory?.event; if(!ev?.active || ev.stage==="unmade" || ev.stage==="boss") return;
+  ev.stage="unmade"; ev.stageStartedAt=Date.now(); ev.stageEndsAt=Date.now()+WORLD_SHATTER_UNMADE_DURATION; ev.stabilizationFailed=Boolean(timedOut);
+  for(const p of Object.values(data.players||{})) p.lastHunt=0;
+  saveData(data); const channel=await getTextChannel(MONSTER_CHANNEL_ID);
+  await sendWorldEvent(channel,`@everyone\n\n# ❓ UNKNOWN BREACH DETECTED\n\n${WORLD_KNOWN_DISTORTION_KEYS.map(k=>`✅ ${DISTORTIONS[k].name.toUpperCase()} — ${timedOut?"FORCED CLOSED":"SEALED"}`).join("\n")}\n\n**WORLD STABILITY: 99%**\n\nWhy isn't it 100%?\n\nClassification: **NONE**\nOrigin: **NONE**\nAge: **ERROR**\n\nThis breach was not created by the World Shatter.\n\n**It was already here.**\n\n🕳️ **THE UNMADE HAS OPENED.**\n⚡ Hunt cooldown reset.\n❓ Impossible Egg signatures have been detected.`,`unmade_opening.png`,true);
+}
+
+async function beginArchitectBoss(data, { rematch = false } = {}) {
+  const ev=data.worldStory?.event; if(!ev?.active) return;
+  const participants=Math.max(1,Object.keys(ev.participants||{}).length);
+  const maxHp=rematch ? Math.max(600,participants*150) : Math.max(500,participants*125);
+  ev.stage="boss"; ev.stageStartedAt=Date.now(); ev.bossMaxHp=maxHp; ev.bossHp=maxHp; ev.bossEndsAt=Date.now()+WORLD_SHATTER_BOSS_DURATION;
+  ev.rematch=Boolean(rematch); ev.nextHunterBonus=0; ev.finalBlowUserId=null;
+  for(const state of Object.values(ev.participants||{})) {
+    state.lastBossAttack=0; state.hunterDamage=state.hunterDamage||0; state.petDamage=state.petDamage||0;
+    state.totalDamage=state.totalDamage||0; state.attacks=state.attacks||0;
+  }
+  saveData(data); const channel=await getTextChannel(MONSTER_CHANNEL_ID);
+  await sendWorldEvent(channel,`@everyone\n\n# 👁️ ${rematch?"THE ARCHITECT RETURNS":"THE ARCHITECT OF NOTHING"}\n\n${rematch?"The wound in reality opens again. The Architect remembers the hunters who drove it back.":"The Unmade breach folds inward—and something enormous steps through."}\n\nThis creature is not in the Monster Dex.\nIt does not belong to any plane.\n\n❤️ **Community HP: ${maxHp}**\n⚔️ Use **\`!shatterattack\`** every **2 minutes**.\n🐾 Your equipped companion attacks beside you.\n⏳ You have **45 minutes**.\n\n**If it remains, the breach remains.**`,ARCHITECT_IMAGE,true);
+}
+
+function architectPetDamageRange(rarity) {
+  return ({ Common:[2,5], Rare:[4,8], Epic:[6,11], Legendary:[9,15] })[rarity] || [2,5];
+}
+
+function rollArchitectAttack(player, ev) {
+  let hunterDamage=10+Math.floor(Math.random()*11);
+  const inheritedBonus=Math.max(0,Number(ev.nextHunterBonus||0));
+  if(inheritedBonus>0){ hunterDamage+=inheritedBonus; ev.nextHunterBonus=0; }
+  const equipped=getEquippedPet(player); const definition=getOwnedPetDefinition(equipped);
+  let petDamage=0; const effects=[];
+  if(definition && equipped){
+    const info=getCompanionLevelInfo(equipped); const [min,max]=architectPetDamageRange(definition.rarity);
+    const base=min+Math.floor(Math.random()*(max-min+1)); petDamage=base+Math.max(0,info.level-1);
+    if(definition.key==="paradox_imp"){
+      const chance=signatureTier(info.level,5,7,10);
+      if(Math.random()*100<chance){ petDamage+=base+Math.max(0,info.level-1); effects.push(`🌀 **PARADOX!** ${getOwnedPetName(equipped)} struck in two realities at once.`); }
+    }
+    if(definition.key==="rime_sprite"){
+      const chance=signatureTier(info.level,15,20,25);
+      if(Math.random()*100<chance){ ev.nextHunterBonus=Math.max(Number(ev.nextHunterBonus||0),10); effects.push(`❄️ **SECOND CHANCE — FROZEN OPENING!** The Architect freezes for an instant. The **next hunter** gains **+10 Hunter Damage**.`); }
+    }
+    if(definition.key==="the_unwritten"){
+      const chance=signatureTier(info.level,1,2,3);
+      if(Math.random()*100<chance){ petDamage+=50; effects.push(`✒️ **THIS WASN'T SUPPOSED TO HAPPEN.** The Unwritten edits the battle itself: **+50 impossible damage**.`); }
+    }
+  }
+  return { hunterDamage, petDamage, total:hunterDamage+petDamage, equipped, definition, inheritedBonus, effects };
+}
+
+function worldShatterHeroSummary(data, ev) {
+  const entries=Object.entries(ev.participants||{});
+  if(!entries.length) return "No hunter contributions were recorded.";
+  const best=(scoreFn)=>entries.slice().sort((a,b)=>scoreFn(b[1])-scoreFn(a[1]))[0];
+  const total=best(s=>Number(s.totalDamage||0));
+  const pet=best(s=>Number(s.petDamage||0));
+  const breaches=best(s=>Object.values(s.planes||{}).reduce((a,b)=>a+Number(b||0),0));
+  const hunts=best(s=>Number(s.catches||0));
+  const lines=[];
+  if(total && Number(total[1].totalDamage||0)>0) lines.push(`⚔️ **Most Total Damage:** ${formatPlayerMention(data,total[0])} — **${total[1].totalDamage}**`);
+  if(pet && Number(pet[1].petDamage||0)>0) lines.push(`🐾 **Most Companion Damage:** ${formatPlayerMention(data,pet[0])} — **${pet[1].petDamage}**`);
+  if(breaches && Object.values(breaches[1].planes||{}).some(v=>Number(v)>0)) lines.push(`🌀 **Most Breaches Stabilized:** ${formatPlayerMention(data,breaches[0])} — **${Object.values(breaches[1].planes||{}).reduce((a,b)=>a+Number(b||0),0)}**`);
+  if(hunts && Number(hunts[1].catches||0)>0) lines.push(`🌎 **Most World Shatter Hunts:** ${formatPlayerMention(data,hunts[0])} — **${hunts[1].catches}**`);
+  if(ev.finalBlowUserId) lines.push(`👁️ **Final Blow:** ${formatPlayerMention(data,ev.finalBlowUserId)}`);
+  return lines.join("\n") || "No hunter contributions were recorded.";
+}
+
+function grantWorldShatterTitlesAndRewards(data, success, { rematch = false } = {}) {
+  const ws=data.worldStory, ev=ws?.event; if(!ev) return;
+  const eligibleNow=[];
+  for(const [userId,state] of Object.entries(ev.participants||{})) {
+    const p=getPlayer(data,userId); if(!Array.isArray(p.unlockedTitles)) p.unlockedTitles=[];
+    if(!p.unlockedTitles.includes("Shatterborn")) p.unlockedTitles.push("Shatterborn");
+    const allPlanes=WORLD_KNOWN_DISTORTION_KEYS.every(k=>Number(state.planes?.[k]||0)>0);
+    if(allPlanes) eligibleNow.push(userId);
+    const rematchEligible=rematch && Array.isArray(ws.worldMenderEligible) && ws.worldMenderEligible.includes(userId);
+    if(success && (allPlanes || rematchEligible) && !p.unlockedTitles.includes("World Mender")) p.unlockedTitles.push("World Mender");
+    if(success){
+      p.points=(p.points||0)+WORLD_SHATTER_PARTICIPATION_POINTS;
+      if(!Array.isArray(p.eggs)) p.eggs=[];
+      p.eggs.push({id:`shatter-${Date.now()}-${userId}-${Math.random().toString(36).slice(2,7)}`,rarity:"Legendary",foundAt:Date.now(),source:rematch?"Architect Rematch Victory":"World Shatter Victory"});
+      p.captureItems.masterCharm=(p.captureItems.masterCharm||0)+1;
+    }
+  }
+  if(!success && !rematch) ws.worldMenderEligible=eligibleNow;
+}
+
+function scheduleArchitectRematch(data) {
+  const ws=data.worldStory; if(!ws) return 0;
+  const earliest=Date.now()+WORLD_SHATTER_REMATCH_MIN_DELAY;
+  ws.architectRematchAt=nextWorldShatterSaturday(earliest);
+  ws.rematch24hSent=false; ws.rematch2hSent=false;
+  return ws.architectRematchAt;
+}
+
+async function startArchitectRematch(data) {
+  const ws=data.worldStory; if(!ws || ws.outcome!=="failure" || ws.event?.active) return false;
+  ws.phase="rematch";
+  ws.event={active:true,stage:"boss",startedAt:Date.now(),stageEndsAt:0,participants:{},stability:{},bossHp:0,bossMaxHp:0,bossEndsAt:0,rematch:true,nextHunterBonus:0,finalBlowUserId:null};
+  saveData(data);
+  await beginArchitectBoss(data,{rematch:true});
+  return true;
+}
+
+async function finishWorldShatter(data, success=true) {
+  const ws=data.worldStory, ev=ws?.event; if(!ev?.active) return;
+  const rematch=Boolean(ev.rematch);
+  const heroSummary=worldShatterHeroSummary(data,ev);
+  grantWorldShatterTitlesAndRewards(data,success,{rematch});
+  ev.active=false; ev.stage=success?"victory":"failed"; ws.phase="complete"; ws.postShatter=true; ws.completedAt=Date.now(); data.worldShatterUnlocked=true;
+  ws.outcome=success?"victory":"failure";
+  ws.unmadeReplacementChance=success?WORLD_SHATTER_VICTORY_UNMADE_CHANCE:WORLD_SHATTER_FAILURE_UNMADE_CHANCE;
+  if(success){ ws.architectDefeats=(ws.architectDefeats||0)+1; ws.architectRematchAt=0; ws.rematch24hSent=false; ws.rematch2hSent=false; }
+  else { ws.architectFailures=(ws.architectFailures||0)+1; scheduleArchitectRematch(data); }
+  addSeasonMoment(data,{type:"world_shatter_end",icon:success?"🌅":"🕳️",text:success?`The Architect of Nothing was defeated${rematch?" in the rematch":""} and the World Shatter was survived.`:`The Architect of Nothing survived. The Unmade took root in the hunting grounds.`,uniqueKey:`world:shatter:end:${ws.architectDefeats||0}:${ws.architectFailures||0}`});
+  if(ev.finalBlowUserId) addSeasonMoment(data,{type:"architect_final_blow",icon:"👁️",text:`${formatPlayerMention(data,ev.finalBlowUserId)} struck the final blow against the Architect of Nothing.`});
+  saveData(data); const channel=await getTextChannel(MONSTER_CHANNEL_ID);
+  if(success){
+    await sendWorldEvent(channel,`@everyone\n\n# ⚔️ THE ARCHITECT HAS FALLEN\n\nThe final blow tears through the Architect's hollow core.\nViolet-white fractures race across its impossible body.\n\nThe Architect reaches toward the breach...\n\n**and misses.**`,null,true);
+    await wait(2500);
+    await sendWorldEvent(channel,`# 🌌 THE UNMADE IS COLLAPSING\n\nThe Architect fractures into thousands of pieces.\nSome fall. Some disappear. Some were apparently never there at all.\n\nFor the first time in weeks... **the sky is quiet.**\n\n🏆 **Shatterborn** — every participant\n🌎 **World Mender** — hunters who helped all five planes${rematch?" and returned for the rematch":""}\n🎁 **Victory Bundle:** +${WORLD_SHATTER_PARTICIPATION_POINTS} Hunter Points, 1 Legendary Egg, 1 Master Charm\n\n### WORLD SHATTER HEROES\n${heroSummary}\n\n🕳️ Future Unmade Distortion chance: **${WORLD_SHATTER_VICTORY_UNMADE_CHANCE}%**`,null,false);
+    setTimeout(async()=>{const ch=await getTextChannel(MONSTER_CHANNEL_ID);if(ch)await sendWorldEvent(ch,"...\n\n*something moved inside the closed breach.*",null,false);},30000);
+  } else {
+    const rematchAt=ws.architectRematchAt;
+    await sendWorldEvent(channel,`@everyone\n\n# ⬛ WE FAILED\n\nThe Architect was not defeated.\nThe breach does not close.\n\nInstead...\n\n**it stabilizes.**\n\n# ❓ THE UNMADE HAS TAKEN ROOT\nThe world survived the Shatter.\n**But it did not survive unchanged.**\n\n🏆 Participants unlocked **Shatterborn**.\n🌎 **World Mender was not awarded.**\n🕳️ Future Unmade Distortion chance: **${WORLD_SHATTER_FAILURE_UNMADE_CHANCE}%**\n\nThe Architect will return <t:${Math.floor(rematchAt/1000)}:F> (<t:${Math.floor(rematchAt/1000)}:R>).\n\n### WORLD SHATTER HEROES\n${heroSummary}`,ARCHITECT_IMAGE,true);
+    setTimeout(async()=>{const ch=await getTextChannel(MONSTER_CHANNEL_ID);if(ch)await sendWorldEvent(ch,"...\n\n*it wasn't alone.*",null,false);},30000);
+  }
+}
+
+function registerWorldShatterCatch(data,userId,monster) {
+  const ev=data.worldStory?.event; if(!ev?.active) return {text:"",reveal:false};
+  if(!ev.participants[userId]) ev.participants[userId]={planes:{},catches:0,attacks:0}; const ps=ev.participants[userId]; ps.catches=(ps.catches||0)+1;
+  if(ev.stage!=="stabilize" || !WORLD_KNOWN_DISTORTION_KEYS.includes(monster.distortionKey)) return {text:"",reveal:false};
+  const key=monster.distortionKey; const before=ev.stability[key]||0; ev.stability[key]=Math.min(WORLD_SHATTER_STABILITY_GOAL,before+1); ps.planes[key]=(ps.planes[key]||0)+1;
+  const allDone=WORLD_KNOWN_DISTORTION_KEYS.every(k=>(ev.stability[k]||0)>=WORLD_SHATTER_STABILITY_GOAL);
+  return {text:`🌎 **BREACH STABILITY:** ${DISTORTIONS[key].name} **${ev.stability[key]}/${WORLD_SHATTER_STABILITY_GOAL}**`,reveal:allDone};
+}
+
+async function processWorldStorySystem() {
+  if (!WORLD_SHATTER_ENABLED) return;
+  const data=loadData(); const count=discoveredWorldRelicCount(data); const ws=data.worldStory; const now=Date.now(); let dirty=false;
+  if(count===4 && !ws.postShatter && ws.phase==="dormant"){initializeFourOfFiveAnomalyState(data);dirty=true;}
+  if(count>=5 && !ws.postShatter && !ws.event?.active && !["final_warning","event","complete"].includes(ws.phase)){initializeFinalWarningState(data);dirty=true;}
+  if(ws.phase==="anomaly" && count===4 && now>=Number(ws.nextAnomalyAt||0)){
+    const text=FOUR_OF_FIVE_ANOMALIES[ws.anomalyIndex%FOUR_OF_FIVE_ANOMALIES.length]; ws.anomalyIndex=(ws.anomalyIndex||0)+1; ws.nextAnomalyAt=now+(4+Math.floor(Math.random()*5))*60*60*1000; saveData(data); const ch=await getTextChannel(MONSTER_CHANNEL_ID); await sendWorldEvent(ch,text,"distortion_warning.png",false); return;
+  }
+  if(ws.phase==="final_warning" && !ws.event?.active){
+    for(const beat of ws.beats||[]){ if(beat.sent||beat.skipped) continue; if(beat.at < WORLD_STORY_PROCESS_BOOT_AT-10*60*1000){beat.skipped=true;dirty=true;continue;} if(now>=beat.at){beat.sent=true;saveData(data);const ch=await getTextChannel(MONSTER_CHANNEL_ID);await sendWorldEvent(ch,finalWarningBeatText(beat,ws),beat.key==="15m"?"distortion_critical.png":"distortion_warning.png",beat.key==="24h"||beat.key==="2h"||beat.key==="15m");return;} }
+    if(now>=ws.shatterScheduledAt && now<=ws.shatterScheduledAt+WORLD_SHATTER_START_GRACE_MS){await startWorldShatter(data);return;}
+    if(now>ws.shatterScheduledAt+WORLD_SHATTER_START_GRACE_MS && !ws.missedStart){ws.missedStart=true;dirty=true;console.log("World Shatter safety: scheduled start was missed; awaiting admin !worldshatter start.");}
+  }
+  const ev=ws.event;
+  if(ev?.active){
+    if(ev.stage==="collision" && now>=ev.stageEndsAt){await beginStabilization(data);return;}
+    if(ev.stage==="stabilize" && now>=ev.stageEndsAt){await revealUnmade(data,true);return;}
+    if(ev.stage==="unmade" && now>=ev.stageEndsAt){await beginArchitectBoss(data);return;}
+    if(ev.stage==="boss" && now>=ev.bossEndsAt){await finishWorldShatter(data,false);return;}
+  }
+  if(ws.postShatter && ws.outcome==="failure" && ws.architectRematchAt && !ws.event?.active){
+    const ch=await getTextChannel(MONSTER_CHANNEL_ID);
+    if(!ws.rematch24hSent && now>=ws.architectRematchAt-24*60*60*1000 && now<ws.architectRematchAt){ws.rematch24hSent=true;saveData(data);await sendWorldEvent(ch,`@everyone\n\n# 👁️ THE ARCHITECT RETURNS — 24 HOURS\n\nThe breach is moving.\n\nThe Architect has been sighted again.\nIt remembers you.\n\nHunters are requested <t:${Math.floor(ws.architectRematchAt/1000)}:F>.`,ARCHITECT_IMAGE,true);return;}
+    if(!ws.rematch2hSent && now>=ws.architectRematchAt-2*60*60*1000 && now<ws.architectRematchAt){ws.rematch2hSent=true;saveData(data);await sendWorldEvent(ch,`@everyone\n\n# 👁️ ARCHITECT REMATCH — 2 HOURS\n\nThe Unmade breach is reopening.\n\n**This time, finish it.**`,ARCHITECT_IMAGE,true);return;}
+    if(now>=ws.architectRematchAt && now<=ws.architectRematchAt+WORLD_SHATTER_START_GRACE_MS){await startArchitectRematch(data);return;}
+  }
+  if(dirty) saveData(data);
+}
+
+function discoveredWorldRelicCount(data) {
+  return RELIC_KEYS.filter(key => Boolean(data.worldProgress?.[key])).length;
+}
+
+function mountainWeekKey(date = new Date()) {
+  const parts = getMountainDateTimeParts(date);
+  const local = new Date(`${parts.date}T12:00:00Z`);
+  const day = local.getUTCDay();
+  const diff = (day + 6) % 7;
+  local.setUTCDate(local.getUTCDate() - diff);
+  return local.toISOString().slice(0,10);
+}
+
+function mountainLocalTimestamp(dateString, hour, minute) {
+  // Mountain Time is UTC-6 during MDT and UTC-7 during MST. Resolve by trying both.
+  for (const offsetHours of [6,7]) {
+    const [y,m,d] = dateString.split("-").map(Number);
+    const candidate = Date.UTC(y,m-1,d,hour + offsetHours,minute,0);
+    const parts = getMountainDateTimeParts(new Date(candidate));
+    if (parts.date === dateString && parts.hour === hour && parts.minute === minute) return candidate;
+  }
+  return Date.parse(`${dateString}T${String(hour).padStart(2,"0")}:${String(minute).padStart(2,"0")}:00-06:00`);
+}
+
+function generateDistortionSchedule(data) {
+  const weekKey = mountainWeekKey();
+  const monday = new Date(`${weekKey}T12:00:00Z`);
+  const now = Date.now();
+
+  if (data.distortionSchedule?.weekKey === weekKey && Array.isArray(data.distortionSchedule.events) && data.distortionSchedule.events.length) {
+    const events = data.distortionSchedule.events;
+    if (events.length >= DISTORTION_EVENTS_PER_WEEK) return false;
+
+    // Mid-week migration from the previous 4-Rift schedule: add future Rift slots
+    // without touching events that already happened or are already announced.
+    let attempts = 0;
+    const realmKeys = ["mirror_scar","black_bloom","chrono_tear","upside_down_sea","dreaming_gate"];
+    while (events.length < DISTORTION_EVENTS_PER_WEEK && attempts < 200) {
+      attempts++;
+      const currentParts = getMountainDateTimeParts(new Date(now));
+      const currentLocalDate = new Date(`${currentParts.date}T12:00:00Z`);
+      const currentDayIndex = Math.max(0, Math.min(6, Math.round((currentLocalDate - monday) / (24 * 60 * 60 * 1000))));
+      const dayIndex = currentDayIndex + Math.floor(Math.random() * (7 - currentDayIndex));
+      const date = new Date(monday); date.setUTCDate(monday.getUTCDate() + dayIndex);
+      const dateString = date.toISOString().slice(0,10);
+      const weekend = dayIndex >= 5;
+      let startHour = weekend ? 12 + Math.floor(Math.random()*9) : 17 + Math.floor(Math.random()*4);
+      let minute = Math.floor(Math.random()*60);
+      let startAt = mountainLocalTimestamp(dateString,startHour,minute);
+      if (startAt <= now + 30 * 60 * 1000) {
+        if (dayIndex !== currentDayIndex) continue;
+        const currentClock = getMountainDateTimeParts(new Date(now));
+        const futureMinute = Math.min(23*60+50, currentClock.hour*60 + currentClock.minute + 30 + Math.floor(Math.random()*180));
+        startHour = Math.floor(futureMinute/60); minute = futureMinute%60;
+        startAt = mountainLocalTimestamp(dateString,startHour,minute);
+      }
+      if (events.some(event => Math.abs(Number(event.startAt||0)-startAt) < 3*60*60*1000)) continue;
+      const scheduledKey = realmKeys[events.length % realmKeys.length];
+      events.push({
+        id: `${weekKey}-extra-${events.length+1}-${startAt}`,
+        scheduledKey,
+        startAt,
+        warned:false, criticalWarned:false, started:false, ended:false, skipped:false, skipReason:null
+      });
+    }
+    events.sort((a,b)=>a.startAt-b.startAt);
+    return true;
+  }
+
+  const dayIndexes = [0,1,2,3,4,5,6].sort(() => Math.random() - 0.5).slice(0, DISTORTION_EVENTS_PER_WEEK).sort((a,b)=>a-b);
+  const realmKeys = ["mirror_scar","black_bloom","chrono_tear","upside_down_sea","dreaming_gate"].sort(() => Math.random() - 0.5);
+
+  const events = dayIndexes.map((dayIndex, i) => {
+    const date = new Date(monday);
+    date.setUTCDate(monday.getUTCDate() + dayIndex);
+    const dateString = date.toISOString().slice(0,10);
+    const weekend = dayIndex >= 5;
+    const startHour = weekend ? 12 + Math.floor(Math.random()*9) : 17 + Math.floor(Math.random()*4);
+    const minute = Math.floor(Math.random()*60);
+    const startAt = mountainLocalTimestamp(dateString,startHour,minute);
+    const alreadyPast = startAt <= now;
+
+    return {
+      id: `${weekKey}-${i+1}`,
+      scheduledKey: realmKeys[i % realmKeys.length],
+      startAt,
+      warned: alreadyPast,
+      criticalWarned: alreadyPast,
+      started: false,
+      ended: alreadyPast,
+      skipped: alreadyPast,
+      skipReason: alreadyPast ? "schedule-created-after-start" : null
+    };
+  });
+
+  data.distortionSchedule = { weekKey, events };
+  return true;
+}
+
+async function sendImageAnnouncement(channel, content, filename, pingEveryone = false) {
+  const imagePath = filename ? findImageFile(filename) : null;
+  const payload = { content, allowedMentions: pingEveryone ? { parse: ["everyone"] } : { parse: [] } };
+  if (imagePath) payload.files = [new AttachmentBuilder(imagePath)];
+  return channel.send(payload);
+}
+
+// ==================== BIG GAME / MERCHANT ENGINE ====================
+function ensureBigGameMerchantData(data) {
+  if (!data.bigGame || typeof data.bigGame !== "object") data.bigGame = {};
+  const big = data.bigGame;
+  if (big.active === undefined) big.active = false;
+  if (big.weekKey === undefined) big.weekKey = null;
+  if (big.eventId === undefined) big.eventId = null;
+  if (!Number.isFinite(big.startedAt)) big.startedAt = 0;
+  if (!Number.isFinite(big.endsAt)) big.endsAt = 0;
+  if (!big.scores || typeof big.scores !== "object") big.scores = {};
+  if (!big.reachedAt || typeof big.reachedAt !== "object") big.reachedAt = {};
+  if (big.halftimeSent === undefined) big.halftimeSent = false;
+  if (big.resultsSent === undefined) big.resultsSent = false;
+  if (big.lastCompletedWeek === undefined) big.lastCompletedWeek = null;
+  if (!Array.isArray(big.history)) big.history = [];
+  if (!Array.isArray(big.completedEventIds)) big.completedEventIds = [];
+  if (!big.schedule || typeof big.schedule !== "object") big.schedule = { weekKey: null, events: [] };
+  if (!Array.isArray(big.schedule.events)) big.schedule.events = [];
+  if (!big.reminders || typeof big.reminders !== "object") big.reminders = {};
+
+  if (!data.merchant || typeof data.merchant !== "object") data.merchant = {};
+  const merchant = data.merchant;
+  if (merchant.active === undefined) merchant.active = false;
+  if (merchant.type === undefined) merchant.type = null;
+  if (merchant.scheduleId === undefined) merchant.scheduleId = null;
+  if (merchant.scheduledWeekKey === undefined) merchant.scheduledWeekKey = null;
+  if (!Number.isFinite(merchant.arrivalAt)) merchant.arrivalAt = 0;
+  if (!Number.isFinite(merchant.departureAt)) merchant.departureAt = 0;
+  if (!Array.isArray(merchant.inventory)) merchant.inventory = [];
+  if (merchant.reminderSent === undefined) merchant.reminderSent = false;
+  if (!Number.isFinite(merchant.specialAt)) merchant.specialAt = 0;
+  if (merchant.specialDone === undefined) merchant.specialDone = false;
+  if (merchant.clearance === undefined) merchant.clearance = false;
+  if (!Number.isFinite(merchant.lastVisitAt)) merchant.lastVisitAt = 0;
+  if (!Array.isArray(merchant.history)) merchant.history = [];
+  if (!data.merchantSchedule || typeof data.merchantSchedule !== "object") data.merchantSchedule = { weekKey: null, visits: [] };
+  if (!Array.isArray(data.merchantSchedule.visits)) data.merchantSchedule.visits = [];
+
+  if (!data.tokenSurge || typeof data.tokenSurge !== "object") data.tokenSurge = {};
+  const surge = data.tokenSurge;
+  if (surge.active === undefined) surge.active = false;
+  if (!Number.isFinite(surge.startsAt)) surge.startsAt = 0;
+  if (!Number.isFinite(surge.endsAt)) surge.endsAt = 0;
+  if (surge.announced === undefined) surge.announced = false;
+  if (surge.scheduledWeekKey === undefined) surge.scheduledWeekKey = null;
+}
+
+function mountainClock(date = new Date()) {
+  const base = getMountainDateParts(date);
+  return { ...base, weekKey: getMountainWeekKey(date), totalMinutes: base.hour * 60 + base.minute };
+}
+
+function weekDateString(weekKey, dayIndex) {
+  const d = new Date(`${weekKey}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dayIndex);
+  return d.toISOString().slice(0, 10);
+}
+
+function eligibleScheduleDays(date = new Date(), latestSameDayMinute = 20 * 60) {
+  const clock = mountainClock(date);
+  const days = [];
+  for (let dayIndex = clock.weekdayIndex; dayIndex <= 6; dayIndex++) {
+    if (dayIndex === clock.weekdayIndex && clock.totalMinutes > latestSameDayMinute - 60) continue;
+    days.push(dayIndex);
+  }
+  return days;
+}
+
+function randomMinuteBetween(minuteMin, minuteMax) {
+  const low = Math.ceil(minuteMin);
+  const high = Math.floor(minuteMax);
+  return low + Math.floor(Math.random() * Math.max(1, high - low + 1));
+}
+
+function generateBigGameWeeklySchedule(data, date = new Date()) {
+  ensureBigGameMerchantData(data);
+  const weekKey = getMountainWeekKey(date);
+  if (data.bigGame.schedule.weekKey === weekKey && data.bigGame.schedule.events.length) return false;
+
+  const clock = mountainClock(date);
+  const available = eligibleScheduleDays(date, BIG_GAME_LATEST_START_MINUTE);
+  const selectedDays = shuffled(available).slice(0, Math.min(BIG_GAME_EVENTS_PER_WEEK, available.length)).sort((a, b) => a - b);
+  const now = Date.now();
+
+  const events = selectedDays.map((dayIndex, index) => {
+    let earliest = BIG_GAME_EARLIEST_START_MINUTE;
+    if (dayIndex === clock.weekdayIndex) earliest = Math.max(earliest, clock.totalMinutes + 60);
+    const dateString = weekDateString(weekKey, dayIndex);
+    let latest = BIG_GAME_LATEST_START_MINUTE;
+    const shatterAt = Number(data.worldStory?.shatterScheduledAt || 0);
+    if (shatterAt && !data.worldStory?.postShatter) {
+      const shatterParts = getMountainDateTimeParts(new Date(shatterAt));
+      if (shatterParts.date === dateString) {
+        // Give the World Shatter a 30-minute buffer after Big Game Hunt ends.
+        latest = Math.min(latest, shatterParts.hour * 60 + shatterParts.minute - (BIG_GAME_DURATION / 60000) - 30);
+      }
+    }
+    if (latest < earliest) latest = earliest;
+    const startMinute = randomMinuteBetween(earliest, latest);
+    const startAt = mountainLocalTimestamp(dateString, Math.floor(startMinute / 60), startMinute % 60);
+    return {
+      id: `${weekKey}-big-${index + 1}-${dayIndex}-${startMinute}`,
+      dayIndex,
+      startMinute,
+      startAt,
+      endsAt: startAt + BIG_GAME_DURATION,
+      morningSent: false,
+      warningSent: false,
+      started: false,
+      completed: false,
+      skipped: startAt < now - 10 * 60 * 1000
+    };
+  });
+
+  data.bigGame.schedule = { weekKey, events };
+  return true;
+}
+
+function ensureBigGameWeeklySchedule(data, date = new Date()) {
+  return generateBigGameWeeklySchedule(data, date);
+}
+
+function nextBigGameStartAt(data = null, now = Date.now()) {
+  const working = data || loadData();
+  ensureBigGameWeeklySchedule(working, new Date(now));
+  const current = (working.bigGame.schedule?.events || [])
+    .filter(event => !event.completed && !event.skipped && event.startAt > now)
+    .sort((a, b) => a.startAt - b.startAt)[0];
+  if (current) return current.startAt;
+
+  // Preview next week's first event without altering the live current-week schedule.
+  const nextWeekDate = new Date(now + 7 * 24 * 60 * 60 * 1000);
+  const temp = { players: {}, bigGame: { schedule: { weekKey: null, events: [] } }, merchant: {}, merchantSchedule: {}, tokenSurge: {} };
+  ensureBigGameMerchantData(temp);
+  generateBigGameWeeklySchedule(temp, nextWeekDate);
+  return temp.bigGame.schedule.events.sort((a, b) => a.startAt - b.startAt)[0]?.startAt || now + 7 * 24 * 60 * 60 * 1000;
+}
+
+function generateMerchantWeeklySchedule(data, date = new Date()) {
+  ensureBigGameMerchantData(data);
+  const weekKey = getMountainWeekKey(date);
+  if (data.merchantSchedule.weekKey === weekKey && data.merchantSchedule.visits.length) return false;
+
+  const clock = mountainClock(date);
+  const latestMinute = 19 * 60;
+  const available = eligibleScheduleDays(date, latestMinute);
+  const selectedDays = shuffled(available).slice(0, Math.min(MERCHANT_VISITS_PER_WEEK, available.length)).sort((a, b) => a - b);
+
+  const visits = selectedDays.map((dayIndex, index) => {
+    let earliest = 9 * 60;
+    if (dayIndex === clock.weekdayIndex) earliest = Math.max(earliest, clock.totalMinutes + 60);
+    const startMinute = randomMinuteBetween(earliest, latestMinute);
+    const dateString = weekDateString(weekKey, dayIndex);
+    return {
+      id: `${weekKey}-merchant-${index + 1}-${dayIndex}-${startMinute}`,
+      startAt: mountainLocalTimestamp(dateString, Math.floor(startMinute / 60), startMinute % 60),
+      started: false,
+      completed: false
+    };
+  });
+
+  data.merchantSchedule = { weekKey, visits };
+  return true;
+}
+
+function ensureMerchantWeeklySchedule(data, date = new Date()) {
+  return generateMerchantWeeklySchedule(data, date);
+}
+
+function isBigGameActive(data, now = Date.now()) {
+  return Boolean(data.bigGame?.active && now >= data.bigGame.startedAt && now < data.bigGame.endsAt);
+}
+
+function getBigGameRanking(data) {
+  const scores = data.bigGame?.scores || {};
+  const reachedAt = data.bigGame?.reachedAt || {};
+  return Object.entries(scores)
+    .filter(([, score]) => Number(score) > 0)
+    .map(([userId, score]) => ({ userId, score: Number(score), reachedAt: Number(reachedAt[userId] || Number.MAX_SAFE_INTEGER) }))
+    .sort((a, b) => b.score - a.score || a.reachedAt - b.reachedAt || a.userId.localeCompare(b.userId));
+}
+
+function bigGameLeaderboardText(data, limit = 5) {
+  const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
+  const ranked = getBigGameRanking(data).slice(0, limit);
+  if (!ranked.length) return "No successful catches yet. The board is wide open.";
+  return ranked.map((entry, index) => `${medals[index] || `#${index + 1}`} ${formatPlayerMention(data, entry.userId)} — **${entry.score} 🪙**`).join("\n");
+}
+
+function activateBigGame(data, { weekKey = getMountainWeekKey(), eventId = `manual-${Date.now()}`, startedAt = Date.now(), endsAt = Date.now() + BIG_GAME_DURATION } = {}) {
+  ensureBigGameMerchantData(data);
+  data.bigGame.active = true;
+  data.bigGame.weekKey = weekKey;
+  data.bigGame.eventId = eventId;
+  data.bigGame.startedAt = startedAt;
+  data.bigGame.endsAt = endsAt;
+  data.bigGame.scores = {};
+  data.bigGame.reachedAt = {};
+  data.bigGame.halftimeSent = false;
+  data.bigGame.resultsSent = false;
+  for (const userId of Object.keys(data.players || {})) {
+    const player = getPlayer(data, userId);
+    player.lastHunt = 0;
+    player.currentMonster = null;
+    player.reminderState.huntDueAt = 0;
+    player.reminderState.huntSent = false;
+  }
+}
+
+function awardHuntTokens(data, player, userId, monster, { allowDaily = true } = {}) {
+  const now=Date.now();
+  const base=Math.max(1,Number(BIG_GAME_TOKEN_REWARDS[monster.rarity]||1));
+  const bigGame=isBigGameActive(data,now);
+
+  // Every successful capture now earns Hunt Tokens.
+  // Big Game doubles the normal rarity-based token payout.
+  let amount=bigGame ? base*2 : base;
+  const bonuses=[];
+
+  // Existing limited-time token effects remain additive rather than replacing
+  // the new universal catch reward.
+  if(allowDaily && getActiveEvent()?.tokenRush && !monster.distortionEncounter && !monster.worldShatterEncounter){
+    amount+=1;
+    bonuses.push("Token Rush +1");
+  }
+  if(data.tokenSurge?.active && now<Number(data.tokenSurge.endsAt||0) && Math.random()<0.5){
+    const surgeBonus=Math.max(1,Math.ceil(base/2));
+    amount+=surgeBonus;
+    bonuses.push(`Token Surge +${surgeBonus}`);
+  }
+
+  player.huntTokens=Number(player.huntTokens||0)+amount;
+  player.lifetimeTokens=Number(player.lifetimeTokens||0)+amount;
+
+  if(bigGame){
+    data.bigGame.scores[userId]=Number(data.bigGame.scores[userId]||0)+amount;
+    data.bigGame.reachedAt[userId]=now;
+  }
+
+  const source=bigGame ? "BIG GAME — DOUBLE TOKENS" : "Successful Catch";
+  const eventTotal=bigGame ? `\n🎯 **Big Game Total:** ${data.bigGame.scores[userId]} 🪙` : "";
+  const bonusText=bonuses.length ? `\n✨ ${bonuses.join(" • ")}` : "";
+  return `\n\n🪙 **${source}: +${amount} Hunt Token${amount===1?"":"s"}**${bonusText}${eventTotal}\n💰 **Token Balance:** ${player.huntTokens} 🪙`;
+}
+
+function applyMerchantEncounterEffect(player, monster) {
+  if (!player.merchantEffects || monster.distortionEncounter || ["Mythic", "Secret", "Event"].includes(monster.rarity)) {
+    return { monster, text: "" };
+  }
+  if (player.merchantEffects.goldenLure) {
+    player.merchantEffects.goldenLure = false;
+    const pool = monsters.filter(candidate => candidate.rarity === "Legendary");
+    const replacement = applyShiny({ ...pool[Math.floor(Math.random() * pool.length)] }, player);
+    return { monster: replacement, text: "\n🟡 **Golden Lure:** A Legendary trail answered your lure.\n" };
+  }
+  if (player.merchantEffects.huntersCompass) {
+    player.merchantEffects.huntersCompass = false;
+    if (monster.rarity === "Common") {
+      const pool = monsters.filter(candidate => ["Rare", "Epic", "Legendary"].includes(candidate.rarity));
+      monster = applyShiny({ ...pool[Math.floor(Math.random() * pool.length)] }, player);
+    }
+    return { monster, text: "\n🧭 **Hunter's Compass:** The compass led you to a Rare-or-better trail.\n" };
+  }
+  return { monster, text: "" };
+}
+
+function weightedMerchantType(data) {
+  const entries = Object.entries(MERCHANT_TYPE_DEFINITIONS).map(([key, definition]) => ({
+    key,
+    weight: definition.weight * (key === "riftwalker" && (data.activeDistortion || data.worldStory?.event?.active) ? 4 : 1)
+  }));
+  let roll = Math.random() * entries.reduce((sum, entry) => sum + entry.weight, 0);
+  for (const entry of entries) {
+    roll -= entry.weight;
+    if (roll <= 0) return entry.key;
+  }
+  return "aldric";
+}
+
+function shuffled(values) {
+  const copy = [...values];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function generateMerchantInventory(type, clearance = false) {
+  const pool = MERCHANT_POOLS[type] || MERCHANT_POOLS.aldric;
+  let chosen;
+  if (type === "aldric") {
+    const fixed = ["hunter_berry", "sticky_honey", "enchanted_net", "rare_bait"];
+    chosen = [...fixed, ...shuffled(pool.filter(key => !fixed.includes(key))).slice(0, 6)];
+  } else {
+    const size = type === "nameless" ? 4 : type === "riftwalker" ? 5 : 7;
+    chosen = shuffled(pool).slice(0, size);
+  }
+  return [...new Set(chosen)].map(key => {
+    const definition = MERCHANT_ITEMS[key];
+    const barter = type === "pale_collector" ? PALE_COLLECTOR_BARTERS[key] || null : null;
+    const discounted = clearance && ["supply", "consumable"].includes(definition.kind);
+    const price = barter ? null : Math.max(1, Math.floor(definition.price * (discounted ? 0.75 : 1)));
+    const stock = definition.unlimited ? null : Math.max(1, Number(definition.stock || 1));
+    return { key, price, barter, stock, initialStock: stock, sold: 0 };
+  });
+}
+
+function chooseMerchantArrival(baseAt = Date.now()) {
+  const dayOffset = 1 + Math.floor(Math.random() * 6);
+  const desiredHour = 9 + Math.floor(Math.random() * 11);
+  const desiredMinute = Math.floor(Math.random() * 60);
+  let target = baseAt + dayOffset * 24 * 60 * 60 * 1000;
+  const parts = getMountainDateParts(new Date(target));
+  target += (desiredHour - parts.hour) * 60 * 60 * 1000 + (desiredMinute - parts.minute) * 60 * 1000;
+  return target;
+}
+
+function scheduleMerchantAfterBigGame(data, weekKey, baseAt = Date.now()) {
+  ensureBigGameMerchantData(data);
+  if (data.merchant.active || (data.merchant.arrivalAt > Date.now() && data.merchant.scheduledWeekKey === weekKey)) return;
+  const type = weightedMerchantType(data);
+  const arrivalAt = chooseMerchantArrival(baseAt);
+  const definition = MERCHANT_TYPE_DEFINITIONS[type];
+  const clearance = ["aldric", "gribble"].includes(type) && Math.random() < 0.12;
+  data.merchant = {
+    ...data.merchant,
+    active: false,
+    type,
+    scheduledWeekKey: weekKey,
+    arrivalAt,
+    departureAt: arrivalAt + definition.durationHours * 60 * 60 * 1000,
+    inventory: generateMerchantInventory(type, clearance),
+    reminderSent: false,
+    specialAt: Math.random() < 0.18 ? arrivalAt + Math.floor(definition.durationHours / 2) * 60 * 60 * 1000 : 0,
+    specialDone: false,
+    clearance
+  };
+  // Rare surprise: tokens can also leak from normal catches for one hour this week.
+  if (!data.tokenSurge.active && !data.tokenSurge.startsAt && Math.random() < 0.08) {
+    const startsAt = chooseMerchantArrival(baseAt);
+    data.tokenSurge = { active: false, startsAt, endsAt: startsAt + 60 * 60 * 1000, announced: false, scheduledWeekKey: weekKey };
+  }
+}
+
+function merchantBarterText(barter) {
+  return Object.entries(barter || {}).map(([key, amount]) => `${amount}× ${MERCHANT_ITEMS[key]?.name || key}`).join(" + ");
+}
+
+function merchantInventoryText(data, userId = null) {
+  const merchant = data.merchant;
+  if (!merchant?.active || Date.now() >= merchant.departureAt) return "No merchant is currently visiting the hunting grounds.";
+  const definition = MERCHANT_TYPE_DEFINITIONS[merchant.type];
+  const player = userId ? getPlayer(data, userId) : null;
+  const lines = merchant.inventory.map(offer => {
+    const item = MERCHANT_ITEMS[offer.key];
+    const price = offer.barter ? merchantBarterText(offer.barter) : `${offer.price} 🪙`;
+    const stock = offer.stock === null ? "Unlimited" : offer.stock > 0 ? `${offer.stock} left` : "SOLD OUT";
+    return (
+      `${item.icon} **${item.name}** — ${price}\n` +
+      `↳ *${item.description}*\n` +
+      `↳ ${item.effectDescription || "Effect unknown."}\n` +
+      `• ${stock}`
+    );
+  });
+  return `${definition.icon} **${definition.name.toUpperCase()}'S WARES**\n\n` +
+    `${player ? `🪙 Your Balance: **${player.huntTokens}**\n\n` : ""}` +
+    `${lines.join("\n\n")}\n\n` +
+    `Merchant leaves <t:${Math.floor(merchant.departureAt / 1000)}:R>.\n` +
+    `Buy with \`!buy item name\`.\n` +
+    `View purchases with \`!merchantcollection\`. Use consumables with \`!use item name\`.` +
+    `${merchant.type === "gribble" ? "\n🎲 Gribble is also accepting `!gamble`." : ""}`;
+}
+
+// Discord rejects normal messages longer than 2,000 characters. The live shop
+// uses one compact embed containing gameplay effects and stock, without the
+// optional flavor text that previously forced larger inventories onto page 2.
+function merchantInventoryEmbeds(data, userId = null) {
+  const merchant = data.merchant;
+  if (!merchant?.active || Date.now() >= merchant.departureAt) return [];
+
+  const definition = MERCHANT_TYPE_DEFINITIONS[merchant.type];
+  if (!definition) return [];
+
+  const player = userId ? getPlayer(data, userId) : null;
+  const offers = Array.isArray(merchant.inventory) ? merchant.inventory : [];
+  const offersPerPage = Math.max(1, offers.length);
+  const pageCount = Math.max(1, Math.ceil(offers.length / offersPerPage));
+  const embeds = [];
+
+  for (let page = 0; page < pageCount; page++) {
+    const pageOffers = offers.slice(page * offersPerPage, (page + 1) * offersPerPage);
+    const embed = new EmbedBuilder()
+      .setTitle(`${definition.icon} ${definition.name.toUpperCase()}'S WARES`)
+      .setDescription(
+        `${player ? `🪙 Your Balance: **${player.huntTokens} Hunt Tokens**\n` : ""}` +
+        `⏳ Merchant leaves <t:${Math.floor(merchant.departureAt / 1000)}:R>.\n\n` +
+        `Buy with \`!buy item name\`.`
+      )
+      .setFooter({ text: `${offers.length} shop offers` });
+
+    for (const offer of pageOffers) {
+      const item = MERCHANT_ITEMS[offer.key];
+      if (!item) continue;
+      const price = offer.barter ? merchantBarterText(offer.barter) : `${offer.price} 🪙`;
+      const stock = offer.stock === null ? "Unlimited" : offer.stock > 0 ? `${offer.stock} left` : "SOLD OUT";
+      embed.addFields({
+        name: `${item.icon} ${item.name} — ${price}`,
+        value:
+          `${item.effectDescription || "Effect unknown."}\n` +
+          `📦 **${stock}**`
+      });
+    }
+
+    if (merchant.type === "gribble" && page === pageCount - 1) {
+      embed.addFields({ name: "🎲 Gribble's Gamble", value: "Gribble is also accepting `!gamble`." });
+    }
+    if (page === pageCount - 1) {
+      embed.addFields({
+        name: "🎒 Your Purchases",
+        value: "Use `!inventory` or `!items` to view everything and `!use item name` to use interactive items."
+      });
+    }
+
+    embeds.push(embed);
+  }
+
+  return embeds;
+}
+
+function resolveMerchantOffer(data, query) {
+  const wanted = String(query || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return (data.merchant?.inventory || []).find(offer => {
+    const item = MERCHANT_ITEMS[offer.key];
+    return offer.key.replace(/[^a-z0-9]/g, "") === wanted || item.name.toLowerCase().replace(/[^a-z0-9]/g, "") === wanted;
+  }) || null;
+}
+
+function collectionCount(player, key) {
+  return Math.max(0, Number(player.merchantCollection?.[key] || 0));
+}
+
+function addCollectionItem(player, key, amount = 1) {
+  player.merchantCollection[key] = collectionCount(player, key) + amount;
+}
+
+function removeCollectionItem(player, key, amount = 1) {
+  if (collectionCount(player, key) < amount) return false;
+  player.merchantCollection[key] -= amount;
+  if (player.merchantCollection[key] <= 0) delete player.merchantCollection[key];
+  return true;
+}
+
+function grantPurchasedItem(player, key) {
+  const item = MERCHANT_ITEMS[key];
+  if (item.grant?.captureItem) player.captureItems[item.grant.captureItem] += item.grant.amount;
+  else if (item.grant?.bait) player.bait[item.grant.bait] += item.grant.amount;
+  else addCollectionItem(player, key, 1);
+}
+
+function merchantCollectionText(player, includeEffects = false) {
+  const entries = Object.entries(player.merchantCollection || {})
+    .filter(([key, amount]) => amount > 0 && MERCHANT_ITEMS[key]);
+  if (!entries.length) return "No merchant items yet.";
+
+  return entries
+    .sort(([a], [b]) => MERCHANT_ITEMS[a].name.localeCompare(MERCHANT_ITEMS[b].name))
+    .map(([key, amount]) => {
+      const item = MERCHANT_ITEMS[key];
+      const useHint = item.usable ? ` • \`!use ${item.name.toLowerCase()}\`` : "";
+      const effect = includeEffects && item.effectDescription ? `\n↳ ${item.effectDescription}` : "";
+      return `${item.icon} **${item.name}** ×${amount}${useHint}${effect}`;
+    })
+    .join("\n");
+}
+
+async function sendRoleImageAnnouncement(channel, content, filename = null, pingRole = false) {
+  if (!channel?.isTextBased()) return null;
+  const imagePath = filename ? findImageFile(filename) : null;
+  const roleId = typeof pingRole === "string" ? pingRole : (pingRole ? MONSTER_NOTIFY_ROLE : null);
+  const payload = {
+    content,
+    allowedMentions: roleId ? { roles: [roleId] } : { parse: [] }
+  };
+  if (imagePath) payload.files = [new AttachmentBuilder(imagePath)];
+  return channel.send(payload).catch(error => { console.error("Monster Hunt announcement failed:", error); return null; });
+}
+
+async function announceBigGameStart(channel, data) {
+  return sendRoleImageAnnouncement(channel,
+    `<@&${H4_BIG_HUNT_ALERT_ROLE_ID}>\n\n🚨 **BIG GAME HUNT HAS BEGUN!**\n\n` +
+    `For the next **2 HOURS**, monster activity has surged!\n\n` +
+    `⏱️ \`!hunt\` every **30 minutes**\n🪙 Successful catches earn **DOUBLE Hunt Tokens**\n` +
+    `🥇 1st — **+50 Hunter Points**\n🥈 2nd — **+30 Hunter Points**\n🥉 3rd — **+15 Hunter Points**\n\n` +
+    `Everyone can hunt **RIGHT NOW**. Tokens remain yours after the event.\n` +
+    `**Ends <t:${Math.floor(data.bigGame.endsAt / 1000)}:t> Mountain Time (<t:${Math.floor(data.bigGame.endsAt / 1000)}:R>). GO!**`, BIG_GAME_IMAGE, H4_BIG_HUNT_ALERT_ROLE_ID);
+}
+
+async function finishBigGameHunt(data, channel, { forced = false } = {}) {
+  ensureBigGameMerchantData(data);
+  if (!data.bigGame.active) return false;
+  const endedAt = Date.now();
+  const weekKey = data.bigGame.weekKey || getMountainWeekKey();
+  const eventId = data.bigGame.eventId || `manual-${endedAt}`;
+  data.bigGame.active = false;
+  const ranking = getBigGameRanking(data);
+  const winners = ranking.slice(0, 3).map((entry, index) => ({ ...entry, place: index + 1, reward: BIG_GAME_PLACEMENT_REWARDS[index] }));
+  for (const [userId] of Object.entries(data.players || {})) {
+    const player = getPlayer(data, userId);
+    player.lastHunt = endedAt;
+    player.reminderState.huntDueAt = endedAt + HUNT_COOLDOWN;
+    player.reminderState.huntSent = false;
+  }
+  for (const winner of winners) {
+    const player = getPlayer(data, winner.userId);
+    const previousPoints = player.points;
+    player.points += winner.reward;
+    addWeeklyProgress(data, player, winner.reward);
+    if (winner.place === 1) player.bigGameWins++;
+    player.bigGamePlacements.push({ weekKey, eventId, place: winner.place, score: winner.score, reward: winner.reward, at: endedAt });
+    recordPointMilestoneMoments(data, winner.userId, previousPoints, player.points);
+  }
+  const record = { weekKey, eventId, startedAt: data.bigGame.startedAt, endedAt, forced, winners };
+  data.bigGame.history.push(record);
+  data.bigGame.lastCompletedWeek = weekKey;
+  if (!data.bigGame.completedEventIds.includes(eventId)) data.bigGame.completedEventIds.push(eventId);
+  const scheduledEvent = (data.bigGame.schedule?.events || []).find(event => event.id === eventId);
+  if (scheduledEvent) { scheduledEvent.completed = true; scheduledEvent.started = true; }
+  data.bigGame.resultsSent = true;
+  data.bigGame.eventId = null;
+  saveData(data);
+
+  const resultLines = winners.length ? winners.map(winner =>
+    `${["🥇", "🥈", "🥉"][winner.place - 1]} ${formatPlayerMention(data, winner.userId)} — **${winner.score} Hunt Tokens** — **+${winner.reward} Hunter Points**`
+  ).join("\n\n") : "No hunter completed a successful catch during this event.";
+  await sendRoleImageAnnouncement(channel,
+    `🏆 **BIG GAME HUNT COMPLETE**\n\nThe hunting grounds have grown quiet.\n\n${resultLines}\n\n` +
+    `Every hunter keeps the Hunt Tokens they collected.\n\n` +
+    `The Traveling Merchants have heard rumors about today's haul... **spend wisely.**`, BIG_GAME_IMAGE, false);
+  for (const winner of winners) {
+    await sendRoleImageAnnouncement(channel,
+      `${["🥇 FIRST PLACE", "🥈 SECOND PLACE", "🥉 THIRD PLACE"][winner.place - 1]}\n` +
+      `${formatPlayerMention(data, winner.userId)} — **${winner.score} 🪙** — **+${winner.reward} Hunter Points**`,
+      BIG_GAME_AWARD_IMAGES[winner.place - 1], false);
+  }
+  return true;
+}
+
+const merchantPurchaseLocks = new Set();
+// Admin economy sandboxes are intentionally memory-only. They vanish on restart
+// and can never enter data.json, the live scheduler, or a player's real wallet.
+const economyTestSessions = new Map();
+
+function getEconomyTestSession(channelId) {
+  return economyTestSessions.get(channelId) || null;
+}
+
+function testEconomyLeaderboardText(session, limit = 10) {
+  const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"];
+  const ranked = Object.entries(session.scores || {})
+    .map(([key, score]) => ({ key, score: Number(score || 0), reachedAt: Number(session.reachedAt?.[key] || Number.MAX_SAFE_INTEGER) }))
+    .filter(entry => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.reachedAt - b.reachedAt || a.key.localeCompare(b.key))
+    .slice(0, limit);
+  if (!ranked.length) return "No simulated catches yet.";
+  return ranked.map((entry, index) => `${medals[index] || `#${index + 1}`} **${session.labels[entry.key] || entry.key}** — **${entry.score} 🪙**`).join("\n");
+}
+
+function testMerchantInventoryText(session) {
+  if (!session.merchant) return "No test merchant is active. Use `!testeconomy merchant aldric`.";
+  const definition = MERCHANT_TYPE_DEFINITIONS[session.merchant.type];
+  const lines = session.merchant.inventory.map(offer => {
+    const item = MERCHANT_ITEMS[offer.key];
+    const price = offer.barter ? merchantBarterText(offer.barter) : `${offer.price} 🪙`;
+    const stock = offer.stock === null ? "Unlimited" : offer.stock > 0 ? `${offer.stock} left` : "SOLD OUT";
+    return `${item.icon} **${item.name}** — ${price}\n↳ ${stock}`;
+  });
+  return `🧪 ${definition.icon} **TEST SHOP — ${definition.name.toUpperCase()}**\n\n` +
+    `🪙 Test Wallet: **${session.wallet}**\n\n${lines.join("\n\n")}\n\n` +
+    `Use \`!testeconomy buy item name\`. Nothing here affects the live game.`;
+}
+
+let bigGameMerchantMonitorBusy = false;
+async function processBigGameMerchantSystem() {
+  if (bigGameMerchantMonitorBusy) return;
+  bigGameMerchantMonitorBusy = true;
+  try {
+    const data = loadData();
+    ensureBigGameMerchantData(data);
+    const now = Date.now();
+    const clock = mountainClock(new Date(now));
+    const channel = await getAnnouncementChannel();
+    let dirty = false;
+    if (ensureBigGameWeeklySchedule(data, new Date(now))) dirty = true;
+    if (ensureMerchantWeeklySchedule(data, new Date(now))) dirty = true;
+
+    // ==================== THREE RANDOM BIG GAME HUNTS PER WEEK ====================
+    const bigEvents = data.bigGame.schedule?.events || [];
+    for (const event of bigEvents) {
+      if (event.completed || event.skipped) continue;
+      const eventClock = getMountainDateParts(new Date(event.startAt));
+      const sameMountainDay = eventClock.year === clock.year && eventClock.month === clock.month && eventClock.day === clock.day;
+
+      // Morning reveal: players learn today's random Big Game Hunt time at 9 AM.
+      if (sameMountainDay && clock.totalMinutes >= 9 * 60 && now < event.startAt - 30 * 60 * 1000 && !event.morningSent) {
+        event.morningSent = true; dirty = true; saveData(data);
+        await sendRoleImageAnnouncement(channel,
+          `<@&${H4_BIG_HUNT_ALERT_ROLE_ID}>\n\n🎯 **BIG GAME HUNT TODAY**\n\n` +
+          `Monster activity is expected to surge **<t:${Math.floor(event.startAt / 1000)}:t> Mountain Time**.\n\n` +
+          `⚔️ Hunt every 30 minutes\n🪙 Earn Hunt Tokens\n🏆 Compete for 50 / 30 / 15 Hunter Points\n\nGet your bait ready.`, BIG_GAME_IMAGE, H4_BIG_HUNT_ALERT_ROLE_ID);
+      }
+
+      if (now >= event.startAt - 30 * 60 * 1000 && now < event.startAt && !event.warningSent) {
+        event.warningSent = true; dirty = true; saveData(data);
+        await sendRoleImageAnnouncement(channel,
+          `<@&${H4_BIG_HUNT_ALERT_ROLE_ID}>\n\n⚠️ **30 MINUTES UNTIL BIG GAME HUNT**\n\n` +
+          `At <t:${Math.floor(event.startAt / 1000)}:t>, hunt cooldowns drop to 30 minutes and successful catches begin awarding DOUBLE Hunt Tokens.\n\nCheck your bait. Check your inventory.`, BIG_GAME_IMAGE, H4_BIG_HUNT_ALERT_ROLE_ID);
+      }
+
+      // Recover a scheduled event after a short Railway restart without extending its original end time.
+      if (!event.started && now >= event.startAt && now < event.endsAt && !data.bigGame.active) {
+        const elapsedMinutes = Math.floor((now - event.startAt) / 60000);
+        event.started = true; dirty = true;
+        activateBigGame(data, { weekKey: data.bigGame.schedule.weekKey, eventId: event.id, startedAt: event.startAt, endsAt: event.endsAt });
+        if (elapsedMinutes >= 60) data.bigGame.halftimeSent = true;
+        saveData(data);
+        await announceBigGameStart(channel, data);
+      }
+
+      if (!event.started && now >= event.endsAt) {
+        event.skipped = true; event.completed = true; dirty = true;
+      }
+    }
+
+    if (data.bigGame.active && now >= data.bigGame.startedAt + 60 * 60 * 1000 && now < data.bigGame.endsAt && !data.bigGame.halftimeSent) {
+      data.bigGame.halftimeSent = true; dirty = true; saveData(data);
+      await sendRoleImageAnnouncement(channel,
+        `⚔️ **BIG GAME HUNT — HALFTIME**\n\nOne hour remains!\n\n${bigGameLeaderboardText(data, 3)}\n\n` +
+        `**The hunt ends <t:${Math.floor(data.bigGame.endsAt / 1000)}:t> Mountain Time.**`, BIG_GAME_IMAGE, false);
+    }
+    if (data.bigGame.active && now >= data.bigGame.endsAt) {
+      await finishBigGameHunt(data, channel);
+      dirty = false;
+    }
+
+    // ==================== THREE RANDOM MERCHANT VISITS PER WEEK ====================
+    const merchantSchedule = data.merchantSchedule?.visits || [];
+    if (!data.merchant.active) {
+      const dueVisit = merchantSchedule
+        .filter(visit => !visit.started && !visit.completed && now >= visit.startAt)
+        .sort((a, b) => a.startAt - b.startAt)[0];
+      if (dueVisit) {
+        dueVisit.started = true;
+        const type = weightedMerchantType(data);
+        const definition = MERCHANT_TYPE_DEFINITIONS[type];
+        const clearance = ["aldric", "gribble"].includes(type) && Math.random() < 0.12;
+        data.merchant = {
+          ...data.merchant,
+          active: false,
+          type,
+          scheduleId: dueVisit.id,
+          scheduledWeekKey: data.merchantSchedule.weekKey,
+          arrivalAt: now,
+          departureAt: now + definition.durationHours * 60 * 60 * 1000,
+          inventory: generateMerchantInventory(type, clearance),
+          reminderSent: false,
+          specialAt: Math.random() < 0.18 ? now + Math.floor(definition.durationHours / 2) * 60 * 60 * 1000 : 0,
+          specialDone: false,
+          clearance
+        };
+        dirty = true;
+      }
+    }
+
+    const merchant = data.merchant;
+    if (!merchant.active && merchant.arrivalAt && now >= merchant.arrivalAt && now < merchant.departureAt) {
+      merchant.active = true;
+      merchant.lastVisitAt = now;
+      dirty = true; saveData(data);
+      const definition = MERCHANT_TYPE_DEFINITIONS[merchant.type];
+      const arrivalText = merchant.type === "nameless"
+        ? `No wagon approached. No footsteps were heard. Yet a figure with no name is standing at the edge of the hunting grounds.`
+        : `A ${definition.icon} merchant has appeared along the edge of the hunting grounds.`;
+      await sendRoleImageAnnouncement(channel,
+        `<@&${H4_MERCHANT_ALERT_ROLE_ID}>\n\n${merchant.type === "nameless" ? "❓ **SOMETHING HAS ARRIVED**" : "🛒 **A TRAVELING MERCHANT HAS ARRIVED**"}\n\n` +
+        `${arrivalText}\n\n**${definition.name}** will remain <t:${Math.floor(merchant.departureAt / 1000)}:R>.\n` +
+        `Some merchandise is server-wide limited stock. Type \`!merchant\` to browse.${merchant.clearance ? "\n\n🔥 **CLEARANCE PRICES ARE ACTIVE!**" : ""}`,
+        merchant.clearance ? "merchant_clearance.png" : definition.image, H4_MERCHANT_ALERT_ROLE_ID);
+    }
+    if (merchant.active && merchant.specialAt && now >= merchant.specialAt && !merchant.specialDone && now < merchant.departureAt) {
+      merchant.specialDone = true;
+      for (const offer of merchant.inventory) {
+        if (offer.stock !== null && Math.random() < 0.45) offer.stock += 1;
+      }
+      dirty = true; saveData(data);
+      await sendRoleImageAnnouncement(channel,
+        `📦 **MERCHANT RESTOCK**\n\nThe wagon doors swing open. New merchandise has arrived and several limited items have been replenished.\n\nUse \`!merchant\` to check the stock.`,
+        "merchant_restock.png", false);
+    }
+    if (merchant.active && now >= merchant.departureAt - 2 * 60 * 60 * 1000 && now < merchant.departureAt && !merchant.reminderSent) {
+      merchant.reminderSent = true; dirty = true; saveData(data);
+      await sendRoleImageAnnouncement(channel,
+        `🛒 **THE MERCHANT LEAVES SOON**\n\nOnly two hours remain. Any unpurchased limited inventory disappears with the merchant.`,
+        merchant.type === "nameless" ? "midnight_merchant.png" : MERCHANT_TYPE_DEFINITIONS[merchant.type].image, false);
+    }
+    if (merchant.active && now >= merchant.departureAt) {
+      const definition = MERCHANT_TYPE_DEFINITIONS[merchant.type];
+      merchant.history.push({ type: merchant.type, arrivalAt: merchant.arrivalAt, departureAt: merchant.departureAt });
+      const scheduledVisit = (data.merchantSchedule?.visits || []).find(visit => visit.id === merchant.scheduleId);
+      if (scheduledVisit) scheduledVisit.completed = true;
+      merchant.active = false;
+      merchant.type = null;
+      merchant.scheduleId = null;
+      merchant.arrivalAt = 0;
+      merchant.departureAt = 0;
+      merchant.inventory = [];
+      merchant.specialAt = 0;
+      merchant.specialDone = false;
+      merchant.reminderSent = false;
+      merchant.clearance = false;
+      dirty = true; saveData(data);
+      await sendRoleImageAnnouncement(channel,
+        `🛒 **THE MERCHANT HAS DEPARTED**\n\n${definition.name}'s wagon disappears down the road and into the mist. Unsold merchandise is gone.`,
+        "merchant_departure.png", false);
+    }
+
+    const surge = data.tokenSurge;
+    if (!surge.active && surge.startsAt && now >= surge.startsAt && now < surge.endsAt) {
+      surge.active = true; surge.announced = true; dirty = true; saveData(data);
+      await sendRoleImageAnnouncement(channel,
+        `<@&${MONSTER_NOTIFY_ROLE}>\n\n🪙 **TOKEN SURGE**\n\nStrange energy is affecting the hunting grounds. For the next hour, successful normal catches may produce Hunt Tokens.`,
+        "token_surge.png", true);
+    }
+    if ((surge.active || surge.startsAt) && now >= surge.endsAt && surge.endsAt > 0) {
+      surge.active = false; surge.startsAt = 0; surge.endsAt = 0; surge.announced = false; dirty = true; saveData(data);
+      await sendRoleImageAnnouncement(channel, `🪙 **TOKEN SURGE ENDED**\n\nThe unusual energy has faded from the hunting grounds.`, "token_surge.png", false);
+    }
+    if (dirty) saveData(data);
+  } catch (error) {
+    console.error("Big Game / Merchant monitor failed:", error);
+  } finally {
+    bigGameMerchantMonitorBusy = false;
+  }
+}
+
+async function startLiveDistortion(data, event, forcedKey = null) {
+  if (data.activeDistortion && !data.activeDistortion.ended && Date.now() < data.activeDistortion.endAt) return false;
+  const key = forcedKey || event.scheduledKey;
+  const definition = DISTORTIONS[key];
+  if (!definition) return false;
+  const now = Date.now();
+  data.activeDistortion = { key, startAt: now, endAt: now + DISTORTION_DURATION, finalResetDone:false, ended:false, scheduleId:event?.id || null, publicAnnounced:false };
+  if (event) event.started = true;
+  for (const p of Object.values(data.players || {})) p.lastHunt = 0;
+  addSeasonMoment(data,{type:"distortion_open",icon:definition.icon,text:`${definition.name} opened across the hunting grounds.`});
+  saveData(data);
+
+  const channel = client.channels.cache.get(MONSTER_CHANNEL_ID);
+  if (!channel?.isTextBased()) return true;
+  const openText = `@everyone\n\n${definition.icon} **DISTORTION DETECTED — ${definition.name.toUpperCase()}**\n\nReality has warped across the hunting grounds. Exclusive creatures and a unique Distortion Egg are now obtainable.\n\n⏱️ Event duration: **3 hours**\n⚡ Hunt cooldown: **30 minutes**\n🔄 Everyone can hunt **RIGHT NOW.**\n🥚 **${DISTORTION_EGGS[definition.eggKey]?.name || "Distortion Egg"}** can be discovered from successful Distortion catches.\n🎁 Normal hunt rewards, Companion XP, Hunt Tokens, pet abilities, and comeback bonuses continue to function.\n\n⚠️ Ten minutes before collapse, every hunter will automatically receive **one final hunt**.`;
+  await sendWorldEvent(channel,openText,definition.openingImage,true);
+  data.activeDistortion.publicAnnounced = true;
+  saveData(data);
+  return true;
+}
+
+async function endLiveDistortion(data, reason="natural") {
+  const active=data.activeDistortion;
+  if (!active || active.ended) return false;
+  const definition=DISTORTIONS[active.key];
+  active.ended=true;
+  const event=(data.distortionSchedule?.events||[]).find(e=>e.id===active.scheduleId);
+  if(event) event.ended=true;
+  addSeasonMoment(data,{type:"distortion_close",icon:definition?.icon||"🌀",text:`${definition?.name||"The Distortion"} collapsed and normal hunting returned.`});
+  saveData(data);
+  const channel=client.channels.cache.get(MONSTER_CHANNEL_ID);
+  if(channel?.isTextBased()){
+    const txt=`@everyone\n\n${definition?.icon||"🌀"} **${(definition?.name||"THE DISTORTION").toUpperCase()} HAS COLLAPSED**\n\nThe breach is sealed and its influence has faded.\n⏱️ Normal Hunt cooldown rules are active again.\n🏹 Normal hunting grounds have returned.\n🥚 Any Distortion Eggs, companions, monsters, points, Hunt Tokens, and collection progress you earned are yours to keep.`;
+    await sendWorldEvent(channel,txt,definition?.closingImage||null,true);
+  }
+  data.activeDistortion=null;
+  saveData(data);
+  return true;
+}
+
+async function processDistortionSystem() {
+  const data = loadData();
+  const changed = generateDistortionSchedule(data);
+  const now = Date.now();
+  let dirty = changed;
+
+  // HARD SAFETY: Railway deploy/restart must never cause a stale scheduled Distortion to fire publicly.
+  for (const event of data.distortionSchedule?.events || []) {
+    if (event.started || event.ended) continue;
+    if (event.startAt < DISTORTION_PROCESS_BOOT_AT) {
+      event.warned = true;
+      event.criticalWarned = true;
+      event.ended = true;
+      event.skipped = true;
+      event.skipReason = "bot-restarted-after-event-time";
+      dirty = true;
+      console.log(`Distortion safety: skipped stale event ${event.id}.`);
+    }
+  }
+
+  if (dirty) saveData(data);
+
+  // H.10 migration safety: old-season Distortions cannot remain active after deployment.
+  if (data.activeDistortion && !DISTORTIONS[data.activeDistortion.key]) {
+    console.log(`Distortion migration: cleared retired Distortion ${data.activeDistortion.key}.`);
+    data.activeDistortion = null;
+    saveData(data);
+  }
+
+  // One-time migration safety for active states created by the earlier Distortion build.
+  // If the state does not prove that its public opening completed, clear it silently instead of posting follow-up messages.
+  if (data.activeDistortion && data.activeDistortion.publicAnnounced !== true) {
+    console.log("Distortion safety: cleared unverified legacy active Distortion state without posting.");
+    data.activeDistortion = null;
+    saveData(data);
+  }
+
+  if (data.activeDistortion && now >= data.activeDistortion.endAt) {
+    await endLiveDistortion(data);
+    return;
+  }
+
+  if (data.activeDistortion && !data.activeDistortion.finalResetDone && data.activeDistortion.endAt-now <= DISTORTION_FINAL_RESET_MINUTES*60*1000 && data.activeDistortion.endAt-now > 0) {
+    data.activeDistortion.finalResetDone = true;
+    for (const p of Object.values(data.players || {})) p.lastHunt = 0;
+    saveData(data);
+    const channel = client.channels.cache.get(MONSTER_CHANNEL_ID);
+    if (channel?.isTextBased()) {
+      await sendWorldEvent(channel, `@everyone
+
+⚠️ **DISTORTION COLLAPSE DETECTED**
+The breach will close in **10 minutes!**
+🔄 Everyone has been given **one final hunt**.
+Use \`!hunt\` NOW.`, null, true);
+    }
+  }
+
+  if (data.activeDistortion) return;
+
+  for (const event of data.distortionSchedule?.events || []) {
+    if (event.ended || event.started) continue;
+
+    if (now > event.startAt + DISTORTION_START_GRACE_MS) {
+      event.warned = true;
+      event.criticalWarned = true;
+      event.ended = true;
+      event.skipped = true;
+      event.skipReason = "missed-live-start-window";
+      saveData(data);
+      console.log(`Distortion safety: skipped missed event ${event.id}; nothing was posted.`);
+      continue;
+    }
+
+    if (!event.warned && now >= event.startAt - DISTORTION_WARNING_MINUTES*60*1000 && now < event.startAt) {
+      event.warned = true;
+      saveData(data);
+      const channel = client.channels.cache.get(MONSTER_CHANNEL_ID);
+      if (channel?.isTextBased()) await sendWorldEvent(channel,`⚠️ **Something is wrong...**
+
+The air around the hunting grounds has begun to change.
+Reality instability is increasing.
+
+**BREACH IMMINENT: 5 MINUTES**`,`distortion_warning.png`,false);
+    }
+
+    if (!event.criticalWarned && now >= event.startAt - 60*1000 && now < event.startAt) {
+      event.criticalWarned = true;
+      saveData(data);
+      const channel = client.channels.cache.get(MONSTER_CHANNEL_ID);
+      if (channel?.isTextBased()) await sendWorldEvent(channel,`🚨 **REALITY INSTABILITY: CRITICAL**
+
+The fractures are spreading.
+The hunting grounds are seconds from a planar breach.
+
+**BREACH IMMINENT: 1 MINUTE**`,`distortion_critical.png`,false);
+    }
+
+    if (!event.started && now >= event.startAt && now <= event.startAt + DISTORTION_START_GRACE_MS) {
+      await startLiveDistortion(data,event);
+      return;
+    }
+  }
+}
+
+async function sendOverhaulAnnouncementOnce() {
+  const data = loadData();
+  if (data.overhaulAnnouncementSent) return;
+  const channel = client.channels.cache.get(MONSTER_CHANNEL_ID);
+  if (!channel?.isTextBased()) return;
+  await channel.send(
+    `# 🐉 MONSTER HUNT UPDATE!\n\n` +
+    `🐾 Send your equipped pet adventuring with \`!fetch\`\n` +
+    `🧬 Combine pets for Companion XP, Ability XP, or inherited abilities with \`!combine\`\n` +
+    `📈 Pet abilities now grow every level, with rarer pets requiring more XP\n` +
+    `🔥 Comeback bonuses help hunters close large leaderboard gaps\n` +
+    `🏆 Weekly competition begins Monday at **5:00 AM Mountain Time**\n` +
+    `🥚 Eggs have more discovery sources and empty incubators quietly help\n` +
+    `💯 Natural 100 creates a Critical Catch; Natural 1 creates a Perfect Catch\n` +
+    `🔔 Use \`!remind all\` for personal hunt and fetch cooldown tags\n\n` +
+    `**All existing progress has been preserved.**`
+  );
+  data.overhaulAnnouncementSent = true;
+  saveData(data);
+}
+
+client.once("clientReady", () => {
+  console.log(`Logged in as ${client.user.tag}`);
+  // H.4.1: Legacy Season 2 overhaul announcement intentionally disabled for the fresh season.
+
+  // Checks every minute for the one-time Season 2 launch.
+  cron.schedule("* * * * *", async () => {
+    try {
+      await checkOneTimeSeasonLaunch();
+    } catch (error) {
+      console.error("One-time Season 2 launch check failed:", error);
+    }
+  });
+
+  // Catch up immediately if Railway starts after the scheduled launch time.
+  checkOneTimeSeasonLaunch().catch(error =>
+    console.error("Initial Season 2 launch check failed:", error)
+  );
+
+  // Check once per minute for eggs that have completed incubation.
+  cron.schedule("* * * * *", async () => {
+    try {
+      await checkReadyEggNotifications();
+    } catch (error) {
+      console.error("Egg-ready notification check failed:", error);
+    }
+  });
+
+  // Catch eggs that finished while the bot was restarting.
+  checkReadyEggNotifications().catch(error =>
+    console.error("Initial egg-ready notification check failed:", error)
+  );
+
+  cron.schedule("* * * * *", async () => {
+    try {
+      await processFetchReturnsAndReminders();
+      await processWeeklyCompetition();
+      await processCommunityWorldProgress();
+    }
+    catch (error) { console.error("Fetch/reminder/weekly/world monitor failed:", error); }
+  });
+  processFetchReturnsAndReminders().catch(error => console.error("Initial fetch/reminder check failed:", error));
+  processWeeklyCompetition().catch(error => console.error("Initial weekly check failed:", error));
+  processCommunityWorldProgress().catch(error => console.error("Initial hidden world progress check failed:", error));
+  cron.schedule("* * * * *", async () => {
+    await processBigGameMerchantSystem();
+  });
+  // Recover any active scheduled Big Game Hunt, merchant visit, or Token Surge immediately after a redeploy.
+  processBigGameMerchantSystem().catch(error => console.error("Initial Big Game / Merchant check failed:", error));
+  cron.schedule("* * * * *", async () => {
+    try { await processDistortionSystem(); }
+    catch (error) { console.error("World Distortion monitor failed:", error); }
+  });
+  cron.schedule("* * * * *", async () => {
+    try { await processWorldStorySystem(); }
+    catch (error) { console.error("World Story / World Shatter monitor failed:", error); }
+  });
+  // Initialize story state safely on startup without immediately posting or starting the finale.
+  { const startupWorldData=loadData(); migratePendingWorldShatterToEightPm(startupWorldData); const c=discoveredWorldRelicCount(startupWorldData); if(c===4) initializeFourOfFiveAnomalyState(startupWorldData); if(c>=5 && !startupWorldData.worldStory?.postShatter) initializeFinalWarningState(startupWorldData); saveData(startupWorldData); }
+  // No immediate Distortion processing on startup; the minute cron handles only live future schedule windows.
+
+  //
+  // 🌅 7:00 AM MST Reminder
+  //
+  cron.schedule(
+    "0 7 * * *",
+    async () => {
+      const guild = client.guilds.cache.first();
+      if (!guild) return;
+
+      const channel = guild.channels.cache.get(MONSTER_CHANNEL_ID);
+      if (!channel) return;
+
+      const event = getActiveEvent();
+
+      let eventMessage = "";
+
+      if (event) {
+        eventMessage =
+          `\n🎉 **Today's Event:** ${event.name}\n` +
+          `${event.description}\n`;
+      }
+
+      channel.send(
+        `<@&${MONSTER_NOTIFY_ROLE}>\n\n` +
+          `🌅 **Monster Hunt is live!**\n\n` +
+          `${eventMessage}` +
+          `🎯 Daily quests are available\n` +
+          `🎁 Daily reward is ready\n` +
+          `🐉 Time to start hunting!\n\n` +
+          `Type \`!hunt\` to begin your adventure!`
+      );
+    },
+    {
+      timezone: "America/Denver"
+    }
+  );
+
+  //
+  // ☀️ 12:00 PM MST Reminder
+  //
+  cron.schedule(
+    "0 12 * * *",
+    async () => {
+      // On launch day, the one-time Season 2 launch system replaces
+      // the normal noon reminder with the channel unlock and launch message.
+      if (getMountainDateTimeParts().date === SEASON_LAUNCH_DATE) return;
+
+      const guild = client.guilds.cache.first();
+      if (!guild) return;
+
+      const channel = guild.channels.cache.get(MONSTER_CHANNEL_ID);
+      if (!channel) return;
+
+      const event = getActiveEvent();
+
+      let eventMessage = "";
+
+      if (event) {
+        eventMessage =
+          `\n🎉 **Today's Event:** ${event.name}\n` +
+          `${event.description}\n`;
+      }
+
+      channel.send(
+        `<@&${MONSTER_NOTIFY_ROLE}>\n\n` +
+          `☀️ **Midday Monster Hunt Reminder!**\n\n` +
+          `${eventMessage}` +
+          `🎯 Keep working on today's quests\n` +
+          `🐉 Hunt more monsters\n` +
+          `📚 Increase your Monster Knowledge\n\n` +
+          `Type \`!hunt\` to continue your adventure!`
+      );
+    },
+    {
+      timezone: "America/Denver"
+    }
+  );
+
+  //
+  // 🌙 6:00 PM MST Reminder
+  //
+  cron.schedule(
+    "0 18 * * *",
+    async () => {
+      const guild = client.guilds.cache.first();
+      if (!guild) return;
+
+      const channel = guild.channels.cache.get(MONSTER_CHANNEL_ID);
+      if (!channel) return;
+
+      channel.send(
+        `<@&${MONSTER_NOTIFY_ROLE}>\n\n` +
+          `🌙 **Final Monster Hunt reminder!**\n\n` +
+          `🎯 Finish your daily quests\n` +
+          `🎁 Don't forget your daily reward\n` +
+          `🪤 Use your bait before tomorrow!\n\n` +
+          `Type \`!hunt\` and continue your collection!`
+      );
+    },
+    {
+      timezone: "America/Denver"
+    }
+  );
+
+
+  // H.4.1: LEGACY ULTRA HUNTS ARE DISABLED FOR THE NEW SEASON.
+  // Clear any saved scheduled/active Ultra state left over from the previous
+  // season so a Railway redeploy cannot resurrect an old event.
+  {
+    const ultraCleanupData = loadData();
+    let ultraChanged = false;
+    if (ultraCleanupData.ultraRareState) {
+      ultraCleanupData.ultraRareState = null;
+      ultraChanged = true;
+    }
+    if (ultraCleanupData.ultraWeeklySchedule) {
+      ultraCleanupData.ultraWeeklySchedule = null;
+      ultraChanged = true;
+    }
+    if (ultraChanged) saveData(ultraCleanupData);
+  }
+
+});
+
+// ==================== H.2A.1 FRESH-SEASON RESET ====================
+// Keep only permanent proof-of-accomplishment. Anything that can help
+// a player hunt in the next season is wiped.
+function hardResetSeasonForNewCompetition(data) {
+  let preservedPlayers = 0;
+  let preservedCreatures = 0;
+
+  for (const [userId, oldPlayerData] of Object.entries(data.players || {})) {
+    const lifetimeCaught = Array.isArray(oldPlayerData.lifetimeCaught)
+      ? oldPlayerData.lifetimeCaught.map(monster => ({ ...monster }))
+      : [];
+
+    const preservedDiscoveredPetKeys = [...new Set([
+      ...(oldPlayerData.discoveredPetKeys || []),
+      ...(oldPlayerData.pets || []).map(pet => pet.key).filter(Boolean)
+    ])];
+
+    const grandPetCollectionRewardClaimed = Boolean(oldPlayerData.grandPetCollectionRewardClaimed);
+
+    const permanentPetTitles = new Set([
+      ...Object.values(PET_COLLECTIONS).map(reward => reward.title),
+      GRAND_PET_COLLECTION_REWARD.title,
+      ...GRAND_PET_COLLECTION_REWARD.legendaryTitles
+    ]);
+    const preservedPetTitles = (oldPlayerData.unlockedTitles || []).filter(title => permanentPetTitles.has(title));
+
+    if (grandPetCollectionRewardClaimed) {
+      for (const title of [GRAND_PET_COLLECTION_REWARD.title, ...GRAND_PET_COLLECTION_REWARD.legendaryTitles]) {
+        if (!preservedPetTitles.includes(title)) preservedPetTitles.push(title);
+      }
+    }
+
+    const permanentPetAchievements = new Set([
+      ...Object.values(PET_COLLECTIONS).map(reward => reward.achievement),
+      GRAND_PET_COLLECTION_REWARD.achievement,
+      ...GRAND_PET_COLLECTION_REWARD.legendaryTitles.map(
+        title => `${GRAND_PET_COLLECTION_REWARD.achievement}: ${title}`
+      )
+    ]);
+    const preservedPetAchievements = (oldPlayerData.secretAchievements || [])
+      .filter(achievement => permanentPetAchievements.has(achievement));
+
+    if (lifetimeCaught.length > 0 || preservedDiscoveredPetKeys.length > 0) {
+      preservedPlayers++;
+      preservedCreatures += lifetimeCaught.length;
+    }
+
+    // Force getPlayer() to rebuild every normal field from current defaults.
+    data.players[userId] = {};
+    const fresh = getPlayer(data, userId);
+
+    // Identity/cosmetic appearance is not a gameplay advantage.
+    fresh.discordUsername = oldPlayerData.discordUsername || null;
+    fresh.discordDisplayName = oldPlayerData.discordDisplayName || null;
+    if (oldPlayerData.activityProfile) {
+      fresh.activityProfile = JSON.parse(JSON.stringify(oldPlayerData.activityProfile));
+    }
+
+    // Permanent collection history.
+    fresh.lifetimeCaught = lifetimeCaught;
+    fresh.discoveredPetKeys = preservedDiscoveredPetKeys;
+    fresh.grandPetCollectionRewardClaimed = grandPetCollectionRewardClaimed;
+    fresh.unlockedTitles = preservedPetTitles;
+    fresh.secretAchievements = preservedPetAchievements;
+
+    // Explicitly wipe all hunt advantages and currencies.
+    fresh.points = 0;
+    fresh.caught = [];
+    fresh.currentMonster = null;
+    fresh.lastHunt = 0;
+    fresh.huntCount = 0;
+    fresh.title = null;
+
+    fresh.huntTokens = 0;
+    fresh.lifetimeTokens = 0;
+    fresh.tokensSpent = 0;
+
+    fresh.bait = { rare: 0, epic: 0, legendary: 0 };
+    fresh.activeBait = null;
+    fresh.captureItems = { berry: 0, honey: 0, net: 0, masterCharm: 0 };
+    fresh.knowledge = {};
+
+    fresh.eggs = [];
+    fresh.incubatingEggs = [];
+    fresh.lastIncubatorSlots = 1;
+
+    fresh.pets = [];
+    fresh.equippedPetId = null;
+    fresh.nextPetId = 1;
+
+    // Merchant items do NOT carry across seasons.
+    fresh.merchantCollection = {};
+    fresh.merchantPurchases = [];
+    fresh.merchantEffects = {};
+    fresh.merchantGambles = 0;
+
+    fresh.relics = Object.fromEntries(RELIC_KEYS.map(relicKey => [relicKey, 0]));
+    fresh.ultraCaughtKeys = [];
+    fresh.ultraSummonedKeys = [];
+    fresh.ultraParticipationCount = 0;
+
+    fresh.bigGameWins = 0;
+    fresh.bigGamePlacements = [];
+
+    fresh.dailyQuests = [];
+    fresh.dailyClaimed = false;
+    fresh.dailyRerollsUsed = 0;
+    fresh.lastDaily = null;
+    fresh.dailyReward = 0;
+
+    fresh.lastFetch = 0;
+    if (fresh.fetch && typeof fresh.fetch === "object") {
+      fresh.fetch.active = false;
+      fresh.fetch.startedAt = 0;
+      fresh.fetch.readyAt = 0;
+    }
+
+    fresh.titleProgress = {
+      eggsFound: 0, eggsHatched: 0, ultraAttempts: 0,
+      captureItemsUsed: 0, masterCharmUsed: 0, baitUsed: 0,
+      failedCaptureStreak: 0, failedAtNinety: false,
+      mixerWithoutCharm: false, ultraAtFiveOrLess: false
+    };
+
+    fresh.reminderState = {
+      ...(fresh.reminderState || {}),
+      huntDueAt: 0, huntSent: false,
+      fetchDueAt: 0, fetchSent: false
+    };
+
+    delete fresh.pendingHatchSacrifice;
+    delete fresh.adminTest;
+  }
+
+  // Shared seasonal systems.
+  data.pendingTrades = {};
+  data.ultraRareState = null;
+  data.worldProgress = Object.fromEntries(RELIC_KEYS.map(relicKey => [relicKey, false]));
+  data.worldShatterUnlocked = false;
+  data.worldCommunityMilestonesAwarded = [];
+  data.communityBlessings = {};
+  data.ultraWeeklySchedule = null;
+  data.ultraAdminPauseUntil = 0;
+
+  data.seasonMoments = [];
+  data.seasonMomentFlags = {};
+  data.nextSeasonMomentId = 1;
+  data.recentHunts = [];
+
+  data.bigGame = {
+    active: false, weekKey: null, eventId: null, startedAt: 0, endsAt: 0,
+    scores: {}, reachedAt: {}, halftimeSent: false, resultsSent: false,
+    lastCompletedWeek: null, history: [], completedEventIds: [],
+    schedule: { weekKey: null, events: [] }, reminders: {}
+  };
+
+  data.merchant = {
+    active: false, type: null, scheduleId: null, scheduledWeekKey: null,
+    arrivalAt: 0, departureAt: 0, inventory: [], reminderSent: false,
+    specialAt: 0, specialDone: false, clearance: false, lastVisitAt: 0, history: []
+  };
+  data.merchantSchedule = { weekKey: null, visits: [] };
+  data.tokenSurge = { active: false, startsAt: 0, endsAt: 0, announced: false, scheduledWeekKey: null };
+
+  data.activeDistortion = null;
+  data.distortionState = null;
+  data.distortionSchedule = { weekKey: null, events: [] };
+
+  // Support old/new season-lock shapes.
+  data.seasonEnded = false;
+  data.seasonLocked = false;
+  data.seasonActive = true;
+  data.seasonEndAt = 0;
+  data.seasonEndedAt = 0;
+  data.finalScoresPreserved = false;
+
+  if (!data.seasonState || typeof data.seasonState !== "object") data.seasonState = {};
+  data.seasonState.active = true;
+  data.seasonState.ended = false;
+  data.seasonState.locked = false;
+  data.seasonState.startedAt = Date.now();
+  data.seasonState.endedAt = 0;
+  data.seasonState.warning24hSent = false;
+  data.seasonState.warning1hSent = false;
+
+  return { preservedPlayers, preservedCreatures };
+}
+
+function isSeasonLocked(data) {
+  if (data?.seasonState?.locked === true || data?.seasonState?.ended === true) return true;
+  if (data?.seasonLocked === true || data?.seasonEnded === true) return true;
+  if (data?.seasonActive === false) return true;
+  return false;
+}
+
+function isSeasonAdminBypassCommand(command) {
+  const exact = new Set([
+    "!resetseason", "!startnewseason", "!newseason",
+    "!volumestatus", "!activitytest",
+    "!leaderboard", "!exportdex", "!ultrastatus"
+  ]);
+  if (exact.has(command)) return true;
+
+  const prefixes = [
+    "!giveegg ", "!givepoints ", "!givetokens ", "!givebait ", "!givecapture ",
+    "!giverelic ", "!giveitem ", "!addtokens ", "!settokens ", "!removetokens ",
+    "!spawnmerchant", "!endmerchant", "!restockmerchant",
+    "!startultra", "!endultra", "!startbiggame", "!endbiggame",
+    "!startdistortion", "!enddistortion", "!test"
+  ];
+  return prefixes.some(prefix => command.startsWith(prefix));
+}
+
+
+client.on("messageCreate", async (message) => {
+  // H.4 pre-launch safety: keep the three future live-season channels completely quiet.
+  // Until Sep 1, the bot ignores commands/messages there and uses only the Test channel.
+  if (
+    h4UsingTestChannel() &&
+    [
+      H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID,
+      H4_PRODUCTION_HUNT_CHANNEL_ID,
+      H4_PRODUCTION_EGGS_PETS_CHANNEL_ID
+    ].includes(message.channel?.id)
+  ) return;
+
+  if (message.author.bot) return;
+
+  const content = message.content.trim();
+  const command = content.toLowerCase();
+  const data = loadData();
+  const player = getPlayer(data, message.author.id);
+
+  // H.2A.1: normal gameplay locks when a season ends, but admins keep
+  // maintenance/testing access so they can prepare the next season.
+  if (isSeasonLocked(data)) {
+    const isAdmin = Boolean(message.member?.permissions.has(PermissionsBitField.Flags.Administrator));
+    const publicAllowed = ["!leaderboard", "!exportdex"].includes(command);
+    const adminAllowed = isAdmin && isSeasonAdminBypassCommand(command);
+
+    if (!publicAllowed && !adminAllowed) {
+      return message.reply(
+        "🏁 **The Monster Hunt season has ended!**\n\n" +
+        "All normal game functions are locked while final scores are preserved.\n" +
+        "The leaderboard remains available until the next season begins."
+      );
+    }
+  }
+
+  // ==================== BIG GAME / MERCHANT PLAYER COMMANDS ====================
+  if (command === "!testeconomy" || command.startsWith("!testeconomy ") || command === "!testbiggame" || command.startsWith("!testbiggame ")) {
+    if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can use the isolated economy sandbox.");
+    }
+
+    const input = content.replace(/^!test(?:economy|biggame)\s*/i, "").trim();
+    const [subRaw, ...remaining] = input.split(/\s+/).filter(Boolean);
+    const sub = (subRaw || "help").toLowerCase();
+    const argsText = remaining.join(" ").trim();
+    let session = getEconomyTestSession(message.channel.id);
+
+    const createSession = () => {
+      const ownerKey = `admin:${message.author.id}`;
+      const collection = Object.fromEntries(Object.keys(MERCHANT_ITEMS).map(key => [key, 10]));
+      const created = {
+        channelId: message.channel.id,
+        ownerId: message.author.id,
+        createdAt: Date.now(),
+        bigGameActive: false,
+        scores: {},
+        reachedAt: {},
+        labels: { [ownerKey]: message.member?.displayName || message.author.username },
+        wallet: 100,
+        collection,
+        merchant: null,
+        purchases: []
+      };
+      economyTestSessions.set(message.channel.id, created);
+      return created;
+    };
+
+    if (sub === "help") {
+      return message.reply(
+        `🧪 **ISOLATED BIG GAME + MERCHANT SANDBOX**\n\n` +
+        `Everything stays only in **this channel** and only in temporary memory. No role pings, live points, wallets, items, stock, schedules, or data.json values are changed.\n\n` +
+        `**Event previews**\n` +
+        `\`!testeconomy morning\` — Morning reminder\n` +
+        `\`!testeconomy warning\` — 30-minute warning\n` +
+        `\`!testeconomy start\` — Start a test Big Game Hunt\n` +
+        `\`!testeconomy catch legendary\` — Simulate your successful catch\n` +
+        `\`!testeconomy add Nick 12\` — Add a fake hunter/score\n` +
+        `\`!testeconomy halftime\` — Post test standings\n` +
+        `\`!testeconomy end\` — Post test results\n\n` +
+        `**Merchant previews**\n` +
+        `\`!testeconomy merchant aldric\` — Spawn a test merchant\n` +
+        `Types: aldric, gribble, beastkeeper, pale_collector, riftwalker, nameless\n` +
+        `\`!testeconomy shop\` — View test inventory\n` +
+        `\`!testeconomy buy ancient egg\` — Simulate a purchase\n` +
+        `\`!testeconomy gamble\` — Simulate Gribble's gamble\n` +
+        `\`!testeconomy restock\` — Restock test items\n` +
+        `\`!testeconomy leave\` — Test merchant departure\n\n` +
+        `\`!testeconomy status\` — View sandbox state\n` +
+        `\`!testeconomy reset\` — Erase this channel's sandbox`
+      );
+    }
+
+    if (sub === "reset") {
+      economyTestSessions.delete(message.channel.id);
+      return message.reply("🧹 This channel's isolated economy sandbox has been erased. No live data was touched.");
+    }
+
+    if (sub === "morning") {
+      return sendRoleImageAnnouncement(message.channel,
+        `🧪 **PRIVATE TEST — NO ROLE PING**\n\n🎯 **BIG GAME HUNT TODAY**\n\n` +
+        `This test represents one of the **3 random weekly hunts**. Live events begin between **3:30 PM and 8:00 PM Mountain Time** and last 2 hours.\n\n` +
+        `⚔️ Hunt every 30 minutes\n🪙 Earn Hunt Tokens\n🏆 Compete for 50 / 30 / 15 Hunter Points\n\nGet your bait ready.`,
+        BIG_GAME_IMAGE, false);
+    }
+
+    if (sub === "warning") {
+      return sendRoleImageAnnouncement(message.channel,
+        `🧪 **PRIVATE TEST — NO ROLE PING**\n\n⚠️ **30 MINUTES UNTIL BIG GAME HUNT**\n\n` +
+        `At the scheduled start time, hunt cooldowns drop to 30 minutes and successful catches begin awarding DOUBLE Hunt Tokens.\n\nCheck your bait. Check your inventory.`,
+        BIG_GAME_IMAGE, false);
+    }
+
+    if (sub === "start" || sub === "biggame") {
+      session = createSession();
+      session.bigGameActive = true;
+      session.startedAt = Date.now();
+      session.endsAt = Date.now() + 2 * 60 * 60 * 1000;
+      return sendRoleImageAnnouncement(message.channel,
+        `🧪 **PRIVATE TEST EVENT — NO ROLE PING / NO LIVE REWARDS**\n\n🚨 **BIG GAME HUNT HAS BEGUN!**\n\n` +
+        `⏱️ Test duration: **2 hours**\n🪙 Simulated catches award test Hunt Tokens\n` +
+        `🥇 1st — 50 Hunter Points\n🥈 2nd — 30 Hunter Points\n🥉 3rd — 15 Hunter Points\n\n` +
+        `Use \`!testeconomy catch common/rare/epic/legendary/ultra\` to build the board.`,
+        BIG_GAME_IMAGE, false);
+    }
+
+    if (!session && sub === "merchant") session = createSession();
+
+    if (!session) {
+      return message.reply("No sandbox exists in this channel. Start with `!testeconomy start` or `!testeconomy merchant aldric`.");
+    }
+
+    if (sub === "catch") {
+      if (!session.bigGameActive) return message.reply("Start the test event first with `!testeconomy start`.");
+      const rarityAliases = { common: "Common", rare: "Rare", epic: "Epic", legendary: "Legendary", mythic: "Mythic", ultra: "Ultra Rare", ultrarare: "Ultra Rare", event: "Event" };
+      const rarity = rarityAliases[argsText.toLowerCase().replace(/[^a-z]/g, "")];
+      if (!rarity) return message.reply("Use `!testeconomy catch common/rare/epic/legendary/mythic/ultra`.");
+      const amount = BIG_GAME_TOKEN_REWARDS[rarity] || 1;
+      const key = `admin:${message.author.id}`;
+      session.scores[key] = Number(session.scores[key] || 0) + amount;
+      session.reachedAt[key] = Date.now();
+      session.wallet += amount;
+      return message.reply(
+        `🧪 **SIMULATED ${rarity.toUpperCase()} CATCH**\n\n🪙 +${amount} Test Hunt Tokens\n` +
+        `🎯 Test Event Score: **${session.scores[key]}**\n💰 Test Wallet: **${session.wallet}**\n\nNo live data changed.`
+      );
+    }
+
+    if (sub === "add") {
+      const match = argsText.match(/^(.+?)\s+(\d+)$/);
+      if (!match) return message.reply("Usage: `!testeconomy add Nick 12`");
+      const label = match[1].trim().slice(0, 40);
+      const amount = Math.max(0, Number(match[2]));
+      const key = `fake:${label.toLowerCase()}`;
+      session.labels[key] = label;
+      session.scores[key] = Number(session.scores[key] || 0) + amount;
+      session.reachedAt[key] = Date.now();
+      return message.reply(`🧪 Added **${amount} test tokens** to **${label}**.\n\n${testEconomyLeaderboardText(session)}`);
+    }
+
+    if (sub === "halftime") {
+      return sendRoleImageAnnouncement(message.channel,
+        `🧪 **PRIVATE TEST — NO ROLE PING / NO LIVE REWARDS**\n\n⚔️ **BIG GAME HUNT — HALFTIME**\n\n` +
+        `One hour remains!\n\n${testEconomyLeaderboardText(session, 3)}\n\n**The test hunt ends when you use \`!testeconomy end\`.**`,
+        BIG_GAME_IMAGE, false);
+    }
+
+    if (sub === "end") {
+      if (!session.bigGameActive) return message.reply("No test Big Game Hunt is active.");
+      session.bigGameActive = false;
+      const ranked = Object.entries(session.scores)
+        .map(([key, score]) => ({ key, score, reachedAt: session.reachedAt[key] || Number.MAX_SAFE_INTEGER }))
+        .filter(entry => entry.score > 0)
+        .sort((a, b) => b.score - a.score || a.reachedAt - b.reachedAt)
+        .slice(0, 3);
+      const resultText = ranked.length ? ranked.map((entry, index) =>
+        `${["🥇", "🥈", "🥉"][index]} **${session.labels[entry.key] || entry.key}** — ${entry.score} Test Tokens — **+${BIG_GAME_PLACEMENT_REWARDS[index]} simulated HP**`
+      ).join("\n\n") : "No simulated catches were recorded.";
+      await sendRoleImageAnnouncement(message.channel,
+        `🧪 **PRIVATE TEST RESULTS — NOTHING AWARDED**\n\n🏆 **BIG GAME HUNT COMPLETE**\n\n${resultText}\n\n` +
+        `The test wallet remains available for merchant testing.`, BIG_GAME_IMAGE, false);
+      for (let index = 0; index < ranked.length; index++) {
+        await sendRoleImageAnnouncement(message.channel,
+          `🧪 ${["🥇 TEST FIRST PLACE", "🥈 TEST SECOND PLACE", "🥉 TEST THIRD PLACE"][index]}\n` +
+          `**${session.labels[ranked[index].key] || ranked[index].key}** — ${ranked[index].score} Test Tokens — no live reward`,
+          BIG_GAME_AWARD_IMAGES[index], false);
+      }
+      return;
+    }
+
+    if (sub === "merchant") {
+      const normalized = argsText.toLowerCase().replace(/[^a-z]/g, "_") || "aldric";
+      const aliases = { pale: "pale_collector", collector: "pale_collector", rift: "riftwalker", midnight: "nameless" };
+      const type = MERCHANT_TYPE_DEFINITIONS[normalized] ? normalized : aliases[normalized];
+      if (!type) return message.reply(`Merchant types: ${Object.keys(MERCHANT_TYPE_DEFINITIONS).join(", ")}`);
+      const definition = MERCHANT_TYPE_DEFINITIONS[type];
+      session.merchant = { type, inventory: generateMerchantInventory(type, false), startedAt: Date.now() };
+      return sendRoleImageAnnouncement(message.channel,
+        `🧪 **PRIVATE TEST MERCHANT — NO ROLE PING / NO LIVE STOCK**\n\n🛒 **A TRAVELING MERCHANT HAS ARRIVED**\n\n` +
+        `**${definition.name}** has opened a simulated shop in this channel.\nUse \`!testeconomy shop\` to browse.`,
+        definition.image, false);
+    }
+
+    if (sub === "shop") return message.reply(testMerchantInventoryText(session));
+
+    if (sub === "buy") {
+      if (!session.merchant) return message.reply("Spawn a test merchant first.");
+      const wanted = argsText.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const offer = session.merchant.inventory.find(entry => {
+        const item = MERCHANT_ITEMS[entry.key];
+        return entry.key.replace(/[^a-z0-9]/g, "") === wanted || item.name.toLowerCase().replace(/[^a-z0-9]/g, "") === wanted;
+      });
+      if (!offer) return message.reply("That item is not in the test shop. Use `!testeconomy shop`.");
+      if (offer.stock !== null && offer.stock <= 0) return message.reply("🧪 ❌ **TEST ITEM SOLD OUT**");
+      if (offer.barter) {
+        const missing = Object.entries(offer.barter).filter(([key, amount]) => Number(session.collection[key] || 0) < amount);
+        if (missing.length) return message.reply(`Missing test barter items: ${merchantBarterText(offer.barter)}.`);
+        for (const [key, amount] of Object.entries(offer.barter)) session.collection[key] -= amount;
+      } else {
+        if (session.wallet < offer.price) return message.reply(`The test wallet needs ${offer.price} tokens but has ${session.wallet}.`);
+        session.wallet -= offer.price;
+      }
+      if (offer.stock !== null) offer.stock--;
+      session.purchases.push({ key: offer.key, at: Date.now() });
+      const item = MERCHANT_ITEMS[offer.key];
+      return sendRoleImageAnnouncement(message.channel,
+        `🧪 ${item.icon} **SIMULATED PURCHASE COMPLETE**\n\nPurchased **${item.name}** from the test shop.\n` +
+        `Test Wallet: **${session.wallet} 🪙**\n\nNo tokens, stock, or items changed in the live game.`,
+        item.image, false);
+    }
+
+    if (sub === "gamble") {
+      if (!session.merchant || session.merchant.type !== "gribble") return message.reply("Spawn Gribble with `!testeconomy merchant gribble` first.");
+      if (session.wallet < 5) return message.reply("The test wallet needs 5 tokens.");
+      session.wallet -= 5;
+      const roll = Math.floor(Math.random() * 100) + 1;
+      let result = "Gribble keeps the tokens. The test won nothing.";
+      if (roll > 28 && roll <= 70) result = "The test won hunting supplies.";
+      if (roll > 70 && roll <= 94) { session.wallet += 8; result = "The test won 8 Hunt Tokens."; }
+      if (roll > 94) result = "The test hit a rare jackpot item!";
+      return sendRoleImageAnnouncement(message.channel,
+        `🧪 🎲 **SIMULATED GRIBBLE GAMBLE**\n\nRoll: **${roll}**\n${result}\nTest Wallet: **${session.wallet} 🪙**\n\nNo live data changed.`,
+        "gribbles_gamble.png", false);
+    }
+
+    if (sub === "restock") {
+      if (!session.merchant) return message.reply("No test merchant is active.");
+      for (const offer of session.merchant.inventory) if (offer.stock !== null) offer.stock += Math.max(1, Math.ceil((offer.initialStock || 1) / 2));
+      return sendRoleImageAnnouncement(message.channel,
+        `🧪 📦 **SIMULATED MERCHANT RESTOCK**\n\nLimited test inventory has been replenished. No live stock changed.`,
+        "merchant_restock.png", false);
+    }
+
+    if (sub === "leave") {
+      if (!session.merchant) return message.reply("No test merchant is active.");
+      const definition = MERCHANT_TYPE_DEFINITIONS[session.merchant.type];
+      session.merchant = null;
+      return sendRoleImageAnnouncement(message.channel,
+        `🧪 🛒 **SIMULATED MERCHANT DEPARTURE**\n\n${definition.name}'s test shop has closed. No live merchant was affected.`,
+        "merchant_departure.png", false);
+    }
+
+    if (sub === "status") {
+      return message.reply(
+        `🧪 **THIS CHANNEL'S ECONOMY SANDBOX**\n\n` +
+        `Test Big Game Active: **${session.bigGameActive}**\n` +
+        `Test Wallet: **${session.wallet} 🪙**\n` +
+        `Test Merchant: **${session.merchant ? MERCHANT_TYPE_DEFINITIONS[session.merchant.type].name : "None"}**\n` +
+        `Simulated Purchases: **${session.purchases.length}**\n\n${testEconomyLeaderboardText(session)}`
+      );
+    }
+
+    return message.reply("Unknown sandbox option. Use `!testeconomy help`.");
+  }
+
+  if (command === "!biggame") {
+    if (!isBigGameActive(data)) {
+      if (ensureBigGameWeeklySchedule(data)) saveData(data);
+      const nextAt = nextBigGameStartAt(data);
+      return message.reply(
+        `🎯 **BIG GAME HUNT**\n\nNext event: <t:${Math.floor(nextAt / 1000)}:F> (<t:${Math.floor(nextAt / 1000)}:R>)\n` +
+        `There are **3 Big Game Hunts every week** on different random days. Each lasts 2 hours and begins between **3:30 PM and 8:00 PM Mountain Time**.\n\n` +
+        `⏱️ 30-minute hunts • 🪙 Hunt Tokens • 🏆 50 / 30 / 15 Hunter Points\n` +
+        `Your Token Balance: **${player.huntTokens} 🪙**`
+      );
+    }
+    const remaining = Math.max(0, data.bigGame.endsAt - Date.now());
+    return message.reply(
+      `🎯 **BIG GAME HUNT — LIVE**\n\n⏱️ Time Remaining: **${formatTime(remaining)}**\n\n` +
+      `${bigGameLeaderboardText(data, 5)}\n\n` +
+      `Your Event Score: **${data.bigGame.scores[message.author.id] || 0} 🪙**\n` +
+      `Your Token Balance: **${player.huntTokens} 🪙**\n` +
+      `Next Hunt: **${Math.max(0, getPlayerHuntCooldown(player, data, message.author.id) - (Date.now() - player.lastHunt)) > 0 ? formatTime(Math.max(0, getPlayerHuntCooldown(player, data, message.author.id) - (Date.now() - player.lastHunt))) : "Ready now"}**`
+    );
+  }
+
+  if (command === "!tokens") {
+    const best = Math.max(0, ...(player.bigGamePlacements || []).map(entry => Number(entry.score || 0)));
+    return sendRoleImageAnnouncement(message.channel,
+      `🪙 **HUNT TOKEN WALLET**\n\n` +
+      `Current Balance: **${player.huntTokens}**\n` +
+      `Lifetime Earned: **${player.lifetimeTokens}**\n` +
+      `Lifetime Spent: **${player.tokensSpent}**\n` +
+      `Best Big Game Hunt: **${best}**\n` +
+      `Big Game Victories: **${player.bigGameWins}**`,
+      "hunt_token.png", false
+    );
+  }
+
+  if (command === "!merchant") {
+    const embeds = merchantInventoryEmbeds(data, message.author.id);
+    if (!embeds.length) return message.reply("No merchant is currently visiting the hunting grounds.");
+    return message.reply({ embeds, allowedMentions: { parse: [] } });
+  }
+
+  if (command === "!merchantcollection" || command === "!collectibles") {
+    return message.reply(
+      `🎒 **${formatPlayerName(player, message.author.username)}'S MERCHANT COLLECTION**\n\n` +
+      `${merchantCollectionText(player, true)}\n\n🪙 Hunt Tokens: **${player.huntTokens}**\n\n` +
+      `Tip: \`!inventory\` and \`!items\` now show your complete inventory.`
+    );
+  }
+
+  if (command.startsWith("!buy ")) {
+    if (!data.merchant?.active || Date.now() >= data.merchant.departureAt) return message.reply("No merchant is currently accepting purchases.");
+    if (merchantPurchaseLocks.has(message.author.id)) return message.reply("Your previous merchant transaction is still processing.");
+    const offer = resolveMerchantOffer(data, content.slice(5));
+    if (!offer) return message.reply("That item is not in the merchant's current inventory. Use `!merchant` to browse.");
+    if (offer.stock !== null && offer.stock <= 0) return message.reply("❌ **SOLD OUT**\n\nSomeone got there before you.");
+    merchantPurchaseLocks.add(message.author.id);
+    try {
+      if (offer.barter) {
+        const missing = Object.entries(offer.barter).filter(([key, amount]) => collectionCount(player, key) < amount);
+        if (missing.length) return message.reply(`The Pale Collector refuses your offer. Required: **${merchantBarterText(offer.barter)}**.`);
+        for (const [key, amount] of Object.entries(offer.barter)) removeCollectionItem(player, key, amount);
+      } else {
+        if (player.huntTokens < offer.price) return message.reply(`You need **${offer.price} Hunt Tokens**, but only have **${player.huntTokens}**.`);
+        player.huntTokens -= offer.price;
+        player.tokensSpent += offer.price;
+      }
+      if (offer.stock !== null) offer.stock--;
+      offer.sold = Number(offer.sold || 0) + 1;
+      grantPurchasedItem(player, offer.key);
+      player.merchantPurchases.push({ key: offer.key, price: offer.price, barter: offer.barter, merchant: data.merchant.type, at: Date.now() });
+      const item = MERCHANT_ITEMS[offer.key];
+      saveData(data);
+      const costText = offer.barter ? merchantBarterText(offer.barter) : `${offer.price} Hunt Tokens`;
+      return sendRoleImageAnnouncement(message.channel,
+        `${item.icon} **PURCHASE COMPLETE**\n\n${formatPlayerMention(data, message.author.id)} purchased **${item.name}**!\n` +
+        `Cost: **${costText}**\nRemaining Token Balance: **${player.huntTokens} 🪙**\n\n` +
+        `*${item.description}*\n${item.effectDescription || ""}`,
+        item.image, false);
+    } finally {
+      merchantPurchaseLocks.delete(message.author.id);
+    }
+  }
+
+  if (command === "!gamble") {
+    if (!data.merchant?.active || data.merchant.type !== "gribble" || Date.now() >= data.merchant.departureAt) {
+      return message.reply("🎲 Gribble is not here to take your terrible financial advice right now.");
+    }
+    if (player.huntTokens < 5) return message.reply("Gribble demands **5 Hunt Tokens** per gamble.");
+    player.huntTokens -= 5; player.tokensSpent += 5; player.merchantGambles++;
+    const roll = Math.floor(Math.random() * 100) + 1;
+    let result;
+    if (roll <= 28) result = "Gribble keeps the tokens and hands you lint. **You won nothing.**";
+    else if (roll <= 52) { player.captureItems.berry++; result = `You won ${CAPTURE_ITEMS.berry.name}!`; }
+    else if (roll <= 70) { player.bait.rare++; result = "You won 🔵 **Rare Bait**!"; }
+    else if (roll <= 84) { player.huntTokens += 8; player.lifetimeTokens += 8; result = "The dice spit out **8 Hunt Tokens**!"; }
+    else if (roll <= 94) { addCollectionItem(player, "mystery_sack"); result = "You won a 🎒 **Mystery Sack**!"; }
+    else if (roll <= 99) { player.captureItems.masterCharm++; result = `JACKPOT: ${CAPTURE_ITEMS.masterCharm.name}!`; }
+    else { addCollectionItem(player, "unidentified_object"); result = "IMPOSSIBLE JACKPOT: ❔ **Unidentified Object**!"; }
+    saveData(data);
+    return sendRoleImageAnnouncement(message.channel,
+      `🎲 **GRIBBLE'S GAMBLE**\n\nThe glowing dice tumble across the counter... **${roll}**\n\n${result}\n\nToken Balance: **${player.huntTokens} 🪙**`,
+      "gribbles_gamble.png", false);
+  }
+
+  if (command.startsWith("!use ")) {
+    const wanted = content.slice(5).toLowerCase().replace(/[^a-z0-9]/g, "");
+    const key = Object.keys(MERCHANT_ITEMS).find(itemKey =>
+      itemKey.replace(/[^a-z0-9]/g, "") === wanted || MERCHANT_ITEMS[itemKey].name.toLowerCase().replace(/[^a-z0-9]/g, "") === wanted
+    );
+    if (!key || collectionCount(player, key) <= 0) return message.reply("You do not own that merchant item. Use `!inventory` or `!items` to view everything you own.");
+    const item = MERCHANT_ITEMS[key];
+    if (item.kind === "egg") return message.reply(`${item.icon} **${item.name}** remains sealed. Whatever is inside is not ready to hatch.`);
+    if (item.kind === "collectible" && !item.usable) {
+      return sendRoleImageAnnouncement(
+        message.channel,
+        `${item.icon} **${item.name.toUpperCase()}**\n\n*${item.description}*\n\nThis collectible is kept permanently and is not consumed.`,
+        item.image,
+        false
+      );
+    }
+
+    removeCollectionItem(player, key, 1);
+    let result = "The item was used.";
+    if (key === "hunters_compass") { player.merchantEffects.huntersCompass = true; result = "The compass locks onto a powerful trail. Your next ordinary encounter will be **Rare or better**."; }
+    else if (key === "golden_lure") { player.merchantEffects.goldenLure = true; result = "Golden light spills across the trail. Your next ordinary encounter will be **Legendary**."; }
+    else if (key === "fresh_tracks") { player.lastHunt = 0; player.reminderState.huntDueAt = 0; result = "Fresh tracks cross your path. Your `!hunt` cooldown has been **cleared**."; }
+    else if (key === "strange_map") { player.lastHunt = 0; player.merchantEffects.huntersCompass = true; result = "The map redraws itself. Your cooldown is cleared and your next ordinary encounter will be **Rare or better**."; }
+    else if (key === "mystery_sack") {
+      const roll = Math.random() * 100;
+      if (roll < 30) { player.captureItems.berry += 2; result = `The sack contained **2 ${CAPTURE_ITEMS.berry.name}s**.`; }
+      else if (roll < 55) { player.huntTokens += 5; player.lifetimeTokens += 5; result = "The sack contained **5 Hunt Tokens**."; }
+      else if (roll < 75) { player.bait.epic++; result = "The sack contained 🟣 **Epic Bait**."; }
+      else if (roll < 92) { player.captureItems.net++; result = `The sack contained ${CAPTURE_ITEMS.net.name}.`; }
+      else { player.captureItems.masterCharm++; result = `The sack contained ${CAPTURE_ITEMS.masterCharm.name}!`; }
+    }
+    else if (key === "sealed_bottle") {
+      const rewards = ["berry", "honey", "net"];
+      const rewardKey = rewards[Math.floor(Math.random() * rewards.length)];
+      player.captureItems[rewardKey]++;
+      result = `The seal breaks in a flash. Inside was ${CAPTURE_ITEMS[rewardKey].name}.`;
+    }
+    else if (key === "merchants_dice") {
+      const roll = Math.floor(Math.random() * 6) + 1;
+      if (roll === 1) result = "The weighted die rolls off the table. Nothing happens.";
+      if (roll === 2) { player.captureItems.berry++; result = `Roll 2: ${CAPTURE_ITEMS.berry.name}.`; }
+      if (roll === 3) { player.huntTokens += 3; player.lifetimeTokens += 3; result = "Roll 3: **3 Hunt Tokens**."; }
+      if (roll === 4) { player.captureItems.net++; result = `Roll 4: ${CAPTURE_ITEMS.net.name}.`; }
+      if (roll === 5) { player.huntTokens += 8; player.lifetimeTokens += 8; result = "Roll 5: **8 Hunt Tokens**!"; }
+      if (roll === 6) { addCollectionItem(player, "mystery_relic"); result = "Roll 6: 🔮 **Mystery Relic**!"; }
+    }
+    else if (key === "do_not_open") {
+      const roll = Math.random() * 100;
+      if (roll < 25) { player.huntTokens += 20; player.lifetimeTokens += 20; result = "The chains snap. Inside: **20 Hunt Tokens**."; }
+      else if (roll < 50) { player.captureItems.masterCharm++; result = `The darkness releases ${CAPTURE_ITEMS.masterCharm.name}.`; }
+      else if (roll < 75) { player.points += 25; result = "Something marks your shadow. **+25 Hunter Points.**"; }
+      else { addCollectionItem(player, "unidentified_object"); result = "The box was empty. A moment later, an ❔ **Unidentified Object** appeared behind you."; }
+    }
+    else if (key === "rusted_key") {
+      const tokens = 5 + Math.floor(Math.random() * 6);
+      player.huntTokens += tokens;
+      player.lifetimeTokens += tokens;
+      result = `The rusted key opens a hidden hunter cache. Inside: **${tokens} Hunt Tokens**.`;
+    }
+    else if (key === "monster_whistle") {
+      player.lastHunt = 0;
+      player.reminderState.huntDueAt = 0;
+      player.merchantEffects.huntersCompass = true;
+      result = "The whistle shrieks across the hunting grounds. Your `!hunt` cooldown is **cleared**, and your next ordinary encounter will be **Rare or better**.";
+    }
+    else if (key === "mystery_relic") {
+      const relicKey = RELIC_KEYS[Math.floor(Math.random() * RELIC_KEYS.length)];
+      player.relics[relicKey] = (player.relics[relicKey] || 0) + 1;
+      const relicMonster = ultraRareMonsters.find(monster => monster.relicKey === relicKey);
+      result = `The relic changes shape in your hands and becomes **${relicMonster?.relicName || relicKey}**.`;
+    }
+    else if (key === "impossible_key") {
+      player.lastHunt = 0;
+      player.reminderState.huntDueAt = 0;
+      player.merchantEffects.goldenLure = true;
+      result = "The key turns inside empty air and opens an impossible path. Your `!hunt` cooldown is **cleared**, and your next ordinary encounter is **guaranteed Legendary**.";
+    }
+    else if (key === "torn_page") {
+      player.bait.rare++;
+      player.huntTokens += 3;
+      player.lifetimeTokens += 3;
+      result = "The writing settles long enough to reveal a hidden supply route. You receive 🔵 **1 Rare Bait** and **3 Hunt Tokens**.";
+    }
+    else if (key === "watchers_eye") {
+      player.captureItems.masterCharm++;
+      result = `The eye focuses on a single impossible weakness. You receive ${CAPTURE_ITEMS.masterCharm.name} for a **guaranteed capture**.`;
+    }
+    else if (key === "broken_compass") {
+      if (Math.random() < 0.25) {
+        player.merchantEffects.goldenLure = true;
+        result = "The broken needle spins violently, then points toward something enormous. Your next ordinary encounter is **guaranteed Legendary**!";
+      } else {
+        player.merchantEffects.huntersCompass = true;
+        result = "The broken needle finds a usable direction. Your next ordinary encounter will be **Rare or better**.";
+      }
+    }
+    else if (key === "fractured_compass") {
+      player.lastHunt = 0;
+      player.reminderState.huntDueAt = 0;
+      player.merchantEffects.huntersCompass = true;
+      result = "Every needle snaps toward the same trail. Your `!hunt` cooldown is **cleared**, and your next ordinary encounter will be **Rare or better**.";
+    }
+    else if (key === "reality_anchor") {
+      player.lastHunt = 0;
+      player.reminderState.huntDueAt = 0;
+      player.captureItems.masterCharm++;
+      result = `Reality locks firmly into place. Your \`!hunt\` cooldown is **cleared**, and you receive ${CAPTURE_ITEMS.masterCharm.name}.`;
+    }
+    else if (key === "unmarked_relic") {
+      const relicKey = RELIC_KEYS[Math.floor(Math.random() * RELIC_KEYS.length)];
+      player.relics[relicKey] = (player.relics[relicKey] || 0) + 1;
+      player.huntTokens += 5;
+      player.lifetimeTokens += 5;
+      const relicMonster = ultraRareMonsters.find(monster => monster.relicKey === relicKey);
+      result = `The black relic fractures, revealing **${relicMonster?.relicName || relicKey}** and **5 Hunt Tokens**.`;
+    }
+    else if (key === "voidglass_shard") {
+      player.merchantEffects.goldenLure = true;
+      player.huntTokens += 5;
+      player.lifetimeTokens += 5;
+      result = "A legendary silhouette appears inside the glass. Your next ordinary encounter is **guaranteed Legendary**, and you gain **5 Hunt Tokens**.";
+    }
+    else if (key === "unidentified_object") {
+      const roll = Math.floor(Math.random() * 4);
+      if (roll === 0) {
+        player.points += 25;
+        result = "The object briefly becomes a crown-shaped shadow. **+25 Hunter Points.**";
+      } else if (roll === 1) {
+        player.huntTokens += 20;
+        player.lifetimeTokens += 20;
+        result = "The object collapses into impossible currency. **+20 Hunt Tokens.**";
+      } else if (roll === 2) {
+        player.captureItems.masterCharm++;
+        result = `The object becomes ${CAPTURE_ITEMS.masterCharm.name}.`;
+      } else {
+        player.merchantEffects.goldenLure = true;
+        result = "The object shows you a creature that has not appeared yet. Your next ordinary encounter is **guaranteed Legendary**.";
+      }
+    }
+    saveData(data);
+    return sendRoleImageAnnouncement(message.channel,
+      `${item.icon} **${item.name.toUpperCase()} USED**\n\n${result}\n\n🪙 Token Balance: **${player.huntTokens}**`, item.image, false);
+  }
+
+  // ==================== BIG GAME / MERCHANT ADMIN COMMANDS ====================
+  if (command === "!announcebiggame") {
+    if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("Only admins can post the Big Game announcement.");
+    if (ensureBigGameWeeklySchedule(data)) saveData(data);
+    const nextAt = nextBigGameStartAt(data);
+    return sendRoleImageAnnouncement(message.channel,
+      `<@&${MONSTER_NOTIFY_ROLE}>\n\n🎯 **BIG GAME HUNT HAS ARRIVED!**\n\n` +
+      `There are **3 Big Game Hunts every week** on different random days. Each lasts 2 hours, starts between **3:30 PM and 8:00 PM Mountain Time**, and lets you hunt every 30 minutes for Hunt Tokens.\n\n` +
+      `🥇 50 HP • 🥈 30 HP • 🥉 15 HP\n\nNext hunt: <t:${Math.floor(nextAt / 1000)}:F>.`, BIG_GAME_IMAGE, true);
+  }
+
+  if (["!startbiggame", "!endbiggame", "!biggamestatus", "!merchantstatus", "!adminshop", "!endmerchant", "!restockmerchant", "!starttokensurge", "!endtokensurge"].includes(command) || command.startsWith("!spawnmerchant") || command.startsWith("!testmerchant") || command.startsWith("!settokens ") || command.startsWith("!addtokens ") || command.startsWith("!removetokens ") || command.startsWith("!giveitem ") || command.startsWith("!removeitem ")) {
+    if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("Only admins can use that command.");
+  }
+
+  if (command === "!adminshop") {
+    const merchant = data.merchant;
+    if (!merchant?.active || Date.now() >= merchant.departureAt) {
+      return message.reply("🛠️ No merchant is currently active, so there is no live shop inventory to inspect.");
+    }
+
+    const definition = MERCHANT_TYPE_DEFINITIONS[merchant.type];
+    const embed = new EmbedBuilder()
+      .setTitle("🛠️ ADMIN — CURRENT MERCHANT SHOP")
+      .setDescription(
+        `${definition.icon} **${definition.name}**\n` +
+        `Type: \`${merchant.type}\`\n` +
+        `Leaves: <t:${Math.floor(merchant.departureAt / 1000)}:F> (<t:${Math.floor(merchant.departureAt / 1000)}:R>)\n` +
+        `Offers: **${merchant.inventory.length}**`
+      );
+
+    for (const offer of merchant.inventory) {
+      const item = MERCHANT_ITEMS[offer.key];
+      if (!item) continue;
+
+      const price = offer.barter ? merchantBarterText(offer.barter) : `${offer.price} Hunt Tokens`;
+      const stock = offer.stock === null ? "Unlimited" : offer.stock > 0 ? `${offer.stock} remaining` : "SOLD OUT";
+
+      embed.addFields({
+        name: `${item.icon} ${item.name}`,
+        value:
+          `**Key:** \`${offer.key}\`\n` +
+          `**Type:** ${item.kind}\n` +
+          `**Price:** ${price}\n` +
+          `**Stock:** ${stock}\n` +
+          `**Flavor:** ${item.description}\n` +
+          `**Effect:** ${item.effectDescription || "Unknown"}`
+      });
+    }
+
+    return message.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+  }
+
+  if (command === "!startbiggame") {
+    if (data.bigGame.active) return message.reply("A Big Game Hunt is already active.");
+    const clock = mountainClock();
+    const manualWeekKey = clock.weekdayIndex === 6 ? clock.weekKey : `manual-${Date.now()}`;
+    activateBigGame(data, { weekKey: manualWeekKey, startedAt: Date.now(), endsAt: Date.now() + 2 * 60 * 60 * 1000 });
+    saveData(data);
+    await announceBigGameStart(message.channel, data);
+    return;
+  }
+  if (command === "!endbiggame") {
+    if (!data.bigGame.active) return message.reply("No Big Game Hunt is active.");
+    await finishBigGameHunt(data, message.channel, { forced: true });
+    return;
+  }
+  if (command === "!biggamestatus") {
+    ensureBigGameWeeklySchedule(data); saveData(data);
+    const scheduleText = (data.bigGame.schedule?.events || []).map((event, index) =>
+      `${index + 1}. <t:${Math.floor(event.startAt / 1000)}:F> — ${event.completed ? "COMPLETED" : event.skipped ? "SKIPPED" : event.started ? "STARTED" : "scheduled"}`
+    ).join("\n") || "No schedule generated.";
+    return message.reply(
+      `🛠️ **BIG GAME ADMIN STATUS**\nActive: **${data.bigGame.active}**\nWeek: **${data.bigGame.schedule?.weekKey || data.bigGame.weekKey || "None"}**\n` +
+      `Started: ${data.bigGame.startedAt ? `<t:${Math.floor(data.bigGame.startedAt / 1000)}:F>` : "None"}\n` +
+      `Ends: ${data.bigGame.endsAt ? `<t:${Math.floor(data.bigGame.endsAt / 1000)}:F>` : "None"}\nParticipants: **${getBigGameRanking(data).length}**\n\n` +
+      `**This Week's Big Game Hunts**\n${scheduleText}\n\n${bigGameLeaderboardText(data, 10)}`
+    );
+  }
+
+  if (command.startsWith("!settokens ") || command.startsWith("!addtokens ") || command.startsWith("!removetokens ")) {
+    const target = message.mentions.users.first();
+    const amountMatch = content.match(/(-?\d+)\s*$/);
+    const amount = amountMatch ? Math.max(0, Number(amountMatch[1])) : NaN;
+    if (!target || !Number.isFinite(amount)) return message.reply("Usage: `!settokens @user 25`, `!addtokens @user 5`, or `!removetokens @user 5`.");
+    const targetPlayer = getPlayer(data, target.id);
+    if (command.startsWith("!settokens ")) targetPlayer.huntTokens = amount;
+    if (command.startsWith("!addtokens ")) { targetPlayer.huntTokens += amount; targetPlayer.lifetimeTokens += amount; }
+    if (command.startsWith("!removetokens ")) targetPlayer.huntTokens = Math.max(0, targetPlayer.huntTokens - amount);
+    saveData(data);
+    return message.reply(`🪙 ${formatPlayerMention(data, target.id)} now has **${targetPlayer.huntTokens} Hunt Tokens**.`);
+  }
+
+  if (command.startsWith("!spawnmerchant")) {
+    if (data.merchant.active) return message.reply("A merchant is already active. Use `!endmerchant` first.");
+    const input = content.slice("!spawnmerchant".length).trim().toLowerCase().replace(/[^a-z]/g, "_");
+    const aliases = { pale: "pale_collector", collector: "pale_collector", pale_collector: "pale_collector", rift: "riftwalker", midnight: "nameless", nameless_merchant: "nameless" };
+    const type = MERCHANT_TYPE_DEFINITIONS[input] ? input : aliases[input] || (input ? null : weightedMerchantType(data));
+    if (!type) return message.reply(`Merchant types: ${Object.keys(MERCHANT_TYPE_DEFINITIONS).join(", ")}`);
+    const definition = MERCHANT_TYPE_DEFINITIONS[type];
+    data.merchant = {
+      ...data.merchant, active: true, type, scheduledWeekKey: `manual-${Date.now()}`, arrivalAt: Date.now(),
+      departureAt: Date.now() + definition.durationHours * 60 * 60 * 1000, inventory: generateMerchantInventory(type, false),
+      reminderSent: false, specialAt: 0, specialDone: false, clearance: false, lastVisitAt: Date.now()
+    };
+    saveData(data);
+    await sendRoleImageAnnouncement(message.channel,
+      `<@&${MONSTER_NOTIFY_ROLE}>\n\n🛒 **A TRAVELING MERCHANT HAS ARRIVED**\n\n**${definition.name}** is now open. Type \`!merchant\` to browse.`, definition.image, true);
+    return;
+  }
+
+  if (command === "!endmerchant") {
+    if (!data.merchant.active) return message.reply("No merchant is active.");
+    data.merchant.departureAt = Date.now(); saveData(data);
+    await processBigGameMerchantSystem();
+    return;
+  }
+  if (command === "!merchantstatus") {
+    ensureMerchantWeeklySchedule(data); saveData(data);
+    const merchant = data.merchant;
+    const visits = (data.merchantSchedule?.visits || []).map((visit, index) =>
+      `${index + 1}. <t:${Math.floor(visit.startAt / 1000)}:F> — ${visit.completed ? "COMPLETED" : visit.started ? "STARTED" : "scheduled"}`
+    ).join("\n") || "No weekly visits generated.";
+    return message.reply(
+      `🛠️ **MERCHANT ADMIN STATUS**\nActive: **${merchant.active}**\nType: **${merchant.type || "None"}**\n` +
+      `Arrival: ${merchant.arrivalAt ? `<t:${Math.floor(merchant.arrivalAt / 1000)}:F>` : "Not active"}\n` +
+      `Departure: ${merchant.departureAt ? `<t:${Math.floor(merchant.departureAt / 1000)}:F>` : "Not active"}\n` +
+      `Inventory Generated: **${merchant.inventory.length > 0}**\nOffers: **${merchant.inventory.length}**\nClearance: **${merchant.clearance}**\n\n` +
+      `**This Week's ${MERCHANT_VISITS_PER_WEEK} Visits**\n${visits}`
+    );
+  }
+  if (command === "!restockmerchant") {
+    if (!data.merchant.active) return message.reply("No merchant is active.");
+    for (const offer of data.merchant.inventory) if (offer.stock !== null) offer.stock += Math.max(1, Math.ceil((offer.initialStock || 1) / 2));
+    data.merchant.specialDone = true; saveData(data);
+    return sendRoleImageAnnouncement(message.channel, `📦 **MERCHANT RESTOCK**\n\nLimited stock has been replenished. Use \`!merchant\` to browse.`, "merchant_restock.png", false);
+  }
+  if (command.startsWith("!testmerchant")) {
+    const input = content.slice("!testmerchant".length).trim().toLowerCase().replace(/[^a-z]/g, "_") || "aldric";
+    const type = MERCHANT_TYPE_DEFINITIONS[input] ? input : "aldric";
+    const preview = { merchant: { active: true, type, departureAt: Date.now() + 8 * 60 * 60 * 1000, inventory: generateMerchantInventory(type, false) }, players: data.players };
+    const embeds = merchantInventoryEmbeds(preview, message.author.id);
+    if (embeds[0]) embeds[0].setAuthor({ name: "PRIVATE MERCHANT PREVIEW — NO DATA CHANGED" });
+    return message.reply({ embeds, allowedMentions: { parse: [] } });
+  }
+
+  if (command.startsWith("!giveitem ") || command.startsWith("!removeitem ")) {
+    const target = message.mentions.users.first();
+    const itemInput = content.replace(/^!(giveitem|removeitem)\s+<@!?\d+>\s*/i, "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    const key = Object.keys(MERCHANT_ITEMS).find(itemKey => itemKey.replace(/[^a-z0-9]/g, "") === itemInput || MERCHANT_ITEMS[itemKey].name.toLowerCase().replace(/[^a-z0-9]/g, "") === itemInput);
+    if (!target || !key) return message.reply("Usage: `!giveitem @user rusted key` or `!removeitem @user rusted key`.");
+    const targetPlayer = getPlayer(data, target.id);
+    if (command.startsWith("!giveitem ")) grantPurchasedItem(targetPlayer, key);
+    else if (!removeCollectionItem(targetPlayer, key, 1)) return message.reply("That player does not own that collectible.");
+    saveData(data);
+    return message.reply(`✅ ${command.startsWith("!giveitem ") ? "Gave" : "Removed"} **${MERCHANT_ITEMS[key].name}** ${command.startsWith("!giveitem ") ? "to" : "from"} ${formatPlayerMention(data, target.id)}.`);
+  }
+
+  if (command === "!starttokensurge") {
+    data.tokenSurge = { active: true, startsAt: Date.now(), endsAt: Date.now() + 60 * 60 * 1000, announced: true, scheduledWeekKey: `manual-${Date.now()}` };
+    saveData(data);
+    return sendRoleImageAnnouncement(message.channel, `<@&${MONSTER_NOTIFY_ROLE}>\n\n🪙 **TOKEN SURGE**\n\nFor the next hour, successful normal catches may produce Hunt Tokens.`, "token_surge.png", true);
+  }
+  if (command === "!endtokensurge") {
+    data.tokenSurge = { active: false, startsAt: 0, endsAt: 0, announced: false, scheduledWeekKey: null };
+    saveData(data);
+    return message.reply("🪙 Token Surge ended.");
+  }
+
+  if (command === "!importdex") {
+    if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can import the lifetime Dex.");
+    }
+
+    if (data.dexImportCompleted) {
+      return message.reply(
+        "✅ The lifetime Dex has already been imported. No changes were made."
+      );
+    }
+
+    const attachment = message.attachments.first();
+    if (!attachment) {
+      return message.reply(
+        "Attach `dex_export.json` to the same message as `!importdex`."
+      );
+    }
+
+    try {
+      const response = await fetch(attachment.url);
+      if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
+
+      const exportData = JSON.parse(await response.text());
+      const exportedPlayers = exportData?.players;
+
+      if (!exportedPlayers || typeof exportedPlayers !== "object" || Array.isArray(exportedPlayers)) {
+        return message.reply("❌ That file is not a valid Dex export.");
+      }
+
+      let playersImported = 0;
+      let creaturesImported = 0;
+
+      for (const [userId, exportedPlayer] of Object.entries(exportedPlayers)) {
+        const creatures = Array.isArray(exportedPlayer?.caught) ? exportedPlayer.caught : [];
+        if (creatures.length === 0) continue;
+
+        const targetPlayer = getPlayer(data, userId);
+        targetPlayer.lifetimeCaught = creatures.map(creature => ({ ...creature }));
+        playersImported++;
+        creaturesImported += creatures.length;
+      }
+
+      data.dexImportCompleted = true;
+      data.dexImportedAt = new Date().toISOString();
+      data.dexImportPlayerCount = playersImported;
+      data.dexImportCreatureCount = creaturesImported;
+      saveData(data);
+
+      return message.reply(
+        `✅ **Lifetime Dex imported successfully!**\n\n` +
+        `Players imported: **${playersImported}**\n` +
+        `Creatures imported: **${creaturesImported}**\n\n` +
+        `Only lifetime collections were imported. No points, quests, achievements, titles, items, pets, eggs, relics, cooldowns, or seasonal catches were changed.`
+      );
+    } catch (error) {
+      console.error("Dex import failed:", error);
+      return message.reply(
+        "❌ The Dex import failed. Make sure the attached file is the `dex_export.json` created by the old bot."
+      );
+    }
+  }
+
+  resetDaily(player);
+
+  if (["!remind", "!remindme", "!reminders"].includes(command)) {
+    return message.reply(
+      `🔔 **Cooldown Reminders**\n\n` +
+      `🏹 Hunt: **${player.cooldownReminders.hunt ? "ON" : "OFF"}**\n` +
+      `🐾 Fetch: **${player.cooldownReminders.fetch ? "ON" : "OFF"}**\n\n` +
+      `Use \`!remind hunt\`, \`!remind fetch\`, \`!remind all\`, or \`!remind off\`.\n` +
+      `\`!remindme\` also works as an alias.`
+    );
+  }
+
+  if (command.startsWith("!remind ") || command.startsWith("!remindme ")) {
+    const prefix = command.startsWith("!remindme ") ? "!remindme " : "!remind ";
+    const choice = command.slice(prefix.length).trim();
+
+    if (!["hunt", "fetch", "all", "off"].includes(choice)) {
+      return message.reply("Use `!remind hunt`, `!remind fetch`, `!remind all`, or `!remind off`.");
+    }
+
+    if (choice === "off") {
+      player.cooldownReminders = { hunt: false, fetch: false };
+    } else if (choice === "all") {
+      player.cooldownReminders = { hunt: true, fetch: true };
+    } else {
+      player.cooldownReminders[choice] = !player.cooldownReminders[choice];
+    }
+
+    player.reminderState.channelId = message.channel.id;
+    saveData(data);
+
+    return message.reply(
+      `🔔 **Cooldown Reminders Updated!**\n\n` +
+      `🏹 Hunt: **${player.cooldownReminders.hunt ? "ON" : "OFF"}**\n` +
+      `🐾 Fetch: **${player.cooldownReminders.fetch ? "ON" : "OFF"}**\n\n` +
+      `I'll tag only you in this channel when your enabled cooldowns are ready.`
+    );
+  }
+
+  if (command === "!keep") {
+    const choice = player.pendingHatchChoice;
+
+    if (!choice || Number(choice.expiresAt || 0) <= Date.now()) {
+      player.pendingHatchChoice = null;
+      saveData(data);
+      return message.reply(
+        "🐾 You do not have a newly hatched companion waiting for a keep/sacrifice choice."
+      );
+    }
+
+    const hatchedPet = player.pets.find(
+      pet => String(pet.id) === String(choice.petId)
+    );
+    const definition = getOwnedPetDefinition(hatchedPet);
+
+    player.pendingHatchChoice = null;
+    saveData(data);
+
+    return message.reply(
+      `💚 **COMPANION KEPT!**\n` +
+      `${definition ? `${getPetDisplayIcon(definition)} **${definition.name}**` : "Your newly hatched companion"} ` +
+      `will remain in your pet collection.`
+    );
+  }
+
+  if (command === "!sacrifice") {
+    const choice = player.pendingHatchChoice;
+
+    if (!choice || Number(choice.expiresAt || 0) <= Date.now()) {
+      player.pendingHatchChoice = null;
+      saveData(data);
+      return message.reply(
+        "⏳ You do not have a recent hatch available to sacrifice. " +
+        "The quick sacrifice option lasts **5 minutes** after hatching."
+      );
+    }
+
+    const hatchedPet = player.pets.find(
+      pet => String(pet.id) === String(choice.petId)
+    );
+
+    if (!hatchedPet) {
+      player.pendingHatchChoice = null;
+      saveData(data);
+      return message.reply(
+        "That newly hatched pet is no longer in your collection."
+      );
+    }
+
+    const equippedPet = getEquippedPet(player);
+    const equippedDefinition = getOwnedPetDefinition(equippedPet);
+    const hatchDefinition = getOwnedPetDefinition(hatchedPet);
+
+    if (!equippedPet || !equippedDefinition) {
+      return message.reply(
+        "⭐ Equip the companion you want to strengthen first, then use `!sacrifice` again."
+      );
+    }
+
+    if (String(equippedPet.id) === String(hatchedPet.id)) {
+      return message.reply(
+        "⚠️ Your newly hatched pet is currently equipped. " +
+        "Equip a different companion first if you want to sacrifice this hatch."
+      );
+    }
+
+    if (!hatchDefinition) {
+      return message.reply("That hatch could not be identified.");
+    }
+
+    const xp = PET_COMBINE_XP[hatchDefinition.rarity] || 50;
+    const distribution = distributePetXpAcrossAbilities(equippedPet, xp);
+
+    player.pets = player.pets.filter(
+      pet => String(pet.id) !== String(hatchedPet.id)
+    );
+    player.pendingHatchChoice = null;
+
+    saveData(data);
+
+    return message.reply(
+      `✨ **HATCH SACRIFICED!**\n\n` +
+      `${getPetDisplayIcon(hatchDefinition)} **${hatchDefinition.name}** was converted into ` +
+      `**${xp} XP** for your equipped companion:\n` +
+      `${getPetDisplayIcon(equippedDefinition)} **${getOwnedPetIdentity(equippedPet)}**\n\n` +
+      `⚖️ XP was evenly distributed across all **${distribution.abilityCount}** owned abilities:\n` +
+      `${formatDistributedPetXp(distribution)}\n\n` +
+      `**Ability Progress**\n${formatAllPetAbilityProgress(equippedPet)}` +
+      `${distribution.levelUps.length ? `\n🎉 **ABILITY LEVEL UP!** ${distribution.levelUps.join("\n🎉 **ABILITY LEVEL UP!** ")}` : ""}\n\n` +
+      `The sacrificed hatch does **not** transfer its ability through this quick option.`
+    );
+  }
+
+  if (command === "!fetch") {
+    const ownedPet = getEquippedPet(player), definition = getOwnedPetDefinition(ownedPet);
+    if (!ownedPet || !definition) return message.reply("Equip a pet before using `!fetch`.");
+    if (player.fetchState && !player.fetchState.completed) return message.reply(`🐾 ${getOwnedPetName(ownedPet)} is still fetching and will return <t:${Math.floor(player.fetchState.readyAt/1000)}:R>.`);
+    const left = FETCH_COOLDOWN - (Date.now() - (player.lastFetch || 0));
+    if (left > 0) return message.reply(`⏳ Your pet can fetch again in **${formatTime(left)}**.`);
+    player.lastFetch = Date.now();
+    player.fetchState = { petId: ownedPet.id, startedAt: Date.now(), readyAt: Date.now()+FETCH_DURATION, completed:false, channelId: EGGS_PETS_CHANNEL_ID };
+    player.reminderState.channelId = EGGS_PETS_CHANNEL_ID; player.reminderState.fetchDueAt = Date.now()+FETCH_COOLDOWN; player.reminderState.fetchSent = false;
+    saveData(data);
+    const embed = new EmbedBuilder().setTitle(`🐾 ${getOwnedPetName(ownedPet)} Went Fetching!`).setDescription(`${fetchFlavor(definition, ownedPet.personality, false, ownedPet)}\n\nIt will return <t:${Math.floor(player.fetchState.readyAt/1000)}:R> with whatever it finds.`);
+    const art=getPetArtworkUrl(definition); if(art) embed.setImage(art);
+    return message.reply({embeds:[embed]});
+  }
+
+  if (command.startsWith("!combine ")) {
+    const args = content.slice("!combine ".length).trim().split(/\s+/);
+
+    if (args.length < 2) {
+      return message.reply(
+        "Use `!combine keepPet# sacrificePet#`. Example: `!combine 1 3`."
+      );
+    }
+
+    const keeper = resolveOwnedPet(player, args[0]);
+    const sacrifice = resolveOwnedPet(player, args[1]);
+
+    if (!keeper || !sacrifice || keeper === sacrifice) {
+      return message.reply("Choose two different valid pet numbers from `!pets`.");
+    }
+
+    if (String(player.equippedPetId) === String(sacrifice.id)) {
+      return message.reply(
+        "You cannot sacrifice your currently equipped pet. Equip another pet first."
+      );
+    }
+
+    const keepDef = getOwnedPetDefinition(keeper);
+    const sacrificeDef = getOwnedPetDefinition(sacrifice);
+
+    if (!keepDef || !sacrificeDef) {
+      return message.reply("One of those pets could not be found.");
+    }
+
+    const sameSpecies = keeper.key === sacrifice.key;
+    const keeperName = getOwnedPetIdentity(keeper);
+    const sacrificeName = getOwnedPetIdentity(sacrifice);
+    const knownAbility = getKnownPetAbility(keeper, sacrificeDef.ability);
+    const capacity = petAbilityCapacity(player);
+    const currentAbilities = 1 + (keeper.inheritedAbilities || []).length;
+
+    let combineMode;
+    let confirmationResult;
+
+    if (sameSpecies) {
+      const xp = PET_COMBINE_XP[sacrificeDef.rarity] || 50;
+      combineMode = "sameSpecies";
+      confirmationResult =
+        `Result: **${xp} XP**, evenly split across all **${currentAbilities}** abilities owned by ${keeperName}.`;
+    } else if (knownAbility) {
+      const xp = PET_ABILITY_COMBINE_XP[sacrificeDef.rarity] || 25;
+      combineMode = "sameAbility";
+
+      confirmationResult =
+        `Result: ${keeperName} already knows **${abilityDisplayName(sacrificeDef.ability)}**, so the duplicate ability becomes **${xp} XP**, evenly split across all **${currentAbilities}** owned abilities.`;
+    } else {
+      if (currentAbilities >= capacity) {
+        return message.reply(
+          `🧬 This pet currently has **${currentAbilities}/${capacity} ability slots**. ` +
+          `Reach the next odd Hunter Level before adding another inherited ability.`
+        );
+      }
+
+      const chanceInfo = h3AbilityInheritanceChance(keeper, sacrifice, sacrificeDef.ability);
+      const chance = chanceInfo.total;
+      combineMode = "inherit";
+
+      confirmationResult =
+        `Result: **${chance}% chance** to inherit **${abilityDisplayName(sacrificeDef.ability)}** ` +
+        `(base ${chanceInfo.base}% + Bond ${chanceInfo.bondBonus}% + habitat ${chanceInfo.habitatBonus}%). ` +
+        `The sacrificed pet is consumed whether inheritance succeeds or fails.`;
+    }
+
+    const prompt = await message.reply(
+      `⚠️ **PET COMBINATION CONFIRMATION**\n\n` +
+      `Keep: **${keeperName}**\n` +
+      `Sacrifice forever: **${sacrificeName}**\n\n` +
+      `${confirmationResult}\n\n` +
+      `Type **CONFIRM** within 30 seconds.`
+    );
+
+    try {
+      const collected = await message.channel.awaitMessages({
+        filter: reply =>
+          reply.author.id === message.author.id &&
+          reply.content.trim().toUpperCase() === "CONFIRM",
+        max: 1,
+        time: 30000,
+        errors: ["time"]
+      });
+
+      await collected.first().delete().catch(() => null);
+    } catch {
+      return prompt.reply("Combination canceled.");
+    }
+
+    const fresh = loadData();
+    const freshPlayer = getPlayer(fresh, message.author.id);
+    const freshKeeper = freshPlayer.pets.find(
+      pet => String(pet.id) === String(keeper.id)
+    );
+    const freshSacrifice = freshPlayer.pets.find(
+      pet => String(pet.id) === String(sacrifice.id)
+    );
+
+    if (!freshKeeper || !freshSacrifice) {
+      return message.reply(
+        "The pets changed before confirmation. No combination occurred."
+      );
+    }
+
+    if (String(freshPlayer.equippedPetId) === String(freshSacrifice.id)) {
+      return message.reply(
+        "That pet became your equipped companion before confirmation, so it was NOT sacrificed."
+      );
+    }
+
+    const freshKeeperDef = getOwnedPetDefinition(freshKeeper);
+    const freshSacrificeDef = getOwnedPetDefinition(freshSacrifice);
+
+    if (!freshKeeperDef || !freshSacrificeDef) {
+      return message.reply("One of those pets could no longer be found.");
+    }
+
+    let result;
+
+    if (freshKeeper.key === freshSacrifice.key) {
+      const xp = PET_COMBINE_XP[freshSacrificeDef.rarity] || 50;
+      const distribution = distributePetXpAcrossAbilities(freshKeeper, xp);
+
+      result =
+        `🧬 **COMPANION ENHANCED!**\n` +
+        `${getOwnedPetIdentity(freshKeeper)} absorbed ${getOwnedPetIdentity(freshSacrifice)} and gained ` +
+        `**${xp} XP**, evenly distributed across all **${distribution.abilityCount}** owned abilities.\n\n` +
+        `${formatDistributedPetXp(distribution)}\n\n` +
+        `**Ability Progress**\n${formatAllPetAbilityProgress(freshKeeper)}` +
+        `${distribution.levelUps.length ? `\n🎉 **ABILITY LEVEL UP!** ${distribution.levelUps.join("\n🎉 **ABILITY LEVEL UP!** ")}` : ""}`;
+    } else {
+      const duplicateAbility = getKnownPetAbility(
+        freshKeeper,
+        freshSacrificeDef.ability
+      );
+
+      if (duplicateAbility) {
+        const training = addSameAbilityCombineXp(
+          freshKeeper,
+          freshSacrificeDef.ability,
+          freshSacrificeDef.rarity
+        );
+
+        result = training?.text ||
+          "The sacrificed pet's familiar ability was converted into XP.";
+      } else {
+        const freshCapacity = petAbilityCapacity(freshPlayer);
+        const freshCurrentAbilities =
+          1 + (freshKeeper.inheritedAbilities || []).length;
+
+        if (freshCurrentAbilities >= freshCapacity) {
+          return message.reply(
+            "Your ability capacity changed before confirmation. No pet was sacrificed."
+          );
+        }
+
+        const chanceInfo = h3AbilityInheritanceChance(freshKeeper, freshSacrifice, freshSacrificeDef.ability);
+        const chance = chanceInfo.total;
+
+        if (!h3AbilityDef(freshSacrificeDef.ability).inheritable) {
+          return message.reply("That special ability cannot be inherited. No pet was sacrificed.");
+        }
+
+        if (Math.random() * 100 < chance) {
+          const donorRank = getNaturalAbilityLevelInfo(freshSacrifice).level;
+          freshKeeper.inheritedAbilities.push({
+            ability: freshSacrificeDef.ability,
+            baseBonus: 1,
+            rank: donorRank,
+            sourcePetKey: freshSacrificeDef.key,
+            sourceName: getOwnedPetName(freshSacrifice),
+            sourceRarity: freshSacrificeDef.rarity,
+            xp: 0,
+            inheritedAt: Date.now()
+          });
+
+          result =
+            `🧬 **ABILITY INHERITED!**\n` +
+            `${getOwnedPetName(freshKeeper)} learned **${abilityDisplayName(freshSacrificeDef.ability)} Rank ${h3RankRoman(donorRank)}**!\n\n` +
+            `Inheritance roll: **${chance}%**. The donor's current Rank transferred, but progress toward its next Rank did not.`;
+        } else {
+          result =
+            `💨 **INHERITANCE FAILED**\n` +
+            `The **${chance}%** inheritance roll failed. ${getOwnedPetName(freshSacrifice)} was still permanently sacrificed, and ${getOwnedPetName(freshKeeper)} remains unchanged.`;
+        }
+      }
+    }
+
+    freshPlayer.pets = freshPlayer.pets.filter(
+      pet => String(pet.id) !== String(freshSacrifice.id)
+    );
+
+    // If the sacrificed pet happened to be the current post-hatch choice,
+    // clear that choice so !sacrifice cannot target it again.
+    if (
+      freshPlayer.pendingHatchChoice &&
+      String(freshPlayer.pendingHatchChoice.petId) === String(freshSacrifice.id)
+    ) {
+      freshPlayer.pendingHatchChoice = null;
+    }
+
+    saveData(fresh);
+    return message.reply(result);
+  }
+
+  if (command === "!monsternotify on") {
+    const role = message.guild.roles.cache.get(MONSTER_NOTIFY_ROLE);
+    if (!role) return message.reply("Notification role not found.");
+
+    await message.member.roles.add(role);
+    return message.reply("🔔 Monster Hunt notifications enabled!");
+  }
+
+  if (command === "!monsternotify off") {
+    const role = message.guild.roles.cache.get(MONSTER_NOTIFY_ROLE);
+    if (!role) return message.reply("Notification role not found.");
+
+    await message.member.roles.remove(role);
+    return message.reply("🔕 Monster Hunt notifications disabled.");
+  }
+
+  if (command === "!testreminder") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can test reminders.");
+    }
+
+    return message.channel.send(
+      `<@&${MONSTER_NOTIFY_ROLE}>\n\n` +
+      `🧪 **Test Monster Hunt Reminder!**\n\n` +
+      `🎯 Daily quests are available\n` +
+      `🎁 Daily reward is ready\n` +
+      `🐉 Type \`!hunt\` to begin!`
+    );
+  }
+
+  if (command === "!ultrahunt") {
+    await processUltraState(message.channel);
+
+    const freshData = loadData();
+    const state = freshData.ultraRareState;
+    const status = getUltraStateStatus(state);
+
+    if (status === "scheduled") {
+      return message.reply(`⏳ The Ultra Rare will arrive <t:${Math.floor(state.startAt / 1000)}:R>.`);
+    }
+
+    if (status !== "active") {
+      return message.reply("There is no active Ultra Rare Hunt right now.");
+    }
+
+    const monster = getUltraMonster(state.monsterKey);
+    if (!monster) return message.reply("The active Ultra Rare could not be found.");
+
+    if (monster.personality === "night" && !isMountainNight()) {
+      return message.reply("👻 The Shadow Wraith can only be hunted at night in Mountain Time.");
+    }
+
+    const ultraPlayer = getPlayer(freshData, message.author.id);
+    const participant = state.participants[message.author.id] || { attempts: 0, lastAttempt: 0 };
+    const ultraCooldownMs = getUltraCooldownMs(monster, state);
+    const timeLeft = ultraCooldownMs - (Date.now() - participant.lastAttempt);
+
+    if (timeLeft > 0) {
+      return message.reply(`⏳ You can use \`!ultrahunt\` again in **${formatTime(timeLeft)}**.`);
+    }
+
+    const choices = buildUltraCaptureChoices(ultraPlayer, monster, state, message.author.id);
+    const validNumbers = choices.map(choice => choice.number);
+    const currentChance = getUltraCatchChance(monster, state);
+    const remainingMs = Math.max(0, state.endAt - Date.now());
+
+    const choiceMessage = await message.reply(buildUltraMonsterEmbed(
+      monster,
+      `🌌 Ultra Rare Encounter — ${monster.name}`,
+      `**Rarity:** ${monster.rarity}
+` +
+      `**Current Base Catch Chance:** ${currentChance}%
+` +
+      `**Time Remaining:** ${formatTime(remainingMs)}
+` +
+      `**Your Previous Attempts:** ${participant.attempts || 0}
+` +
+      `**Special Ability:** ${monster.abilityName}
+` +
+      `${monster.abilityDescription}
+
+` +
+      `**Your Current Ultra Effects:**
+${getUltraPersonalBonusText(monster, state, message.author.id)}
+
+` +
+      `**Choose how to catch it:**
+${captureChoicesText(choices)}
+
+` +
+      `Reply with **${validNumbers.join(", ")}** within 5 minutes.
+` +
+      `Only capture items you currently own are shown.`,
+      { thumbnail: true }
+    ));
+
+    const filter = response =>
+      response.author.id === message.author.id &&
+      validNumbers.includes(Number(response.content.trim()));
+
+    try {
+      const collected = await message.channel.awaitMessages({
+        filter,
+        max: 1,
+        time: 5 * 60 * 1000,
+        errors: ["time"]
+      });
+
+      const response = collected.first();
+      const selected = choices.find(choice => choice.number === Number(response.content.trim()));
+      await response.delete().catch(() => null);
+      return performUltraCaptureAttempt(message, monster.key, selected.itemKey);
+    } catch {
+      return choiceMessage.reply(
+        `⌛ No catch choice was made. Your Ultra Hunt attempt was **not used**, and no item was consumed.`
+      );
+    }
+  }
+
+  if (command === "!relics") {
+    return message.reply(
+      `💎 **${formatPlayerName(player, message.author.username)}'s Ultra Rare Relics**\n\n` +
+      `${ultraRelicInventoryText(player)}\n\n` +
+      `Relics are single-use. Using \`!summon relic name\` sacrifices one to summon its matching Ultra Rare.`
+    );
+  }
+
+  if (command === "!inventory" || command === "!items") {
+    const merchantItems = merchantCollectionText(player);
+    const embed = new EmbedBuilder()
+      .setTitle(`🎒 ${formatPlayerName(player, message.author.username)}'s Inventory`)
+      .setDescription(`🪙 **Hunt Tokens:** ${player.huntTokens}`)
+      .addFields(
+        {
+          name: "🪤 Bait",
+          value:
+            `🔵 Rare Bait: **${player.bait.rare}**\n` +
+            `🟣 Epic Bait: **${player.bait.epic}**\n` +
+            `🟠 Legendary Bait: **${player.bait.legendary}**`
+        },
+        {
+          name: "🎯 Capture Items",
+          value: captureItemInventoryText(player) || "None"
+        },
+        {
+          name: "💎 Ultra Rare Relics",
+          value: ultraRelicInventoryText(player) || "None"
+        },
+        {
+          name: "🛒 Merchant Items & Collectibles",
+          value: merchantItems.length > 1024 ? merchantItems.slice(0, 1021) + "..." : merchantItems
+        }
+      )
+      .setFooter({ text: "Use !use item name for usable merchant items • !relics for summon details" });
+
+    return message.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+  }
+
+  if (command.startsWith("!summon ")) {
+    const relicInput = content.slice(8).trim();
+    const monster = getUltraMonster(relicInput);
+
+    if (!monster || monster.relicCommand.toLowerCase() !== relicInput.toLowerCase()) {
+      return message.reply(
+        "That Relic was not recognized. Use `!relics` to see the exact summon commands for the Relics you own."
+      );
+    }
+
+    const currentStatus = getUltraStateStatus(data.ultraRareState);
+    if (["scheduled", "active"].includes(currentStatus)) {
+      return message.reply("⚠️ The world cannot sustain two Ultra Rare monsters at once. Wait for the current event to end.");
+    }
+
+    if ((player.relics[monster.relicKey] || 0) <= 0) {
+      return message.reply(`You do not possess ${monster.relicName}.`);
+    }
+
+    player.relics[monster.relicKey]--;
+    saveData(data);
+
+    const scheduled = await scheduleSummonedUltra(message.channel, monster, message.author.id);
+    if (!scheduled) {
+      const refundData = loadData();
+      getPlayer(refundData, message.author.id).relics[monster.relicKey]++;
+      saveData(refundData);
+      return message.reply("The summon could not begin, so your Relic was returned.");
+    }
+
+    const summonData = loadData();
+    const summoner = getPlayer(summonData, message.author.id);
+    if (!summoner.ultraSummonedKeys.includes(monster.key)) {
+      summoner.ultraSummonedKeys.push(monster.key);
+    }
+    const summonUnlocks = evaluateUltraSecretRewards(summoner);
+    const automaticTitleUnlocks = checkTitleUnlocks(summoner);
+    saveData(summonData);
+    await announceTitleUnlocks(message, automaticTitleUnlocks);
+
+    return message.reply(
+      `💎 You sacrificed **${monster.relicName}**.\n` +
+      `${monster.name} will arrive in **5 minutes**!` +
+      formatSecretUnlocks(summonUnlocks)
+    );
+  }
+
+  if (command === "!world") {
+    const fresh=loadData(); const count=discoveredWorldRelicCount(fresh); const ws=fresh.worldStory||{};
+    const stability = ws.postShatter ? (ws.outcome==="failure" ? "🟠 FRACTURED" : "🟢 STABLE") : count>=5 ? "🔴 FAILURE IMMINENT" : count===4 ? "🔴 CRITICAL" : count===3 ? "🟠 UNSTABLE" : "🟢 STABLE";
+    const bar = `${"█".repeat(Math.min(10,count*2))}${"░".repeat(Math.max(0,10-count*2))}`;
+    const schedule = ws.shatterScheduledAt && !ws.postShatter ? `\n\n🚨 Emergency gathering: <t:${Math.floor(ws.shatterScheduledAt/1000)}:F> (<t:${Math.floor(ws.shatterScheduledAt/1000)}:R>)` : "";
+    const postText = ws.postShatter ? (ws.outcome==="failure" ? `An unknown planar presence remains embedded within reality.\n**Removal attempts have failed.**${ws.architectRematchAt?`\n\n👁️ Architect rematch: <t:${Math.floor(ws.architectRematchAt/1000)}:F>`:""}` : "The World Shatter has ended. Scars between realities remain.\nSomething beyond them is still watching.") : (count>=5?"The world is no longer repairing itself.":count===4?"Something remains missing.":"The world is watching.");
+    return message.reply(`🌎 **WORLD STATUS**\n\n**Stability:** ${stability}\nUnknown Relic signatures: **${count}**\nPlanar boundaries: **${ws.postShatter?(ws.outcome==="failure"?"FRACTURED":"SCARRED"):count>=4?"FAILING":"Fluctuating"}**\n\n${bar}\n\n${postText}${schedule}`);
+  }
+
+  if (command.startsWith("!worldshatter")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("Only admins can control the World Shatter.");
+    const args=content.split(/\s+/).slice(1); const sub=(args.shift()||"status").toLowerCase(); const fresh=loadData(); const ws=fresh.worldStory;
+    if(sub==="status") return message.reply(worldShatterStatusText(fresh));
+    if(sub==="preview") {
+      const type=(args.shift()||"anomaly").toLowerCase(); const samples={anomaly:FOUR_OF_FIVE_ANOMALIES[0],final:`🔥 **THE FIFTH RELIC HAS BEEN DISCOVERED**\n\n**WORLD PROGRESS: 5/5 — COMPLETE**\n\nThe five Relics begin to resonate.\n\n**The fragments were never pieces of a key. They were pieces of a seal.**`,shatter:`💥 **WORLD SHATTER**\n\nThe sky fractures. The five known planes begin collapsing into ours.`};
+      return message.reply({content:`🧪 **PRIVATE PREVIEW**\n\n${samples[type]||samples.anomaly}`,allowedMentions:{parse:[]}});
+    }
+    if(sub==="schedule") {
+      let target=0; const joined=args.join(" ").toLowerCase();
+      if(joined==="saturday 8pm" || joined==="sat 8pm") target=nextWorldShatterSaturday(Date.now());
+      else if(/^\d{10,13}$/.test(joined)) target=Number(joined.length===10?Number(joined)*1000:joined);
+      if(!target) return message.reply("Use `!worldshatter schedule saturday 8pm` or provide a Unix timestamp.");
+      ws.shatterScheduledAt=target; ws.shatterScheduleManual=true; ws.finalWarningStartedAt=ws.finalWarningStartedAt||Date.now(); ws.phase="final_warning"; ws.beats=buildFinalWarningBeats(ws.finalWarningStartedAt,target); ws.missedStart=false; saveData(fresh);
+      return message.reply(`✅ World Shatter scheduled for <t:${Math.floor(target/1000)}:F> (<t:${Math.floor(target/1000)}:R>).`);
+    }
+    if(sub==="delay") {
+      const raw=(args[0]||"").toLowerCase(); const m=raw.match(/^(\d+)(h|d)$/); if(!m) return message.reply("Use `!worldshatter delay 6h` or `!worldshatter delay 1d`.");
+      const ms=Number(m[1])*(m[2]==="d"?24:1)*60*60*1000; ws.shatterScheduledAt=(ws.shatterScheduledAt||Date.now())+ms; ws.beats=buildFinalWarningBeats(ws.finalWarningStartedAt||Date.now(),ws.shatterScheduledAt); ws.missedStart=false; saveData(fresh); return message.reply(`✅ World Shatter delayed to <t:${Math.floor(ws.shatterScheduledAt/1000)}:F>.`);
+    }
+    if(sub==="start") return message.reply("🚫 World Shatter is archived and disabled this season. Distortion Events are the active reality-event system.");
+    if(sub==="stage") {
+      const stage=(args[0]||"").toLowerCase(); if(!ws.event?.active) return message.reply("The World Shatter is not active.");
+      if(stage==="stabilize") await beginStabilization(fresh); else if(stage==="unmade") await revealUnmade(fresh,false); else if(stage==="boss") await beginArchitectBoss(fresh); else return message.reply("Stages: `stabilize`, `unmade`, `boss`."); return message.reply(`✅ Forced World Shatter stage: **${stage}**.`);
+    }
+    if(sub==="end") { if(!ws.event?.active) return message.reply("No World Shatter event is active."); const result=(args[0]||"victory").toLowerCase(); const success=result!=="failure"; await finishWorldShatter(fresh,success); return message.reply(`✅ World Shatter ended as a **${success?"victory":"failure"}**.`); }
+    if(sub==="rematch") { if(ws.outcome!=="failure") return message.reply("A rematch is only available after an Architect failure."); if(ws.event?.active) return message.reply("A World Shatter event is already active."); await startArchitectRematch(fresh); return message.reply("✅ Architect rematch started."); }
+    return message.reply("World Shatter admin: `!worldshatter status`, `schedule saturday 8pm`, `delay 1d`, `start`, `stage stabilize|unmade|boss`, `end victory|failure`, `rematch`, `preview anomaly|final|shatter`.");
+  }
+
+  if (command === "!shatterattack") {
+    const fresh=loadData(); const ev=fresh.worldStory?.event; if(!ev?.active || ev.stage!=="boss") return message.reply("There is no World Shatter boss to attack right now.");
+    const ps=ev.participants[message.author.id] || (ev.participants[message.author.id]={planes:{},catches:0,attacks:0,lastBossAttack:0,hunterDamage:0,petDamage:0,totalDamage:0});
+    const now=Date.now(); const left=WORLD_SHATTER_BOSS_COOLDOWN-(now-(ps.lastBossAttack||0)); if(left>0) return message.reply(`⏳ You can strike the Architect again in **${formatTime(left)}**.`);
+    const attackPlayer=getPlayer(fresh,message.author.id); const result=rollArchitectAttack(attackPlayer,ev);
+    ps.lastBossAttack=now; ps.attacks=(ps.attacks||0)+1; ps.hunterDamage=(ps.hunterDamage||0)+result.hunterDamage; ps.petDamage=(ps.petDamage||0)+result.petDamage; ps.totalDamage=(ps.totalDamage||0)+result.total;
+    const before=Number(ev.bossHp||0); ev.bossHp=Math.max(0,before-result.total); if(before>0 && ev.bossHp<=0) ev.finalBlowUserId=message.author.id;
+    saveData(fresh);
+    const petLine=result.definition ? `${getPetDisplayIcon(result.definition)} **${getOwnedPetName(result.equipped)}** attacks beside you!\n🐾 Companion Damage: **${result.petDamage}**` : `🐾 **No companion equipped** — Companion Damage: **0**`;
+    const bonusLine=result.inheritedBonus>0 ? `\n❄️ Frozen Opening Bonus: **+${result.inheritedBonus} Hunter Damage**` : "";
+    const effectText=result.effects.length?`\n\n${result.effects.join("\n")}`:"";
+    await message.reply(`⚔️ **WORLD SHATTER ATTACK**\n\n🏹 Hunter Damage: **${result.hunterDamage}**${bonusLine}\n${petLine}${effectText}\n\n💥 **TOTAL DAMAGE: ${result.total}**\n👁️ Architect of Nothing: **${ev.bossHp}/${ev.bossMaxHp} HP**`);
+    if(ev.bossHp<=0){const finalData=loadData();await finishWorldShatter(finalData,true);} return;
+  }
+
+  if (command === "!ultrastatus") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can view the hidden Ultra Rare status.");
+    }
+
+    await processUltraState(message.channel);
+
+    const freshData = loadData();
+    const state = freshData.ultraRareState;
+    const status = getUltraStateStatus(state);
+
+    const discoveredCount = RELIC_KEYS.filter(
+      relicKey => freshData.worldProgress?.[relicKey]
+    ).length;
+
+    const progressPercent = Math.floor(
+      (discoveredCount / RELIC_KEYS.length) * 100
+    );
+
+    const relicProgress = ultraRareMonsters
+      .map(monster => {
+        const discovered = Boolean(
+          freshData.worldProgress?.[monster.relicKey]
+        );
+
+        let currentlyOwned = 0;
+        for (const savedPlayer of Object.values(freshData.players || {})) {
+          currentlyOwned += savedPlayer.relics?.[monster.relicKey] || 0;
+        }
+
+        return (
+          `${discovered ? "✅" : "⬜"} **${monster.relicName}**` +
+          ` — ${discovered ? "Discovered" : "Not Discovered"}` +
+          ` | Currently Held: **${currentlyOwned}**`
+        );
+      })
+      .join("\n");
+
+    let eventText = "No Ultra Rare Hunt is currently active or scheduled.";
+
+    if (["scheduled", "active"].includes(status)) {
+      const monster = getUltraMonster(state.monsterKey);
+      const when = status === "scheduled"
+        ? `Arrives <t:${Math.floor(state.startAt / 1000)}:R>`
+        : `Ends <t:${Math.floor(state.endAt / 1000)}:R>`;
+
+      eventText =
+        `${monster?.name || "Unknown Ultra Rare"}\n` +
+        `Status: **${status === "scheduled" ? "Scheduled" : "Active"}**\n` +
+        `${when}\n` +
+        `Participants: **${Object.keys(state.participants || {}).length}**\n` +
+        `Failed Attempts: **${state.failedAttempts || 0}**`;
+    }
+
+    const worldEaterStatus = discoveredCount === RELIC_KEYS.length
+      ? `⚠️ **FINAL WARNING ACTIVE** — ${freshData.worldStory?.shatterScheduledAt ? `World Shatter scheduled <t:${Math.floor(freshData.worldStory.shatterScheduledAt/1000)}:R>.` : "World Shatter is unlocked."}`
+      : discoveredCount === RELIC_KEYS.length-1
+        ? "🚨 **CRITICAL — 4/5 Relics discovered. Reality Anomalies are active.**"
+        : `🔒 Locked — **${RELIC_KEYS.length - discoveredCount}** unique Relic${RELIC_KEYS.length - discoveredCount === 1 ? "" : "s"} still undiscovered.`;
+
+    cleanupExpiredCommunityBlessings(freshData);
+    const communityPoints = getCommunitySeasonPoints(freshData);
+    const awardedMilestones = new Set((freshData.worldCommunityMilestonesAwarded || []).map(Number));
+    const nextCommunityThreshold = COMMUNITY_WORLD_THRESHOLDS.find(value => !awardedMilestones.has(value));
+    const communityActivityText = nextCommunityThreshold
+      ? `Current Community Season Points: **${communityPoints.toLocaleString()}**\nNext hidden guaranteed Relic threshold: **${nextCommunityThreshold.toLocaleString()}**\nMilestones consumed: **${[...awardedMilestones].sort((a,b)=>a-b).join(", ") || "None"}**`
+      : `Current Community Season Points: **${communityPoints.toLocaleString()}**\nAll hidden guaranteed Relic milestones have been consumed.`;
+
+    const activeBlessings = Object.entries(freshData.communityBlessings || {})
+      .filter(([, blessing]) => Number(blessing?.expiresAt || 0) > Date.now())
+      .map(([relicKey, blessing]) => {
+        const definition = COMMUNITY_BLESSINGS[relicKey];
+        return `${definition?.icon || "✨"} **${blessing.name || definition?.name || relicKey}** — ${blessing.description || definition?.description || "Active"} | Ends <t:${Math.floor(blessing.expiresAt / 1000)}:R>`;
+      })
+      .join("\n") || "None active.";
+
+    const schedulerText = (freshData.ultraAdminPauseUntil || 0) > Date.now()
+      ? `Paused until <t:${Math.floor(freshData.ultraAdminPauseUntil / 1000)}:T> (<t:${Math.floor(freshData.ultraAdminPauseUntil / 1000)}:R>)`
+      : "Running normally";
+
+    return message.reply(
+      `🛡️ **ADMIN ULTRA RARE STATUS**\n\n` +
+      `🚨 **Current Event**\n${eventText}\n\n` +
+      `⏱️ **Automatic Scheduler**\n${schedulerText}\n\n` +
+      `🌍 **Hidden World Progress**\n` +
+      `Progress: **${discoveredCount}/${RELIC_KEYS.length} (${progressPercent}%)**\n\n` +
+      `${relicProgress}\n\n` +
+      `📊 **Hidden Community Activity**\n${communityActivityText}\n\n` +
+      `✨ **Active Community Blessings**\n${activeBlessings}\n\n` +
+      `👁️ **World Eater Status**\n${worldEaterStatus}`
+    );
+  }
+
+  if (command === "!endultra") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can end an Ultra Rare Hunt.");
+    }
+
+    const freshData = loadData();
+    const state = freshData.ultraRareState;
+    const status = getUltraStateStatus(state);
+
+    if (!["scheduled", "active"].includes(status)) {
+      return message.reply("There is no active or scheduled Ultra Rare Hunt to end.");
+    }
+
+    const monster = getUltraMonster(state.monsterKey);
+    freshData.ultraRareState = null;
+    const skippedAutomaticEvents = completeDueWeeklyUltraEvents(freshData);
+    freshData.ultraAdminPauseUntil = Date.now() + 10 * 60 * 1000;
+    saveData(freshData);
+
+    return message.channel.send(
+      `🛑 **Ultra Rare Hunt ended by an administrator.**
+` +
+      `${monster ? monster.name : "The Ultra Rare"} has been removed.
+` +
+      `No participation or escape rewards were awarded.
+` +
+      `${skippedAutomaticEvents > 0 ? `🗓️ Skipped **${skippedAutomaticEvents}** overdue automatic spawn${skippedAutomaticEvents === 1 ? "" : "s"} so another event will not immediately replace it.
+` : ""}` +
+      `⏸️ Automatic Ultra Rare spawning is paused for **10 minutes**.`
+    );
+  }
+
+  if (command === "!ultraclear") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can clear Ultra Rare event data.");
+    }
+
+    const freshData = loadData();
+    const hadEvent = ["scheduled", "active"].includes(
+      getUltraStateStatus(freshData.ultraRareState)
+    );
+
+    freshData.ultraRareState = null;
+    const skippedAutomaticEvents = completeDueWeeklyUltraEvents(freshData);
+    freshData.ultraAdminPauseUntil = Date.now() + 10 * 60 * 1000;
+    saveData(freshData);
+
+    return message.reply(
+      `🧹 **Ultra Rare event data cleared.**
+` +
+      `Current event removed: **${hadEvent ? "Yes" : "No"}**
+` +
+      `Overdue automatic spawns skipped: **${skippedAutomaticEvents}**
+` +
+      `Automatic spawning paused: **10 minutes**
+
+` +
+      `Collections, points, Relics, and hidden world progress were preserved.`
+    );
+  }
+
+  if (command.startsWith("!startultra")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can start an Ultra Rare Hunt.");
+    }
+
+    const requested = content.slice("!startultra".length).trim();
+    const monster = requested ? getUltraMonster(requested) : selectRandomUltraMonster();
+    if (!monster) {
+      return message.reply("Ultra Rare not found. Example: `!startultra Void Kraken`");
+    }
+
+    const started = await announceUltraHunt(message.channel, monster, message.author.id);
+    return message.reply(started ? `✅ Started the ${monster.name} event.` : "An Ultra Rare is already active or scheduled.");
+  }
+
+  if (command === "!distortionstatus") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("Only admins can view the hidden Distortion schedule.");
+    generateDistortionSchedule(data); saveData(data);
+    const events=(data.distortionSchedule?.events||[]).map((e,i)=>`${i+1}. <t:${Math.floor(e.startAt/1000)}:F> — ${e.skipped?"SKIPPED":e.started?"STARTED":e.ended?"ENDED":"scheduled"}`).join("\n") || "No schedule yet.";
+    const active=data.activeDistortion ? `${DISTORTIONS[data.activeDistortion.key]?.name||data.activeDistortion.key} until <t:${Math.floor(data.activeDistortion.endAt/1000)}:R>` : "None";
+    return message.reply(`🌀 **DISTORTION ADMIN STATUS**\nHidden Progress: **${discoveredWorldRelicCount(data)}/5**\nActive: **${active}**\n\n**This Week (realm identities stay classified):**\n${events}`);
+  }
+
+  if (command.startsWith("!startdistortion")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("Only admins can start a live Distortion.");
+    const requested=content.slice("!startdistortion".length).trim().toLowerCase();
+    const key=requested && DISTORTIONS[requested] ? requested : ["infernal","frost","arcane","hollow","astral"][Math.floor(Math.random()*5)];
+    const ok=await startLiveDistortion(data,null,key);
+    return message.reply(ok?`✅ Live Distortion started: **${DISTORTIONS[key].name}**.`:"A live Distortion is already active.");
+  }
+
+  if (command === "!enddistortion") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("Only admins can end a live Distortion.");
+    const ok=await endLiveDistortion(data,"admin");
+    return message.reply(ok?"✅ Live Distortion ended.":"No live Distortion is active.");
+  }
+
+  if (command.startsWith("!testhunt")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("Only admins can use the Monster Hunt sandbox.");
+    const args=content.slice("!testhunt".length).trim().split(/\s+/).filter(Boolean);
+    const sub=(args.shift()||"help").toLowerCase();
+
+    if(sub==="help"){
+      return message.reply(
+        `🧪 **PRIVATE ADMIN TEST SANDBOX**\n`+
+        `Nothing here activates for other players.\n\n`+
+        `\`!testhunt distortion infernal/frost/arcane/hollow/astral/unmade\`\n`+
+        `\`!testhunt preview warning|critical|opening|closing [distortion]\`\n`+
+        `\`!testhunt end\`\n\`!testhunt cooldown on/off\`\n`+
+        `\`!testhunt egg scorched_rift/shardbound/drowned_rune/soulbound/paradox/impossible\`\n`+
+        `\`!testhunt pet pet_key\`\n\`!testhunt monster monster_name\`\n`+
+        `\`!testhunt assets\`\n\`!testhunt status\`\n\`!testhunt cleanup\``
+      );
+    }
+    if(sub==="distortion"){
+      const key=(args[0]||"").toLowerCase();
+      if(!DISTORTIONS[key]) return message.reply("Unknown test Distortion.");
+      player.adminTest.distortionKey=key;
+      player.lastHunt=0;
+      saveData(data);
+      const def=DISTORTIONS[key];
+      const img=findImageFile(def.openingImage);
+      const embed=new EmbedBuilder().setTitle(`🧪 PRIVATE ADMIN TEST • ${def.name}`).setDescription(`This simulation exists **only for you** and stays in **this channel**.\n\n⚡ Your test \`!hunt\` cooldown: **30 minutes**\n🌀 Test pool: **60% Distortion / 40% normal**\n🥚 Distortion egg testing is enabled on your catches.\n\n🚫 No @everyone ping\n🚫 No global event state\n🚫 No other-player cooldown reset\n🚫 No weekly schedule changes\n\nUse \`!testhunt end\` when finished.`);
+      const files=[]; if(img){embed.setImage(`attachment://${path.basename(img)}`);files.push(new AttachmentBuilder(img));}
+      return message.reply({embeds:[embed],files,allowedMentions:{parse:[]}});
+    }
+    if(sub==="preview"){
+      const type=(args.shift()||"").toLowerCase();
+      const key=(args.shift()||player.adminTest.distortionKey||"").toLowerCase();
+      const def=DISTORTIONS[key];
+      if(!def) return message.reply("Choose a test Distortion first or provide one: `!testhunt preview opening frost`.");
+      if(type==="warning") return sendImageAnnouncement(message.channel,`🧪 **PRIVATE ADMIN TEST — 5 MINUTE WARNING**\n\n⚠️ **Something is wrong...**\n\nThe air around the hunting grounds has begun to change.\nReality instability is increasing.\n\n**BREACH IMMINENT: 5 MINUTES**`,`distortion_warning.png`,false);
+      if(type==="critical") return sendImageAnnouncement(message.channel,`🧪 **PRIVATE ADMIN TEST — CRITICAL WARNING**\n\n🚨 **REALITY INSTABILITY: CRITICAL**\n\nThe fractures are spreading.\nThe hunting grounds are seconds from a planar breach.\n\n**BREACH IMMINENT: 1 MINUTE**`,`distortion_critical.png`,false);
+      if(type==="opening"){
+        const txt=key==="unmade" ? `🧪 **PRIVATE ADMIN TEST — UNKNOWN DISTORTION OPENING**\n\n⚠️ **DISTORTION DETECTED**\nAttempting planar identification...\n❌ **UNKNOWN**\n\n**This plane does not exist.**\n\n⏱️ Event duration: **3 hours**\n⚡ \`!hunt\` cooldown: **30 minutes**` : `🧪 **PRIVATE ADMIN TEST — OPENING**\n\n${def.icon} **WORLD DISTORTION DETECTED — ${def.name.toUpperCase()}**\n\n⏱️ Event duration: **3 hours**\n⚡ \`!hunt\` cooldown: **30 minutes**\n🥚 Strange eggs can be discovered.`;
+        return sendImageAnnouncement(message.channel,txt,def.openingImage,false);
+      }
+      if(type==="closing"){
+        const txt=key==="unmade" ? `🧪 **PRIVATE ADMIN TEST — CLOSING**\n\n**The distortion is gone.**\n\n*You don't remember seeing it close.*` : `🧪 **PRIVATE ADMIN TEST — CLOSING**\n\n${def.icon} **${def.name.toUpperCase()} IS COLLAPSING...**\n\nThe breach has sealed.`;
+        return sendImageAnnouncement(message.channel,txt,def.closingImage,false);
+      }
+      return message.reply("Use `!testhunt preview warning|critical|opening|closing [distortion]`.");
+    }
+    if(sub==="end"){ player.adminTest.distortionKey=null; saveData(data); return message.reply("🧪 Your private Distortion simulation has ended."); }
+    if(sub==="cooldown"){ player.adminTest.cooldownBypass=(args[0]||"").toLowerCase()==="off"; saveData(data); return message.reply(`🧪 Admin cooldown bypass: **${player.adminTest.cooldownBypass?"ON":"OFF"}**.`); }
+    if(sub==="egg"){
+      const key=(args[0]||"").toLowerCase(); const egg=DISTORTION_EGGS[key];
+      if(!egg) return message.reply("Unknown Distortion egg key.");
+      const id=`testegg-${Date.now()}`; player.eggs.push({id,eggKey:key,rarity:"Distortion",foundAt:Date.now(),source:"Admin Test",adminTest:true}); player.adminTest.generatedEggIds.push(id); saveData(data);
+      return message.reply(`🧪 Added ${egg.icon} **${egg.name}** to your inventory. Use \`!eggs\`, \`!incubate #\`, then \`!hatch\`.`);
+    }
+    if(sub==="pet"){
+      const key=(args[0]||"").toLowerCase(); const def=getPetDefinition(key);
+      if(!def) return message.reply("Unknown pet key.");
+      const owned={id:player.nextPetId++,key:def.key,personality:PET_PERSONALITIES[Math.floor(Math.random()*PET_PERSONALITIES.length)],companionXp:0,affectionEvents:0,timesHelped:0,hatchedAt:Date.now(),adminTest:true};
+      player.pets.push(owned); player.adminTest.generatedPetIds.push(owned.id); saveData(data);
+      return message.reply(`🧪 Added **${def.name}** as test pet #${player.pets.length}. Try \`!viewpet ${player.pets.length}\`.`);
+    }
+    if(sub==="monster"){
+      const wanted=args.join(" ").toLowerCase();
+      const pool=Object.values(DISTORTIONS).flatMap(d=>d.monsters);
+      const monster=pool.find(m=>m.name.toLowerCase()===wanted || m.image.replace(".png","")===wanted.replace(/\s+/g,"_"));
+      if(!monster) return message.reply("Unknown Distortion monster.");
+      player.currentMonster={...monster,distortionEncounter:true,distortionKey:Object.keys(DISTORTIONS).find(k=>DISTORTIONS[k].monsters.some(m=>m.name===monster.name)),adminTest:true};
+      player.lastHunt=0; saveData(data);
+      return message.reply(buildMonsterEmbed(player.currentMonster,`🧪 ADMIN TEST • ${monster.name}`,`**Rarity:** ${monster.rarity}\n**Capture Chance:** ${monster.chance}%\nThis test encounter exists only for your account.`));
+    }
+    if(sub==="assets"){
+      const names=[
+        "distortion_warning.png","distortion_critical.png",
+        ...Object.values(DISTORTIONS).flatMap(d=>[d.openingImage,d.closingImage,...d.monsters.map(m=>m.image)]).filter(Boolean),
+        ...Object.values(DISTORTION_EGGS).flatMap(e=>[e.image,e.hatchingImage]).filter(Boolean),
+        ...pets.filter(p=>["Infernal Rift","Shattered Frost","Sunken Arcane","Hollow Veil","Astral Fracture","The Unmade"].includes(p.habitat)).map(p=>p.image||`${p.key}.png`)
+      ];
+      const unique=[...new Set(names)]; const missing=unique.filter(name=>!findImageFile(name));
+      return message.reply(`🧪 **ASSET AUDIT**\nFound: **${unique.length-missing.length}/${unique.length}**\nMissing: **${missing.length}**${missing.length?`\\n\\n${missing.map(x=>`❌ ${x}`).join("\\n")}`:"\\n✅ All configured assets were found."}`);
+    }
+    if(sub==="status") return message.reply(`🧪 **TEST STATUS**\nPrivate Distortion: **${player.adminTest.distortionKey||"Off"}**\nCooldown bypass: **${player.adminTest.cooldownBypass?"On":"Off"}**\nTest pets: **${player.adminTest.generatedPetIds.length}**\nTest eggs: **${player.adminTest.generatedEggIds.length}**`);
+    if(sub==="cleanup"){
+      const petIds=new Set(player.adminTest.generatedPetIds.map(String)); const eggIds=new Set(player.adminTest.generatedEggIds.map(String));
+      player.pets=player.pets.filter(p=>!petIds.has(String(p.id))&&!p.adminTest);
+      player.eggs=player.eggs.filter(e=>!eggIds.has(String(e.id))&&!e.adminTest);
+      player.incubatingEggs=player.incubatingEggs.filter(e=>!e.adminTest);
+      if(player.equippedPetId && petIds.has(String(player.equippedPetId))) player.equippedPetId=null;
+      player.currentMonster=null; player.adminTest={distortionKey:null,cooldownBypass:false,generatedPetIds:[],generatedEggIds:[],generatedCatchIds:[]}; saveData(data);
+      return message.reply("🧹 All private admin-test pets, eggs, incubations, encounters, and test state were removed.");
+    }
+    return message.reply("Unknown sandbox option. Use `!testhunt help`.");
+  }
+
+  if(command==="!bounty"||command==="!bountystatus"){const b=ensureBountyData(data);if(!b.active)return message.reply(b.status==="cooldown"&&b.nextAt>Date.now()?`📜 No bounty is active. The next bounty is expected <t:${Math.floor(b.nextAt/1000)}:R>.`:"📜 No bounty is currently posted.");const ready=bountyReadyAt(data,message.author.id),captured=b.status==="awaiting_turnin";return message.reply(`📜 **ACTIVE BOUNTY**\n\n🧙 Posted by: **${bountyNpc(data)?.name||"Unknown Hunter"}**\n🎯 Target: **${captured?bountyTarget(data)?.name:"UNKNOWN"}**\n🔎 ${bountyClue(data)}\n🎯 Your Target Chance: **${bountyTracker(data,message.author.id).chance}%**\n🧩 Your Clues Found: **${bountyTracker(data,message.author.id).clues}**\n👥 Participants: **${bountyCount(data)}**\n🏹 Attempts: **${b.attempts}**\n\n${captured?(b.trophyHolderId===message.author.id?"🏆 Use `!turninbounty` to return the trophy.":"🏆 Waiting for the catcher to return the trophy."):(Date.now()>=ready?"✅ Use `!bountyhunt` now.":`⏱️ Ready <t:${Math.floor(ready/1000)}:R>.`)}`)}
+  if(command==="!bountyhunt"){
+    const r=await performBountyHunt(data,message.author.id,message.channel);
+    if(!r.ok){
+      return message.reply(
+        r.code==="cooldown"
+          ? `⏱️ Your next Bounty Hunt is ready <t:${Math.floor(r.readyAt/1000)}:R>.`
+          : `📜 ${r.error}`
+      );
+    }
+
+    if(r.result==="clue"){
+      return message.reply(
+        `🔎 **BOUNTY TRAIL**\n\nYou searched the trail, but did not locate the target this time.\n` +
+        `**${r.clue}**\n\n👥 ${r.participants} participating • 🏹 ${r.attempts} attempts`
+      );
+    }
+
+    // Target found: from here on this works exactly like a normal capture.
+    const freshData=loadData();
+    const freshPlayer=getPlayer(freshData,message.author.id);
+    const monster=freshPlayer.currentMonster;
+    if(!monster?.bountyEncounter)return message.reply("The bounty trail vanished before the encounter could begin.");
+
+    const choices=buildCaptureChoices(freshPlayer,monster);
+    const validNumbers=choices.map(choice=>choice.number);
+    const chanceInfo=calculateCaptureChance(freshPlayer,monster,null,freshData,message.author.id);
+
+    const encounterMessage=await message.reply(
+      buildMonsterEmbed(
+        monster,
+        `${monster.bountyEncounter ? "📜 BOUNTY TARGET FOUND" : "🐾 BOUNTY TRAIL ENCOUNTER"} — ${monster.name}`,
+        `${monster.bountyEncounter ? "You tracked down the actual bounty target!" : "This creature crossed the bounty trail. Catch it to uncover a clue and improve your odds of finding the real target."}\n\n` +
+        `**Base Capture Chance:** ${monster.chance}%\n` +
+        `**Current Catch Chance:** ${chanceInfo.total}%\n\n` +
+        `**Choose how to catch it:**\n${captureChoicesText(choices)}\n\n` +
+        `Reply with **${validNumbers.join(", ")}** within 5 minutes.\n` +
+        `Only capture items you currently own are shown.`
+      )
+    );
+
+    const filter=response=>
+      response.author.id===message.author.id &&
+      validNumbers.includes(Number(response.content.trim()));
+
+    try{
+      const collected=await message.channel.awaitMessages({
+        filter,max:1,time:5*60*1000,errors:["time"]
+      });
+      const response=collected.first();
+      const selected=choices.find(choice=>choice.number===Number(response.content.trim()));
+      await response.delete().catch(()=>null);
+      return performCaptureAttempt(message,message.author.id,selected.itemKey);
+    }catch{
+      const timeoutData=loadData();
+      const timeoutPlayer=getPlayer(timeoutData,message.author.id);
+      if(timeoutPlayer.currentMonster?.bountyEncounter){
+        timeoutPlayer.currentMonster=null;
+        saveData(timeoutData);
+      }
+      return encounterMessage.reply(
+        `⌛ **The bounty target escaped because no capture choice was made within 5 minutes.**`
+      );
+    }
+  }
+
+  if(command==="!turninbounty"){const r=await turnInBounty(data,message.author.id,message.channel);if(!r.ok)return message.reply(`📜 ${r.error}`);return}
+  if(command.startsWith("!startbounty")){if(!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))return message.reply("Only admins can start a bounty.");if(ensureBountyData(data).active)return message.reply("A bounty is already active.");const raw=content.slice(12).trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");const forced=BOUNTY_TARGETS.find(t=>t.key===raw||t.name.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"")===raw)?.key||null;startBounty(data,forced);saveData(data);await announceBountyStart(message.channel,data);return}
+  if(command==="!endbounty"){if(!message.member?.permissions.has(PermissionsBitField.Flags.Administrator))return message.reply("Only admins can end a bounty.");const b=ensureBountyData(data);b.active=false;b.status="idle";b.nextAt=0;b.catcherId=null;b.trophyHolderId=null;saveData(data);return message.reply("📜 Active bounty ended. No rewards awarded.")}
+
+  if(command.startsWith("!bountytest")){
+    if(!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)){
+      return message.reply("Only admins can use Bounty test controls.");
+    }
+
+    const sub=content.slice("!bountytest".length).trim().toLowerCase();
+    const b=ensureBountyData(data);
+    const target=bountyTarget(data);
+    const player=getPlayer(data,message.author.id);
+
+    if(!sub || sub==="help"){
+      return message.reply(
+        `🧪 **BOUNTY TEST CONTROLS**\n\n` +
+        `\`!bountytest status\` — Show the real live Bounty state\n` +
+        `\`!bountytest resetcooldown\` — Clear only your Bounty cooldown\n` +
+        `\`!bountytest clue\` — Add yourself as a participant + advance a clue\n` +
+        `\`!bountytest escape\` — Simulate a close encounter without capture\n` +
+        `\`!bountytest catch\` — Force the current target to be captured by you\n` +
+        `\`!bountytest next\` — After a completed Bounty, post the next one immediately for testing\n\n` +
+        `These commands affect the live Bounty test state, but do **not** change Normal Hunt or Big Game cooldowns.`
+      );
+    }
+
+    if(sub==="status"){
+      const liveTarget=bountyTarget(data);
+      const nextText=b.nextAt ? `<t:${Math.floor(b.nextAt/1000)}:F> (<t:${Math.floor(b.nextAt/1000)}:R>)` : "None";
+      return message.reply(
+        `🧪 **LIVE BOUNTY TEST STATUS**\n\n` +
+        `Active: **${b.active}**\n` +
+        `Status: **${b.status}**\n` +
+        `Target (admin view): **${liveTarget?.name || "None"}**\n` +
+        `NPC: **${bountyNpc(data)?.name || "None"}**\n` +
+        `Participants: **${bountyCount(data)}**\n` +
+        `Attempts: **${Number(b.attempts||0)}**\n` +
+        `Clue level: **${Number(b.clueLevel||0)+1}**\n` +
+        `Catcher: **${b.catcherId ? `<@${b.catcherId}>` : "None"}**\n` +
+        `Trophy holder: **${b.trophyHolderId ? `<@${b.trophyHolderId}>` : "None"}**\n` +
+        `Next bounty: ${nextText}\n\n` +
+        `Your Hunter Points: **${Number(player.points||0)}**\n` +
+        `Your Hunt Tokens: **${Number(player.huntTokens||0)}**`
+      );
+    }
+
+    if(sub==="resetcooldown"){
+      b.lastAttempts[message.author.id]=0;
+      saveData(data);
+      return message.reply("🧪 Your **Bounty Hunt cooldown only** has been cleared.");
+    }
+
+    if(sub==="clue"){
+      if(!b.active || b.status!=="hunting" || !target) return message.reply("No active hunting-stage Bounty exists.");
+      b.participants[message.author.id]=true;
+      b.lastAttempts[message.author.id]=Date.now();
+      b.attempts=Number(b.attempts||0)+1;
+      b.clueLevel=Math.min(target.clues.length-1,Number(b.clueLevel||0)+1);
+      saveData(data);
+      return message.reply(
+        `🧪 **FORCED CLUE RESULT**\n\n🔎 ${bountyClue(data)}\n\n` +
+        `Participants: **${bountyCount(data)}** • Attempts: **${b.attempts}**`
+      );
+    }
+
+    if(sub==="escape"){
+      if(!b.active || b.status!=="hunting" || !target) return message.reply("No active hunting-stage Bounty exists.");
+      b.participants[message.author.id]=true;
+      b.lastAttempts[message.author.id]=Date.now();
+      b.attempts=Number(b.attempts||0)+1;
+      b.clueLevel=Math.min(target.clues.length-1,Number(b.clueLevel||0)+1);
+      saveData(data);
+      return message.reply(
+        `🧪 **FORCED CLOSE ENCOUNTER**\n\nThe hidden target escaped.\n\n` +
+        `🔎 ${bountyClue(data)}\nParticipants: **${bountyCount(data)}** • Attempts: **${b.attempts}**`
+      );
+    }
+
+    if(sub==="catch"){
+      if(!b.active || b.status!=="hunting" || !target) return message.reply("No active hunting-stage Bounty exists.");
+      b.lastAttempts[message.author.id]=0;
+      saveData(data);
+      return message.reply(
+        `🧪 **CAPTURE TEST UPDATED**\n\n` +
+        `Bounty captures are no longer forced automatically.\n` +
+        `Your Bounty cooldown was cleared. Use \`!bountyhunt\` or the Activity Bounty Hunt button until the target is encountered, then use the real capture roll.`
+      );
+    }
+
+    if(sub==="next"){
+      if(b.active) return message.reply("End or complete the current Bounty before forcing the next one.");
+      if(b.status!=="cooldown") return message.reply("The Bounty is not currently in its 24-hour post-completion cooldown.");
+      startBounty(data);
+      saveData(data);
+      await announceBountyStart(message.channel,data);
+      return;
+    }
+
+    return message.reply("Unknown Bounty test option. Use `!bountytest help`.");
+  }
+
+  if (
+    command === "!ultrahunt" ||
+    command === "!ultrastatus" ||
+    command === "!ultrahelp" ||
+    command.startsWith("!startultra") ||
+    command.startsWith("!summon")
+  ) {
+    return message.reply("🌌 **Legacy Ultra Hunts are disabled for the new Monster Hunt season.**");
+  }
+
+  if (command.startsWith("!testalerts")) {
+    if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("Only admins can test Monster Hunt alerts.");
+    const requested = content.slice("!testalerts".length).trim().toLowerCase() || "all";
+    const testChannel = await getTextChannel(H4_TEST_CHANNEL_ID);
+    if (!testChannel?.isTextBased()) return message.reply("The configured Monster Hunt test channel could not be loaded.");
+    const samples = {
+      hunt: [H4_HUNT_ALERT_ROLE_ID, "🏹 **HUNT ALERT TEST**\n\nThe wilds are active. This is how Hunt Alert role pings will look."],
+      huntready: [H4_HUNT_READY_ROLE_ID, "🏹 **HUNT READY ROLE TEST**\n\nThis role is the opt-in switch for personal Hunt-ready notifications."],
+      eggready: [H4_EGG_READY_ROLE_ID, "🥚 **EGG READY ROLE TEST**\n\nThis role is the opt-in switch for personal egg-ready notifications."],
+      fetch: [H4_FETCH_ALERT_ROLE_ID, "🐾 **FETCH ALERT ROLE TEST**\n\nThis role is the opt-in switch for personal Fetch-ready notifications."],
+      merchant: [H4_MERCHANT_ALERT_ROLE_ID, "🛒 **MERCHANT ALERT TEST**\n\nA traveling merchant has arrived at camp."],
+      big: [H4_BIG_HUNT_ALERT_ROLE_ID, "👑 **BIG HUNT ALERT TEST**\n\nA Big Game Hunt is about to begin."],
+      bounty: [H4_BOUNTY_ALERT_ROLE_ID, "🎯 **BOUNTY ALERT TEST**\n\nA new hidden-target bounty has been posted."],
+      world: [H4_WORLD_EVENT_ALERT_ROLE_ID, "🌌 **WORLD EVENT ALERT TEST**\n\nReality is beginning to fracture across the hunting grounds."]
+    };
+    const keys = requested === "all" ? Object.keys(samples) : [requested];
+    for (const key of keys) {
+      const sample = samples[key];
+      if (!sample) continue;
+      await sendRoleImageAnnouncement(testChannel, `${h4RoleMention(sample[0])}\n\n${sample[1]}`, null, sample[0]);
+    }
+    return message.reply(`✅ Alert test sent to <#${H4_TEST_CHANNEL_ID}>. Nothing was posted in the live-season channels.`);
+  }
+
+  if (command === "!hunt") {
+    if (message.channel.id === EGGS_PETS_CHANNEL_ID) {
+      return message.reply(
+        `🏹 **Hunting happens in <#${MONSTER_CHANNEL_ID}>!**\n` +
+        `Please use \`!hunt\` there so the Eggs & Pets channel stays clean.`
+      );
+    }
+
+    const now = Date.now();
+    const huntCooldown = getPlayerHuntCooldown(player, data, message.author.id);
+    const timeLeft = huntCooldown - (now - player.lastHunt);
+
+    if (timeLeft > 0) {
+      return message.reply(`⏳ You can hunt again in **${formatTime(timeLeft)}**.`);
+    }
+
+    const usedBait = player.activeBait;
+    const signatureHuntText = prepareSignatureForHunt(player);
+    const h3HuntEffects = h32PrepareHunt(player,data,message.author.id);
+    let monster = getRandomMonsterForPlayer(player, data, message.author.id);
+    const merchantEncounter = applyMerchantEncounterEffect(player, monster);
+    monster = merchantEncounter.monster;
+    const encounters = addEncounterKnowledge(player, monster);
+    const chanceInfo = calculateCaptureChance(player, monster, null, data, message.author.id);
+
+    player.currentMonster = monster;
+    player.activeBait = null;
+    const h3BaitSaveText = h32BaitSave(player,usedBait);
+    player.lastHunt = now;
+    const huntSig = getSignaturePet(player);
+    if (huntSig?.definition.signatureAbility === "frozen_time" && ensureSignatureState(huntSig.owned).frozenTimeReady) ensureSignatureState(huntSig.owned).frozenTimeReady = false;
+    player.reminderState.channelId = MONSTER_CHANNEL_ID;
+    player.reminderState.huntDueAt = now + huntCooldown;
+    player.reminderState.huntSent = false;
+    player.huntCount++;
+    if (usedBait) player.titleProgress.baitUsed = (player.titleProgress.baitUsed || 0) + 1;
+
+    updateQuestProgress(player, "hunt");
+    const automaticTitleUnlocks = checkTitleUnlocks(player);
+    saveData(data);
+    await announceTitleUnlocks(message, automaticTitleUnlocks);
+
+    const choices = buildCaptureChoices(player, monster);
+    const validNumbers = choices.map(choice => choice.number);
+
+    const encounterMessage = await message.reply(
+      buildMonsterEmbed(
+        monster,
+        `${monster.distortionEncounter ? `${monster.adminTest ? "🧪 ADMIN TEST • " : ""}🌀 DISTORTION ENCOUNTER — ` : "🐾 A wild "}${monster.name}${monster.distortionEncounter ? "" : " appeared!"}`,
+        `**Rarity:** ${monster.rarity}\n` +
+        `**Base Capture Chance:** ${monster.chance}%\n` +
+        `**Knowledge:** ${encounters} encounter${encounters === 1 ? "" : "s"} (${getKnowledgeRank(encounters)}, +${chanceInfo.knowledgeBonus}%)\n` +
+        `${chanceInfo.eventBonus > 0 ? `**Event Bonus:** +${chanceInfo.eventBonus}%\n` : ""}` +
+        `**Current Catch Chance:** ${chanceInfo.total}%\n` +
+        `${usedBait ? `**Bait Used:** ${usedBait.toUpperCase()} (improved encounter odds)\n` : ""}` +
+        `${merchantEncounter.text}` +
+        `${signatureHuntText}` +
+        `${h3BaitSaveText}` +
+        `${h3HuntEffects.messages?.length ? `\n🐾 **Pet Abilities:** ${h3HuntEffects.messages.join("\n")}\n` : ""}` +
+        `\n**Choose how to catch it:**\n${captureChoicesText(choices)}\n\n` +
+        `Reply with **${validNumbers.join(", ")}** within 5 minutes.\n` +
+        `Only items you currently own are shown.`
+      )
+    );
+
+    const filter = response =>
+      response.author.id === message.author.id &&
+      validNumbers.includes(Number(response.content.trim()));
+
+    try {
+      const collected = await message.channel.awaitMessages({
+        filter,
+        max: 1,
+        time: 5 * 60 * 1000,
+        errors: ["time"]
+      });
+
+      const response = collected.first();
+      const selected = choices.find(
+        choice => choice.number === Number(response.content.trim())
+      );
+
+      await response.delete().catch(() => null);
+      return performCaptureAttempt(message, message.author.id, selected.itemKey);
+    } catch {
+      const freshData = loadData();
+      const freshPlayer = getPlayer(freshData, message.author.id);
+
+      if (!freshPlayer.currentMonster) {
+        return;
+      }
+
+      freshPlayer.currentMonster = null;
+      saveData(freshData);
+
+      return encounterMessage.reply(
+        `⌛ **The ${cleanMonsterName(monster.name)} escaped because no choice was made within 5 minutes.**`
+      );
+    }
+  }
+
+
+  // ==================== EGGS & PETS CHANNEL ROUTING ====================
+  // Keep egg/pet management out of the Hunt channel.
+  const eggsAndPetsOnlyCommand =
+    command === "!eggs" ||
+    command === "!egg" ||
+    command === "!hatch" ||
+    command.startsWith("!hatch ") ||
+    command === "!pets" ||
+    command === "!petdex" ||
+    command === "!pethelp" ||
+    command.startsWith("!pet ") ||
+    command.startsWith("!equippet ") ||
+    command.startsWith("!namepet ") ||
+    command.startsWith("!resetpetname ") ||
+    command.startsWith("!incubate ") ||
+    command.startsWith("!combinepet ") ||
+    command.startsWith("!fetch");
+
+  if (eggsAndPetsOnlyCommand && message.channel.id === MONSTER_CHANNEL_ID) {
+    return message.reply(
+      `🥚🐾 **Eggs & Pets commands belong in <#${EGGS_PETS_CHANNEL_ID}>!**\n` +
+      `Please use that channel so the Hunt channel stays focused on hunting.`
+    );
+  }
+
+  if (command === "!eggs" || command === "!egg") {
+    const slots = getIncubatorSlots(player);
+    const active = player.incubatingEggs || [];
+
+    const incubatorLines = Array.from({ length: slots }, (_, index) => {
+      const incubation = active[index];
+      if (!incubation) return `**Incubator Slot ${index + 1}:** Empty`;
+
+      const status = Date.now() >= incubation.readyAt
+        ? "✅ **Ready to hatch!**"
+        : `⏳ Ready <t:${Math.floor(incubation.readyAt / 1000)}:R>`;
+
+      return (
+        `**Incubator Slot ${index + 1}:** ` +
+        `${getEggDisplay(incubation)} — ${status}`
+      );
+    }).join("\n");
+
+    const inventory = player.eggs.length > 0
+      ? player.eggs.map((egg, index) =>
+          `**${index + 1}.** ${getEggDisplay(egg)}`
+        ).join("\n")
+      : "You do not currently own any unincubated eggs.";
+
+    return message.reply(
+      `🥚 **${formatPlayerName(player, message.author.username)}'s Egg Nursery**\n\n` +
+      `⏳ **Incubators: ${active.length}/${slots} in use**\n${incubatorLines}\n\n` +
+      `🎒 **Egg Inventory**\n${inventory}\n\n` +
+      `Use \`!incubate common\`, \`!incubate rare\`, \`!incubate epic\`, or \`!incubate legendary\`.\n` +
+      `You can also use an egg number, such as \`!incubate 4\`.\n` +
+      `Use \`!hatch\` to hatch the first ready egg or \`!hatch slot#\` to choose one.`
+    );
+  }
+
+  if (command.startsWith("!incubate")) {
+    const slots = getIncubatorSlots(player);
+
+    if ((player.incubatingEggs || []).length >= slots) {
+      return message.reply(
+        `All **${slots} incubator${slots === 1 ? "" : "s"}** are currently in use. ` +
+        `Use \`!eggs\` to check their timers.`
+      );
+    }
+
+    if (player.eggs.length === 0) {
+      return message.reply("You do not have any eggs available to incubate.");
+    }
+
+    const input = content.slice("!incubate".length).trim();
+    let eggIndex = -1;
+
+    if (/^\d+$/.test(input)) {
+      eggIndex = Number(input) - 1;
+    } else {
+      const requestedRarity = Object.keys(EGG_TYPES).find(
+        rarity => rarity.toLowerCase() === input.toLowerCase()
+      );
+
+      if (requestedRarity) {
+        eggIndex = player.eggs.findIndex(egg => egg.rarity === requestedRarity);
+      }
+    }
+
+    if (eggIndex < 0 || !player.eggs[eggIndex]) {
+      return message.reply(
+        "Egg not found.\n" +
+        "Use `!incubate common`, `!incubate rare`, `!incubate epic`, or `!incubate legendary`.\n" +
+        "You can also use an egg number shown by `!eggs`, such as `!incubate 4`."
+      );
+    }
+
+    const [egg] = player.eggs.splice(eggIndex, 1);
+    const distortionEgg = egg.eggKey ? DISTORTION_EGGS[egg.eggKey] : null;
+    const duration = distortionEgg?.incubationMs || EGG_TYPES[egg.rarity]?.incubationMs || EGG_TYPES.Common.incubationMs;
+    const incubation = {
+      id: egg.id,
+      rarity: egg.rarity,
+      eggKey: egg.eggKey || null,
+      adminTest: Boolean(egg.adminTest),
+      startedAt: Date.now(),
+      readyAt: Date.now() + duration,
+      notified: false
+    };
+
+    player.incubatingEggs.push(incubation);
+    saveData(data);
+
+    const slotNumber = player.incubatingEggs.length;
+
+    return message.reply(
+      `${distortionEgg ? distortionEgg.icon : (EGG_TYPES[egg.rarity]?.icon || "🥚")} Your **${distortionEgg?.name || `${egg.rarity} Egg`}** is now incubating!\n` +
+      `**Incubator Slot ${slotNumber} of ${slots}**\n` +
+      `It will be ready <t:${Math.floor(incubation.readyAt / 1000)}:R>.`
+    );
+  }
+
+  if (command === "!hatch" || command.startsWith("!hatch ")) {
+    const requested = Number(content.slice("!hatch".length).trim());
+    let incubationIndex = Number.isInteger(requested) && requested > 0
+      ? requested - 1
+      : player.incubatingEggs.findIndex(egg => Date.now() >= egg.readyAt);
+
+    if (player.incubatingEggs.length === 0) {
+      return message.reply("You do not have any eggs incubating. Use `!eggs` to view your eggs.");
+    }
+
+    if (incubationIndex < 0 || !player.incubatingEggs[incubationIndex]) {
+      const next = [...player.incubatingEggs].sort((a, b) => a.readyAt - b.readyAt)[0];
+      return message.reply(
+        `⏳ None of your eggs are ready yet. Your next ${getEggDisplay(next)} will be ready ` +
+        `<t:${Math.floor(next.readyAt / 1000)}:R>.`
+      );
+    }
+
+    const incubation = player.incubatingEggs[incubationIndex];
+    if (Date.now() < incubation.readyAt) {
+      return message.reply(
+        `⏳ Your ${getEggDisplay(incubation)} in Slot ${incubationIndex + 1} will be ready ` +
+        `<t:${Math.floor(incubation.readyAt / 1000)}:R>.`
+      );
+    }
+
+    const distortionEgg = incubation.eggKey ? DISTORTION_EGGS[incubation.eggKey] : null;
+    const rarity = incubation.rarity;
+    const definition = distortionEgg ? chooseDistortionPet(incubation.eggKey) : choosePetFromEgg(rarity);
+
+    if (!definition) {
+      return message.reply("That egg could not find a matching pet. Please contact an admin.");
+    }
+
+    // Final safety gate: even if the master pet registry is expanded later,
+    // a normal egg is never allowed to resolve into a Distortion or secret pet.
+    if (!distortionEgg && !isNormalEggPet(definition)) {
+      console.error(
+        `[EGG POOL SAFETY] Blocked normal ${rarity} Egg from hatching restricted pet ${definition.key} (${definition.habitat}).`
+      );
+      return message.reply(
+        "⚠️ That egg rolled an invalid companion pool entry and was safely blocked. Please contact an admin."
+      );
+    }
+
+    // Distortion eggs are equally strict: the resulting companion must be one
+    // of the two pet keys explicitly configured for that exact egg.
+    if (distortionEgg && !distortionEgg.pets.some(choice => choice.key === definition.key)) {
+      console.error(
+        `[DISTORTION EGG SAFETY] Blocked ${incubation.eggKey} from hatching invalid pet ${definition.key}.`
+      );
+      return message.reply(
+        "⚠️ That Distortion Egg rolled an invalid companion entry and was safely blocked. Please contact an admin."
+      );
+    }
+
+    const alreadyDiscoveredSpecies = player.discoveredPetKeys.includes(definition.key);
+    const ownedPet = {
+      id: player.nextPetId++,
+      key: definition.key,
+      nickname: null,
+      personality: PET_PERSONALITIES[Math.floor(Math.random() * PET_PERSONALITIES.length)],
+      companionXp: 0,
+      affectionEvents: 0,
+      timesHelped: 0,
+      hatchedAt: Date.now(),
+      adminTest: Boolean(incubation.adminTest)
+    };
+
+    const previousPoints = player.points;
+    const hatchPoints = HATCH_POINT_REWARDS[distortionEgg ? definition.rarity : rarity] || 0;
+    const dexBonus = alreadyDiscoveredSpecies ? 0 : NEW_PET_SPECIES_BONUS;
+
+    player.pets.push(ownedPet);
+    if (!player.discoveredPetKeys.includes(definition.key)) player.discoveredPetKeys.push(definition.key);
+    if (ownedPet.adminTest) player.adminTest.generatedPetIds.push(ownedPet.id);
+    player.incubatingEggs.splice(incubationIndex, 1);
+    const hatchTotalPoints = applyCommunityPointBlessing(data, hatchPoints + dexBonus);
+    player.points += hatchTotalPoints;
+    addWeeklyProgress(data, player, hatchTotalPoints);
+    player.titleProgress.eggsHatched = (player.titleProgress.eggsHatched || 0) + 1;
+
+    const hadEquippedPetBeforeHatch = player.equippedPetId !== null;
+
+    if (player.equippedPetId === null) {
+      player.equippedPetId = ownedPet.id;
+      player.pendingHatchChoice = null;
+    } else {
+      player.pendingHatchChoice = {
+        petId: ownedPet.id,
+        hatchedAt: Date.now(),
+        expiresAt: Date.now() + HATCH_SACRIFICE_WINDOW,
+        channelId: message.channel.id
+      };
+    }
+
+    const incubatorUnlockText = getNewIncubatorUnlockText(player, previousPoints);
+    const petCollectionUnlocks = evaluatePetCollectionRewards(data, player);
+    const automaticTitleUnlocks = checkTitleUnlocks(player);
+
+    const hatchHunterName = seasonMomentPlayerName(data, message.author.id);
+    addSeasonMoment(data, {
+      type: "first_pet",
+      playerId: message.author.id,
+      icon: "🐾",
+      text: `${hatchHunterName} hatched the season's first companion: ${definition.name}.`,
+      uniqueKey: "season:first_pet"
+    });
+
+    if (rarity === "Legendary") {
+      addSeasonMoment(data, {
+        type: "legendary_pet",
+        playerId: message.author.id,
+        icon: "🌟",
+        text: `${hatchHunterName} hatched a Legendary companion: ${definition.name}!`
+      });
+    }
+
+    for (const unlock of petCollectionUnlocks) {
+      addSeasonMoment(data, {
+        type: "pet_collection",
+        playerId: message.author.id,
+        icon: "🏆",
+        text: `${hatchHunterName} completed a companion collection and unlocked ${unlock.title || unlock.name || "a secret title"}!`
+      });
+    }
+
+    recordPointMilestoneMoments(data, message.author.id, previousPoints, player.points);
+    saveData(data);
+    await announceTitleUnlocks(message, automaticTitleUnlocks);
+
+    const hatchMessage = await message.reply(
+      `${distortionEgg?.icon || EGG_TYPES[rarity]?.icon || "🥚"} **The ${distortionEgg?.name || `${rarity} Egg`} begins to shake...**`
+    );
+
+    await wait(1000);
+
+    const hatchingPath = distortionEgg?.hatchingImage ? findImageFile(distortionEgg.hatchingImage) : null;
+    if (hatchingPath) {
+      const hatchingEmbed = new EmbedBuilder()
+        .setTitle(`✨ ${distortionEgg.name.toUpperCase()} — HATCHING`)
+        .setDescription("The shell fractures as impossible magic erupts from within...");
+      hatchingEmbed.setImage(`attachment://${path.basename(hatchingPath)}`);
+      await hatchMessage.edit({ content: "", embeds: [hatchingEmbed], files: [new AttachmentBuilder(hatchingPath)] });
+    } else {
+      await hatchMessage.edit(`✨ **Cracks spread across the ${distortionEgg?.name || `${rarity} Egg`}...**\nSomething inside is trying to break free!`);
+    }
+
+    await wait(1500);
+
+    const artworkPath = getPetArtworkPath(definition);
+    const artworkUrl = getPetArtworkUrl(definition);
+    const hatchEmbed = new EmbedBuilder()
+      .setTitle(`🥚 YOUR ${(distortionEgg?.name || `${rarity} Egg`).toUpperCase()} HATCHED!`)
+      .setDescription(
+        `${getPetDisplayIcon(definition)} **${definition.name}** has joined your companions!\n\n` +
+        `**Rarity:** ${definition.rarity}\n` +
+        `**Habitat:** ${definition.habitat}\n` +
+        `**Personality:** ${ownedPet.personality}\n` +
+        `**Companion Level:** 1\n` +
+        `✨ **Passive:** ${petPassiveTextForOwned(ownedPet)}\n\n` +
+        `💰 **Hatch Reward:** +${applyCommunityPointBlessing(data, hatchPoints)} Hunter Points` +
+        `${dexBonus ? `\n📖 **NEW PET DEX SPECIES:** +${dexBonus} Hunter Points` : ""}` +
+        `${incubatorUnlockText}` +
+        `${formatSecretUnlocks(petCollectionUnlocks)}\n\n` +
+        `${player.equippedPetId === ownedPet.id
+          ? "⭐ It has been equipped as your first companion!"
+          : `Use \`!equippet ${player.pets.length}\` to equip it.`}` +
+        `${hadEquippedPetBeforeHatch
+          ? `\n\n━━━━━━━━━━━━━━━━━━━━\n` +
+            `⚖️ **KEEP OR SACRIFICE?**\n` +
+            `You have **5 minutes** to decide what to do with this new hatch.\n\n` +
+            `💚 Type **\`!keep\`** to keep it in your collection.\n` +
+            `✨ Type **\`!sacrifice\`** to permanently convert it into ` +
+            `**${PET_COMBINE_XP[rarity] || 50} Companion XP** for your currently equipped pet.\n\n` +
+            `*Quick sacrifice gives XP only — it does NOT transfer the hatch's ability.*\n` +
+            `If you do nothing, the pet is automatically kept.`
+          : ""}`
+      );
+
+    const hatchFiles = [];
+    if (artworkPath) {
+      hatchEmbed.setImage(`attachment://${path.basename(artworkPath)}`);
+      hatchFiles.push(new AttachmentBuilder(artworkPath));
+    } else if (artworkUrl) {
+      hatchEmbed.setImage(artworkUrl);
+    }
+
+    const finalHatchMessage = await hatchMessage.edit({
+      content: "",
+      embeds: [hatchEmbed],
+      files: hatchFiles
+    });
+    if (petCollectionUnlocks.grandRewardGranted) {
+      await announceGrandPetCollectionReward(message.channel, data, message.author.id);
+    }
+    return finalHatchMessage;
+  }
+
+  if (command === "!namepet" || command.startsWith("!namepet ")) {
+    const match = content.match(/^!namepet\s+(\d+)\s+(.+)$/i);
+    if (!match) return message.reply("Usage: `!namepet pet# New Name` — Example: `!namepet 2 Snowball`");
+
+    const petNumber = Number(match[1]);
+    const owned = player.pets[petNumber - 1];
+    if (!owned) return message.reply("That pet number does not exist. Use `!pets` to view your pet numbers.");
+
+    const nickname = match[2].replace(/\s+/g, " ").trim();
+    const nicknameLength = [...nickname].length;
+    if (nicknameLength < 2 || nicknameLength > 24) {
+      return message.reply("Pet names must contain **2-24 characters**.");
+    }
+    if (/[@`*_~|<>\\\r\n]/u.test(nickname)) {
+      return message.reply("Pet names cannot contain mentions, Discord formatting characters, angle brackets, backslashes, or line breaks.");
+    }
+
+    const definition = getOwnedPetDefinition(owned);
+    const previousName = getOwnedPetName(owned);
+    owned.nickname = nickname;
+    saveData(data);
+
+    return message.reply(
+      `${getPetDisplayIcon(definition)} **PET RENAMED!**\n\n` +
+      `Pet #${petNumber}: **${previousName}** → **${nickname}**\n` +
+      `Species: **${definition?.name || owned.key}**\n\n` +
+      `The nickname is cosmetic; abilities, levels, artwork, and Pet Dex progress are unchanged.`
+    );
+  }
+
+  if (command === "!resetpetname" || command.startsWith("!resetpetname ")) {
+    const match = content.match(/^!resetpetname\s+(\d+)$/i);
+    if (!match) return message.reply("Usage: `!resetpetname pet#` — Example: `!resetpetname 2`");
+    const petNumber = Number(match[1]);
+    const owned = player.pets[petNumber - 1];
+    if (!owned) return message.reply("That pet number does not exist. Use `!pets` to view your pet numbers.");
+    const definition = getOwnedPetDefinition(owned);
+    if (!owned.nickname) return message.reply(`Pet #${petNumber} is already using its species name: **${definition?.name || owned.key}**.`);
+    const oldNickname = owned.nickname;
+    owned.nickname = null;
+    saveData(data);
+    return message.reply(
+      `${getPetDisplayIcon(definition)} **PET NAME RESET**\n\n` +
+      `**${oldNickname}** is now displayed as **${definition?.name || owned.key}** again.`
+    );
+  }
+
+  if (command === "!pets") {
+    if (player.pets.length === 0) {
+      return message.reply("🐾 You have not hatched any pets yet. Find eggs during successful hunts!");
+    }
+
+    // Keep the original compact pet-list appearance while safely splitting
+    // very large collections across multiple Discord messages.
+    const entries = player.pets.map((owned, index) => {
+      const definition = getOwnedPetDefinition(owned);
+      const info = getCompanionLevelInfo(owned);
+      const marker = `${index + 1}. ${player.equippedPetId === owned.id ? "⭐ " : ""}`;
+      const xpText = info.level >= MAX_COMPANION_LEVEL
+        ? "MAX"
+        : `${info.xpIntoLevel}/${info.xpNeeded}`;
+
+      return (
+        `${marker}${definition ? getPetDisplayIcon(definition) : "🐾"} **${getOwnedPetIdentity(owned)}** — ` +
+        `${definition?.rarity || "Unknown"} | Level ${info.level} | Bond ${getPetBondLevel(owned)} | ${owned.personality} ` +
+        `✨ Passive: **${petPassiveTextForOwned(owned)}** ⭐ XP: **${xpText}**`
+      );
+    });
+
+    const header = `🐾 **${formatPlayerName(player, message.author.username)}'s Pets**\n\n`;
+    const footer =
+      `\n\n⭐ = Equipped\n` +
+      `Use \`!pet number\` for details or \`!equippet number\` to equip one.\n` +
+      `Use \`!namepet pet# New Name\` to give a pet a nickname.\n` +
+      `Use \`!combine keep# sacrifice#\` to combine companions.`;
+
+    const chunks = [];
+    let current = header;
+
+    for (const entry of entries) {
+      const addition = `${current === header ? "" : "\n\n"}${entry}`;
+      const reservedFooterLength = chunks.length === 0 ? footer.length : 0;
+
+      if (current.length + addition.length + reservedFooterLength > 1950 && current !== header) {
+        chunks.push(current);
+        current = entry;
+      } else {
+        current += addition;
+      }
+    }
+
+    chunks.push(current);
+    chunks[chunks.length - 1] += footer;
+
+    await message.reply(chunks[0]);
+    for (let i = 1; i < chunks.length; i++) {
+      await message.channel.send(chunks[i]);
+    }
+    return;
+  }
+
+  if (command === "!petdex" || command.startsWith("!petdex ")) {
+    const petDexUnlocks = evaluatePetCollectionRewards(data, player);
+    if (petDexUnlocks.length || petDexUnlocks.grandRewardGranted) saveData(data);
+    for (const unlock of petDexUnlocks) {
+      await message.channel.send(formatSecretUnlocks([unlock]));
+    }
+    if (petDexUnlocks.grandRewardGranted) {
+      await announceGrandPetCollectionReward(message.channel, data, message.author.id);
+    }
+
+    const discoveredKeys = new Set(player.discoveredPetKeys || []);
+    const habitatNames = Object.keys(PET_COLLECTIONS);
+    const habitatsPerPage = 2;
+    const totalPages = Math.ceil(habitatNames.length / habitatsPerPage);
+    const requestedPage = Number(content.slice("!petdex".length).trim() || "1");
+    const page = Number.isInteger(requestedPage) ? Math.max(1, Math.min(totalPages, requestedPage)) : 1;
+    const pageHabitats = habitatNames.slice((page - 1) * habitatsPerPage, page * habitatsPerPage);
+
+    const habitatSections = pageHabitats.map(habitat => {
+      const habitatPets = pets.filter(pet => pet.habitat === habitat);
+      const reward = PET_COLLECTIONS[habitat];
+      const collected = habitatPets.filter(pet => discoveredKeys.has(pet.key)).length;
+      const entries = habitatPets.map(definition =>
+        `${discoveredKeys.has(definition.key) ? "✅" : "⬜"} ${getPetDisplayIcon(definition)} **${definition.name}** — ${definition.rarity}`
+      ).join("\n");
+      return `${reward.icon} **${habitat} Companions — ${collected}/${habitatPets.length}**\n${entries}`;
+    }).join("\n\n");
+
+    const knownPets = pets.filter(pet => Object.prototype.hasOwnProperty.call(PET_COLLECTIONS, pet.habitat));
+    const knownOwnedCount = knownPets.filter(pet => discoveredKeys.has(pet.key)).length;
+    const discoveredBeyond = pets.filter(
+      pet => !Object.prototype.hasOwnProperty.call(PET_COLLECTIONS, pet.habitat) && discoveredKeys.has(pet.key)
+    );
+    const beyondText = discoveredBeyond.length
+      ? `\n\n🌀 **Discoveries Beyond the Known Habitats**\n` +
+        discoveredBeyond.map(pet => `${getPetDisplayIcon(pet)} **${pet.name}** — ${pet.rarity}`).join("\n")
+      : "";
+
+    return message.reply(
+      `📖 **${formatPlayerName(player, message.author.username)}'s Pet Dex**\n` +
+      `Known Habitat Collection: **${knownOwnedCount}/${knownPets.length} companions** | Page **${page}/${totalPages}**\n\n` +
+      `${habitatSections}` +
+      `${beyondText}\n\n` +
+      `Use \`!petdex ${page < totalPages ? page + 1 : 1}\` to ${page < totalPages ? "view the next page" : "return to page 1"}.`
+    );
+  }
+
+  if (command.startsWith("!viewpet ")) {
+    const owned = resolveOwnedPet(player, content.slice("!viewpet".length));
+    if (!owned) return message.reply("Pet not found. Use `!pets` to view your personal pet numbers.");
+    const definition = getOwnedPetDefinition(owned);
+    if (!definition) return message.reply("That pet definition could not be found.");
+
+    const artworkPath = getPetArtworkPath(definition);
+    const artworkUrl = getPetArtworkUrl(definition);
+    const embed = new EmbedBuilder()
+      .setTitle(`${getPetDisplayIcon(definition)} ${getOwnedPetIdentity(owned)}`)
+      .setDescription(
+        `**${definition.rarity} Companion**\n` +
+        `Habitat: **${definition.habitat}**\n` +
+        `${companionXpBar(owned)}\n\n` +
+        `✨ **Passive:** ${petPassiveTextForOwned(owned)}\n\n` +
+        `*Only pets you personally own can be viewed with this command.*`
+      );
+
+    const files = [];
+    if (artworkPath) {
+      embed.setImage(`attachment://${path.basename(artworkPath)}`);
+      files.push(new AttachmentBuilder(artworkPath));
+    } else if (artworkUrl) {
+      embed.setImage(artworkUrl);
+    }
+
+    return message.reply({ embeds: [embed], files });
+  }
+
+  if (command.startsWith("!pet ")) {
+    const owned = resolveOwnedPet(player, content.slice(5));
+    if (!owned) return message.reply("Pet not found. Use `!pets` to view your pet numbers.");
+    const definition = getOwnedPetDefinition(owned);
+    return message.reply(
+      `${getPetDisplayIcon(definition)} **${getOwnedPetIdentity(owned)}**
+
+` +
+      `Rarity: **${definition.rarity}**
+` +
+      `Habitat: **${definition.habitat}**
+` +
+      `Personality: **${owned.personality}**
+` +
+      `${companionXpBar(owned)}
+` +
+      `Bond Level: **${getPetBondLevel(owned)}/${MAX_PET_BOND_LEVEL}**
+` +
+      `Passive: **${petPassiveTextForOwned(owned)}**
+` +
+      `Affection Events: **${owned.affectionEvents || 0}**
+` +
+      `Times Helped: **${owned.timesHelped || 0}**
+` +
+      `Equipped: **${player.equippedPetId === owned.id ? "Yes" : "No"}**`
+    );
+  }
+
+  if (command.startsWith("!equippet ")) {
+    const owned = resolveOwnedPet(player, content.slice(10));
+    if (!owned) return message.reply("Pet not found. Use `!pets` to view your pet numbers.");
+    player.equippedPetId = owned.id;
+    const automaticTitleUnlocks = checkTitleUnlocks(player);
+    saveData(data);
+    await announceTitleUnlocks(message, automaticTitleUnlocks);
+    const definition = getOwnedPetDefinition(owned);
+    return message.reply(`${getPetDisplayIcon(definition)} You equipped **${getOwnedPetIdentity(owned)}**!\nPassive: **${petPassiveText(player)}**\nIts icon will now appear beside your name in Monster Hunt messages.`);
+  }
+
+  if (command === "!unequippet") {
+    player.equippedPetId = null;
+    saveData(data);
+    return message.reply("🐾 Your companion has been unequipped.");
+  }
+
+  if (command.startsWith("!giveegg ")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply("Only admins can give eggs.");
+    const target = message.mentions.users.first();
+    const rarityInput = content.replace(/!giveegg\s+<@!?\d+>\s*/i, "").trim();
+    const rarity = Object.keys(EGG_TYPES).find(value => value.toLowerCase() === rarityInput.toLowerCase());
+    if (!target || !rarity) return message.reply("Usage: `!giveegg @user common/rare/epic/legendary`");
+    const targetPlayer = getPlayer(data, target.id);
+    targetPlayer.eggs.push({ rarity, foundAt: Date.now() });
+    saveData(data);
+    return message.reply(`🥚 Gave a **${rarity} Egg** to ${formatPlayerMention(data, target.id)}.`);
+  }
+
+  if (command === "!catch" || command.startsWith("!catch ")) {
+    return message.reply(
+      "The `!catch` command has been retired. Use `!hunt`, then reply with one of the numbered choices shown by the bot."
+    );
+  }
+
+  if (command === "!daily") {
+    let text = `🎯 **${formatPlayerName(player, message.author.username)}'s Daily Quests**\n\n`;
+    let totalReward = 0;
+
+    player.dailyQuests.forEach(q => {
+      totalReward += q.reward;
+      text += `${q.progress >= q.goal ? "✅" : "⬜"} ${q.text} (${q.progress}/${q.goal})\n`;
+    });
+
+    const rerollStatus = getDailyRerollStatus(player);
+
+    text += `\nReward: **+${totalReward} bonus points**`;
+    text += `\nChance for bonus bait when claimed.`;
+    text += `\nClaim with \`!claimdaily\` when complete.`;
+    text += `\n\n🔄 **Daily Rerolls**`;
+    text += `\n${rerollStatus.text}`;
+    text += `\nUse \`!rerolldaily\` to replace unfinished challenges.`;
+    text += `\n✅ Completed challenges are never removed.`;
+
+    return message.reply(text);
+  }
+
+  if (command === "!rerolldaily" || command === "!dailyreroll") {
+    if (player.dailyClaimed) {
+      return message.reply(
+        "✅ You already completed and claimed today's Daily Quests. " +
+        "Your rerolls reset with tomorrow's quests at **5:00 AM Mountain Time**."
+      );
+    }
+
+    const unfinished = (player.dailyQuests || []).filter(q => q.progress < q.goal);
+
+    if (unfinished.length === 0) {
+      return message.reply(
+        "🎉 All of today's Daily Quests are already complete! " +
+        "Use `!claimdaily` to collect your reward."
+      );
+    }
+
+    const rerollStatus = getDailyRerollStatus(player);
+
+    if (!rerollStatus.available) {
+      return message.reply(
+        "🔒 **You've used both Daily Quest rerolls for today.**\n" +
+        "Your rerolls reset with the new Daily Quests at **5:00 AM Mountain Time**."
+      );
+    }
+
+    if (rerollStatus.costType === "berry") {
+      const berries = Number(player.captureItems?.berry || 0);
+
+      if (berries < DAILY_SECOND_REROLL_BERRY_COST) {
+        return message.reply(
+          `🍓 Your free reroll has already been used.\n\n` +
+          `A second reroll costs **${DAILY_SECOND_REROLL_BERRY_COST} Hunter Berry**, ` +
+          `but you currently have **${berries}**.\n\n` +
+          `Your rerolls reset at **5:00 AM Mountain Time**.`
+        );
+      }
+    }
+
+    const completedBefore = (player.dailyQuests || []).filter(
+      q => q.progress >= q.goal
+    );
+
+    let costText = "🎟️ **Free Daily Reroll used!**";
+
+    if (rerollStatus.costType === "berry") {
+      player.captureItems.berry -= DAILY_SECOND_REROLL_BERRY_COST;
+      costText =
+        `🍓 **Second Daily Reroll used!** ` +
+        `-${DAILY_SECOND_REROLL_BERRY_COST} Hunter Berry`;
+    }
+
+    const result = rerollUnfinishedDailyQuests(player);
+
+    if (!result.changed) {
+      if (rerollStatus.costType === "berry") {
+        player.captureItems.berry += DAILY_SECOND_REROLL_BERRY_COST;
+      }
+
+      return message.reply(
+        "I couldn't generate replacement quests, so nothing was changed or charged."
+      );
+    }
+
+    player.dailyRerollsUsed =
+      Math.max(0, Number(player.dailyRerollsUsed || 0)) + 1;
+
+    saveData(data);
+
+    const nextStatus = getDailyRerollStatus(player);
+
+    let text = `🔄 **DAILY QUESTS REROLLED!**\n\n`;
+    text += `${costText}\n\n`;
+
+    if (completedBefore.length > 0) {
+      text += `✅ **Completed quests kept:**\n`;
+      completedBefore.forEach(q => {
+        text += `• ${q.text} (${q.goal}/${q.goal})\n`;
+      });
+      text += `\n`;
+    }
+
+    text += `🆕 **Your Daily Quests:**\n`;
+    text += `${formatDailyQuestList(player)}\n\n`;
+    text += `${nextStatus.text}`;
+
+    if (
+      player.dailyRerollsUsed === DAILY_FREE_REROLLS &&
+      nextStatus.costType === "berry"
+    ) {
+      text +=
+        `\nUse \`!rerolldaily\` again if needed. ` +
+        `Your second reroll costs **${DAILY_SECOND_REROLL_BERRY_COST} Hunter Berry**.`;
+    } else if (!nextStatus.available) {
+      text += `\nYour rerolls reset at **5:00 AM Mountain Time**.`;
+    }
+
+    return message.reply(text);
+  }
+
+  if (command === "!claimdaily") {
+  if (!canClaimDaily()) {
+    return message.reply(
+      "🌙 Daily quest rewards can only be claimed between 5:00 AM and 11:59 PM MST."
+    );
+  }
+
+  if (player.dailyClaimed)
+    return message.reply(
+      "You already claimed today's reward!"
+    );
+
+    const complete = player.dailyQuests.every(q => q.progress >= q.goal);
+    if (!complete) return message.reply("You haven't completed all your daily quests yet!");
+
+    const baseReward = player.dailyQuests.reduce((sum, q) => sum + q.reward, 0);
+    const reward = applyCommunityPointBlessing(data, baseReward);
+    player.points += reward;
+    addWeeklyProgress(data, player, reward);
+    player.dailyClaimed = true;
+
+    const bonusRewards = giveQuestBonusBait(player);
+
+    saveData(data);
+
+    return message.reply(
+      `🎉 **Daily quests complete!**\n` +
+      `+${reward} bonus points!` +
+      `${bonusRewards.length > 0 ? `\n\nBonus Bait:\n${bonusRewards.join("\n")}` : ""}`
+    );
+  }
+
+  if (command === "!dailyreward") {
+    if (!canClaimDaily()) {
+      return message.reply(
+        "🌙 Daily rewards reset every day at 5:00 AM Mountain Time. Come back after 5:00 AM!"
+      );
+    }
+
+    if (hasClaimedDailyRewardToday(player)) {
+      return message.reply(
+        "🎁 You already claimed today's reward! It resets at 5:00 AM Mountain Time."
+      );
+    }
+
+    const reward = giveRandomDailyReward(player, data);
+
+    // Store the current 5:00 AM Mountain Time reset date instead of a rolling timestamp.
+    player.dailyReward = getResetDate();
+    saveData(data);
+
+    return message.reply(`🎁 **Daily Reward!**\n\nYou received:\n${reward}`);
+  }
+
+  if (command === "!bait") {
+    return message.reply(
+      `🪤 **Your Bait Inventory**\n\n` +
+      `Rare Bait: **${player.bait.rare}**\n` +
+      `Epic Bait: **${player.bait.epic}**\n` +
+      `Legendary Bait: **${player.bait.legendary}**\n\n` +
+      `Active Bait: **${player.activeBait || "None"}**`
+    );
+  }
+
+  if (["!captureitems", "!captureitem", "!items", "!item"].includes(command)) {
+    return message.reply(
+      `🎒 **Your Capture Items**\n\n` +
+      `${captureItemInventoryText(player)}\n\n` +
+      `Capture items appear automatically after \`!hunt\`.\n` +
+      `Reply with the numbered choice shown by the bot to use one.\n\n` +
+      `Capture items improve the monster you already encountered. Bait only improves what rarity you may encounter.`
+    );
+  }
+
+  if (command === "!knowledge") {
+    const entries = Object.entries(player.knowledge)
+      .sort((a, b) => b[1] - a[1]);
+
+    if (entries.length === 0) {
+      return message.reply("📚 You have not encountered any monsters yet.");
+    }
+
+    const text = entries
+      .slice(0, 25)
+      .map(([name, encounters]) =>
+        `**${name}** — ${encounters} encounter${encounters === 1 ? "" : "s"} | ${getKnowledgeRank(encounters)} | +${getKnowledgeBonus(encounters)}%`
+      )
+      .join("\n");
+
+    return message.reply(
+      `📚 **${formatPlayerName(player, message.author.username)}'s Monster Knowledge**\n\n${text}\n\n` +
+      `Knowledge bonuses: 3 encounters = +5%, 5 = +10%, 10 = +15%, 20 = +20%.`
+    );
+  }
+
+  if (command.startsWith("!knowledge ")) {
+    const search = cleanMonsterName(content.slice(11).trim()).toLowerCase();
+    const allMonsters = [...monsters, MIXER_MONSTER, ...eventMonsters, ...ultraRareMonsters];
+    const match = allMonsters.find(m => cleanMonsterName(m.name).toLowerCase() === search);
+
+    if (!match) {
+      return message.reply("That monster is not in the Monster Dex.");
+    }
+
+    const encounters = getKnowledgeCount(player, match);
+    const bonus = getKnowledgeBonus(encounters);
+
+    return message.reply(
+      `📚 **${cleanMonsterName(match.name)} Knowledge**\n\n` +
+      `Encounters: **${encounters}**\n` +
+      `Rank: **${getKnowledgeRank(encounters)}**\n` +
+      `Catch Bonus: **+${bonus}%**\n\n` +
+      `Next milestones: 3 = +5%, 5 = +10%, 10 = +15%, 20 = +20%.`
+    );
+  }
+
+  if (command.startsWith("!usebait ")) {
+    const type = content.slice(9).trim().toLowerCase();
+
+    if (!["rare", "epic", "legendary"].includes(type)) {
+      return message.reply("Use `!usebait rare`, `!usebait epic`, or `!usebait legendary`.");
+    }
+
+    if (player.bait[type] <= 0) return message.reply(`You don't have any ${type} bait.`);
+
+    player.bait[type]--;
+    player.activeBait = type;
+
+    saveData(data);
+
+    return message.reply(`🪤 **${type.toUpperCase()} bait activated!**\nYour next hunt has improved odds.`);
+  }
+
+  if (command === "!events") {
+    if (isBigGameActive(data)) {
+      return message.reply(`🎯 **BIG GAME HUNT — LIVE**\n\nEnds <t:${Math.floor(data.bigGame.endsAt / 1000)}:R>. Use \`!biggame\` for standings.`);
+    }
+    if (data.tokenSurge?.active) {
+      return message.reply(`🪙 **TOKEN SURGE — LIVE**\n\nSuccessful catches may yield Hunt Tokens until <t:${Math.floor(data.tokenSurge.endsAt / 1000)}:R>.`);
+    }
+    const event = getActiveEvent();
+    if (!event) return message.reply("📅 No special event is active today.");
+
+    return message.reply(`🎉 **${event.name}**\n\n${event.description}`);
+  }
+
+  if (command === "!collection" || command === "!lifetimecollection") {
+    const lifetime = player.lifetimeCaught || [];
+    const season = player.caught || [];
+    const merchantItems = Object.entries(player.merchantCollection || {}).filter(([, amount]) => amount > 0);
+    const merchantItemCount = merchantItems.reduce((sum, [, amount]) => sum + amount, 0);
+
+    if (lifetime.length === 0 && season.length === 0 && merchantItemCount === 0) {
+      return message.reply("You haven't collected any monsters or merchant items yet!");
+    }
+
+    const lifetimeList = lifetime
+      .slice(-25)
+      .map((m, i) => `${lifetime.length - Math.min(25, lifetime.length) + i + 1}. ${m.name} — ${m.rarity}`)
+      .join("\n");
+
+    return message.reply(
+      `🏛️ **${formatPlayerName(player, message.author.username)}'s Lifetime Monster Collection**\n` +
+      `Lifetime Creatures: **${lifetime.length}**\n` +
+      `Current Season Catches: **${season.length}**\n` +
+      `Current Season Points: **${player.points}**\n\n` +
+      `${lifetimeList || "No lifetime creatures have been imported or caught yet."}\n\n` +
+      `🎒 Merchant Collectibles: **${merchantItemCount} items across ${merchantItems.length} types**\n` +
+      `Use \`!merchantcollection\` to view merchant collectibles and eggs.\n\n` +
+      `*Imported creatures are for collection and bragging rights only. They do not affect points, quests, achievements, or the leaderboard.*`
+    );
+  }
+
+  if (command === "!achievements") {
+    const unlocked = unlockedAchievements(player);
+
+    let text = `🏆 **${formatPlayerName(player, message.author.username)}'s Achievements**\n\n`;
+
+    achievements.forEach(a => {
+      text += `${unlocked.includes(a.name) ? "✅" : "🔒"} ${a.name}\n`;
+    });
+
+    if (player.secretAchievements.length > 0) {
+      text += `\n🌌 **Discovered Secret Achievements**\n`;
+      text += player.secretAchievements.map(name => `✅ ${name}`).join("\n");
+    } else {
+      text += `\n🌌 **Secret Achievements:** None discovered yet.`;
+    }
+
+    return message.reply(text);
+  }
+
+  if (command === "!title" || command === "!titles" || command.startsWith("!titles ")) {
+    const newlyUnlocked = checkTitleUnlocks(player);
+    saveData(data);
+    await announceTitleUnlocks(message, newlyUnlocked);
+
+    const unlocked = getAvailableTitles(player);
+    if (unlocked.length === 0) {
+      return message.reply(
+        "🎖️ You have not discovered any secret titles yet. Keep hunting, hatching, exploring, and facing the unknown."
+      );
+    }
+
+    const pageSize = 10;
+    const requestedPage = command.startsWith("!titles ")
+      ? Number(content.slice("!titles".length).trim())
+      : 1;
+    const totalPages = Math.max(1, Math.ceil(unlocked.length / pageSize));
+    const page = Number.isInteger(requestedPage)
+      ? Math.max(1, Math.min(totalPages, requestedPage))
+      : 1;
+    const pageTitles = unlocked.slice((page - 1) * pageSize, page * pageSize);
+
+    return message.reply(
+      `🎖️ **${formatPlayerName(player, message.author.username)}'s Discovered Titles**\n` +
+      `Page **${page}/${totalPages}**\n\n` +
+      pageTitles.map(title => `${player.title === title ? "⭐" : "•"} ${formatTitle(title)}`).join("\n") +
+      `\n\n⭐ = Equipped\nUse \`!title Title Name\` to equip one.` +
+      `${page < totalPages ? `\nUse \`!titles ${page + 1}\` for the next page.` : ""}`
+    );
+  }
+
+  if (command.startsWith("!title ")) {
+    const wantedTitle = content.slice(7).trim();
+    const unlocked = getAvailableTitles(player);
+    const match = unlocked.find(t => t.toLowerCase() === wantedTitle.toLowerCase());
+
+    if (!match) return message.reply("You have not discovered that title. Undiscovered titles and their requirements remain secret.");
+
+    player.title = match;
+    saveData(data);
+
+    return message.reply(`🎖️ You equipped ${formatTitle(match)}!`);
+  }
+
+  if (command === "!dex" || command.startsWith("!dex ")) {
+    const input = content.slice("!dex".length).trim();
+    const stats = getDexStats(data);
+
+    // The Dex is discovery-based. Only species this player has actually
+    // caught are visible; undiscovered monsters remain completely secret.
+    const discoveredMap = new Map();
+
+    for (const caughtMonster of player.lifetimeCaught || []) {
+      const cleanName = cleanMonsterName(caughtMonster.name);
+      if (!cleanName || discoveredMap.has(cleanName.toLowerCase())) continue;
+
+      discoveredMap.set(cleanName.toLowerCase(), {
+        name: cleanName,
+        rarity: caughtMonster.rarity || stats[cleanName]?.rarity || "Unknown",
+        shinyCaught: Boolean(caughtMonster.shiny)
+      });
+    }
+
+    const discoveredNames = [...discoveredMap.values()]
+      .map(entry => entry.name)
+      .sort((a, b) => a.localeCompare(b));
+
+    if (discoveredNames.length === 0) {
+      return message.reply(
+        `📖 **${formatPlayerName(player, message.author.username)}'s Monster Dex**\n\n` +
+        `You have not discovered any monsters yet.\n` +
+        `Use \`!hunt\` and successfully capture a creature to add it to your Dex.`
+      );
+    }
+
+    if (input && !/^\d+$/.test(input)) {
+      const search = cleanMonsterName(input).toLowerCase();
+      const matchName = discoveredNames.find(
+        name => cleanMonsterName(name).toLowerCase() === search
+      );
+
+      if (!matchName) {
+        return message.reply(
+          "That creature has not been discovered in your Monster Dex."
+        );
+      }
+
+      const info = stats[matchName];
+      const ownedCopies = (player.lifetimeCaught || []).filter(
+        monster => cleanMonsterName(monster.name) === cleanMonsterName(matchName)
+      );
+      const shinyCopies = ownedCopies.filter(monster => monster.shiny).length;
+      const rarity = info?.rarity || ownedCopies[0]?.rarity || "Unknown";
+      const baseChance = info?.chance;
+
+      return message.reply(
+        `📖 **${matchName}**\n\n` +
+        `Rarity: **${rarity}**\n` +
+        `${baseChance !== undefined ? `Base Capture Chance: **${baseChance}%**\n` : ""}` +
+        `Your Lifetime Catches: **${ownedCopies.length}**\n` +
+        `Your Shiny Catches: **${shinyCopies}**\n` +
+        `Your Encounters: **${getKnowledgeCount(player, matchName)}**\n` +
+        `Your Knowledge Bonus: **+${getKnowledgeBonus(getKnowledgeCount(player, matchName))}%**\n` +
+        `${info ? `Times Caught Server-Wide: **${info.caught}**\n` : ""}` +
+        `${info?.firstCaughtBy
+          ? `First Caught By: ${formatPlayerMention(data, info.firstCaughtBy)}`
+          : "First Caught By: Unknown"}`
+      );
+    }
+
+    const pageSize = 10;
+    const requestedPage = Number(input || "1");
+    const totalPages = Math.max(1, Math.ceil(discoveredNames.length / pageSize));
+    const page = Number.isInteger(requestedPage)
+      ? Math.max(1, Math.min(totalPages, requestedPage))
+      : 1;
+
+    const pageNames = discoveredNames.slice(
+      (page - 1) * pageSize,
+      page * pageSize
+    );
+
+    const lines = pageNames.map(name => {
+      const info = stats[name];
+      const ownedCopies = (player.lifetimeCaught || []).filter(
+        monster => cleanMonsterName(monster.name) === cleanMonsterName(name)
+      );
+      const shinyCopies = ownedCopies.filter(monster => monster.shiny).length;
+      const rarity = info?.rarity || ownedCopies[0]?.rarity || "Unknown";
+
+      return (
+        `✅ **${name}** — ${rarity}` +
+        ` | Caught: ${ownedCopies.length}` +
+        `${shinyCopies > 0 ? ` | ✨ Shiny: ${shinyCopies}` : ""}`
+      );
+    });
+
+    return message.reply(
+      `📖 **${formatPlayerName(player, message.author.username)}'s Monster Dex**\n` +
+      `Discovered Species: **${discoveredNames.length}**\n` +
+      `Page **${page}/${totalPages}**\n\n` +
+      `${lines.join("\n")}\n\n` +
+      `Only monsters you have personally caught are shown.\n` +
+      `Use \`!dex ${page < totalPages ? page + 1 : 1}\` to ${page < totalPages ? "view the next page" : "return to page 1"}.\n` +
+      `Use \`!dex monster name\` for details about a discovered creature.`
+    );
+  }
+
+  if (command === "!leaderboard") {
+    const leaderboard = Object.entries(data.players)
+      .sort((a, b) => b[1].points - a[1].points)
+      .slice(0, 10);
+
+    let text = "🏆 **Monster Collector Leaderboard**\n\n";
+
+    leaderboard.forEach(([userId, stats], index) => {
+      const title = stats.title ? ` [${stats.title}]` : "";
+      text += `${index + 1}. <@${userId}>${title} — **${stats.points} points** | ${stats.caught.length} caught\n`;
+    });
+
+    if (isWeeklyCompetitionActive(data)) {
+      const weekly = Object.entries(data.players).sort((a,b)=>(b[1].weeklyStats?.points||0)-(a[1].weeklyStats?.points||0)).slice(0,5);
+      text += `\n🏅 **This Week**\n`; weekly.forEach(([id,p],i)=> text += `${i+1}. <@${id}> — **${p.weeklyStats?.points||0} weekly points**\n`);
+    } else { text += `\n🏅 Weekly competition begins Monday at **5:00 AM Mountain Time**.`; }
+    return message.reply(text);
+  }
+
+  if (command.startsWith("!trade ")) {
+    const target = message.mentions.users.first();
+
+    if (!target) return message.reply("Mention a player to trade with. Example: `!trade @user 2 1`");
+    if (target.bot) return message.reply("You can't trade with bots.");
+    if (target.id === message.author.id) return message.reply("You can't trade with yourself.");
+
+    const args = content.split(/\s+/);
+    const myIndex = parseInt(args[2]) - 1;
+    const theirIndex = parseInt(args[3]) - 1;
+
+    if (Number.isNaN(myIndex) || Number.isNaN(theirIndex)) {
+      return message.reply("Usage: `!trade @user yourMonster# theirMonster#`");
+    }
+
+    const otherPlayer = getPlayer(data, target.id);
+
+    if (!player.caught[myIndex] || !otherPlayer.caught[theirIndex]) {
+      return message.reply("Invalid monster number. Use `!collection` to check numbers.");
+    }
+
+    data.pendingTrades[target.id] = {
+      from: message.author.id,
+      myIndex,
+      theirIndex
+    };
+
+    saveData(data);
+
+    return message.reply(
+      `🤝 Trade sent to ${formatPlayerMention(data, target.id)}!\n` +
+      `You offered **${player.caught[myIndex].name}** for **${otherPlayer.caught[theirIndex].name}**.\n` +
+      `They can use \`!accepttrade\` or \`!declinetrade\`.`
+    );
+  }
+
+  if (command === "!accepttrade") {
+    const trade = data.pendingTrades[message.author.id];
+
+    if (!trade) return message.reply("You have no pending trades.");
+
+    const fromPlayer = getPlayer(data, trade.from);
+    const toPlayer = getPlayer(data, message.author.id);
+
+    const myMonster = fromPlayer.caught[trade.myIndex];
+    const theirMonster = toPlayer.caught[trade.theirIndex];
+
+    if (!myMonster || !theirMonster) {
+      delete data.pendingTrades[message.author.id];
+      saveData(data);
+      return message.reply("Trade failed. One of the monsters no longer exists.");
+    }
+
+    fromPlayer.caught[trade.myIndex] = theirMonster;
+    toPlayer.caught[trade.theirIndex] = myMonster;
+
+    delete data.pendingTrades[message.author.id];
+    saveData(data);
+
+    return message.reply(
+      `🤝 Trade completed!\n` +
+      `You traded **${theirMonster.name}** for **${myMonster.name}**.`
+    );
+  }
+
+  if (command === "!declinetrade") {
+    if (!data.pendingTrades[message.author.id]) return message.reply("You have no pending trades.");
+
+    delete data.pendingTrades[message.author.id];
+    saveData(data);
+
+    return message.reply("❌ Trade declined.");
+  }
+
+  if (command.startsWith("!givemonster ")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can give monsters.");
+    }
+
+    const target = message.mentions.users.first();
+
+    if (!target) return message.reply("Usage: `!givemonster @user Goblin`");
+
+    const monsterName = content
+      .replace(/!givemonster\s+<@!?\d+>\s*/i, "")
+      .trim();
+
+    const allMonsters = [...monsters, MIXER_MONSTER, ...eventMonsters, ...ultraRareMonsters];
+
+    const match = allMonsters.find(m =>
+      m.name.toLowerCase() === monsterName.toLowerCase() ||
+      m.name.replace(/[🎆🇺🇸🦅🌌🐉🔥❄️⚡👻🌳🌠]/gu, "").trim().toLowerCase() === monsterName.toLowerCase()
+    );
+
+    if (!match) return message.reply("Monster not found.");
+
+    const targetPlayer = getPlayer(data, target.id);
+    const grantedMonster = { ...match, shiny: false };
+    targetPlayer.caught.push(grantedMonster);
+    targetPlayer.lifetimeCaught.push({ ...grantedMonster });
+    targetPlayer.points += match.points;
+
+    saveData(data);
+
+    return message.reply(`✅ Gave **${match.name}** to ${formatPlayerMention(data, target.id)}.`);
+  }
+
+  if (command.startsWith("!removemonster ")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can remove monsters.");
+    }
+
+    const target = message.mentions.users.first();
+    if (!target) {
+      return message.reply("Usage: `!removemonster @user Monster Name [amount]`");
+    }
+
+    const remainder = content
+      .replace(/!removemonster\s+<@!?\d+>\s*/i, "")
+      .trim();
+
+    const parts = remainder.split(/\s+/);
+    const possibleAmount = parseInt(parts[parts.length - 1]);
+    const amount = Number.isNaN(possibleAmount) ? 1 : possibleAmount;
+    const monsterInput = Number.isNaN(possibleAmount)
+      ? remainder
+      : parts.slice(0, -1).join(" ");
+
+    if (!monsterInput || amount <= 0) {
+      return message.reply("Usage: `!removemonster @user Monster Name [amount]`");
+    }
+
+    const targetPlayer = getPlayer(data, target.id);
+    const wanted = cleanMonsterName(monsterInput).toLowerCase();
+    const matchingIndexes = [];
+
+    for (let i = targetPlayer.caught.length - 1; i >= 0; i--) {
+      if (cleanMonsterName(targetPlayer.caught[i].name).toLowerCase() === wanted) {
+        matchingIndexes.push(i);
+        if (matchingIndexes.length >= amount) break;
+      }
+    }
+
+    if (matchingIndexes.length === 0) {
+      return message.reply(`${target} does not have a monster named **${monsterInput}**.`);
+    }
+
+    let pointsRemoved = 0;
+    const removedNames = [];
+
+    for (const index of matchingIndexes) {
+      const [removed] = targetPlayer.caught.splice(index, 1);
+      pointsRemoved += Number(removed.points) || 0;
+      removedNames.push(removed.name);
+    }
+
+    targetPlayer.points = Math.max(0, targetPlayer.points - pointsRemoved);
+    saveData(data);
+
+    return message.reply(
+      `🗑️ Removed **${removedNames.length}** ${cleanMonsterName(monsterInput)} monster${removedNames.length === 1 ? "" : "s"} from ${target}.\n` +
+      `Removed **${pointsRemoved} points** connected to those catches.`
+    );
+  }
+
+  if (command === "!pethelp" || command === "!petshelp") {
+    return message.reply(
+      `🥚 **EGGS & COMPANION GUIDE**\n\n` +
+      `🥚 **Finding Eggs**\n` +
+      `Eggs may appear after successful normal hunts.\n` +
+      `Common roll: **50%** | Rare: **30%** | Epic: **20%** | Legendary: **10%**\n\n` +
+      `⏳ **Incubation Times**\n` +
+      `Common = **30 minutes**\nRare = **1 hour**\nEpic = **2 hours**\nLegendary = **4 hours**\n\n` +
+      `Use \`!eggs\` to view eggs and incubators.\n` +
+      `Use \`!incubate rarity\` or \`!incubate egg#\` to begin incubation.\n` +
+      `Use \`!hatch\` when an egg is ready.\n\n` +
+      `🏗️ **Incubator Progression**\n` +
+      `You begin with **1 incubator** and unlock another every **100 Hunter Points**, up to **5**.\n\n` +
+      `🐾 **Companions**\n` +
+      `Every habitat has Common, Rare, Epic, and Legendary companions. Only one can be equipped at a time.\n` +
+      `Use \`!pets\`, \`!pet number\`, and \`!equippet number\`.\n` +
+      `Give a companion a cosmetic nickname with \`!namepet pet# New Name\`.\n` +
+      `Restore its species name with \`!resetpetname pet#\`.\n\n` +
+      `⭐ **Companion Progression**\n` +
+      `The equipped pet earns **10 Companion XP** after successful hunts. Affection Events can award **5 bonus XP**.\n` +
+      `Pets can reach **Level 25**. Bond increases every five levels, up to Bond 5, strengthening the passive.\n\n` +
+      `✨ **Pet Passives**\n` +
+      `Passives can improve capture chance, egg discovery, shiny odds, points, item finds, or hunt cooldowns.\n\n` +
+      `📖 **Pet Dex Collections**\n` +
+      `Use \`!petdex\` to track all **32 standard habitat companions**. Once hatched, a species remains permanently checked—even if that pet is later combined or sacrificed.\n` +
+      `Collect all four pets from a habitat for a unique title. Complete all 32 to receive **100 Hunter Points**, **1 Legendary Egg**, the Mythic **Master Beast Tamer** title, and **3 additional Legendary titles**.`
+    );
+  }
+
+  if (command === "!monstercommands" || command === "!commands") {
+    return message.reply(
+      `📜 **MONSTER HUNT PLAYER COMMANDS**\n\n` +
+      `🎯 **Hunting**\n` +
+      `\`!hunt\` — Find a monster\n\`!captureitems\` — View capture items\n` +
+      `\`!usebait rare/epic/legendary\` — Activate bait\n\`!knowledge\` — View species knowledge\n\n` +
+      `📚 **Collection & Progress**\n` +
+      `\`!dex\` — Monster Dex\n\`!stats\` — Hunter statistics\n\`!leaderboard\` — Rankings\n` +
+      `\`!achievements\` — Achievements\n\`!titles\` — View and equip titles\n\`!collection\` — Lifetime collection summary\n\n` +
+      `🪙 **Big Game & Merchants**\n` +
+      `\`!biggame\` — Event timer and leaderboard\n\`!tokens\` — Hunt Token wallet\n` +
+      `\`!merchant\` — Browse an active merchant\n\`!buy item name\` — Purchase an item\n` +
+      `\`!merchantcollection\` — Merchant collection\n\`!use item name\` — Use an interactive item\n\`!gamble\` — Play when Gribble is visiting\n\n` +
+      `🥚 **Eggs & Pets**\n` +
+      `\`!eggs\` — Eggs and incubators\n\`!incubate rarity\` or \`!incubate egg#\`\n` +
+      `\`!hatch\` or \`!hatch slot#\`\n\`!pets\` — Companion list\n` +
+      `\`!pet number\` — Pet details\n\`!equippet number\` — Equip pet\n` +
+      `\`!namepet pet# New Name\` — Name a pet\n\`!resetpetname pet#\` — Restore species name\n` +
+      `\`!petdex\` — Pet collections\n\n` +
+      `🌌 **Ultra Hunts**\n` +
+      `\`!ultrahunt\` — Join active Ultra event\n\`!relics\` — View Relics\n\`!world\` — View the current public World Status\n` +
+      `\`!summon relic name\` — Summon an Ultra\n\n` +
+      `🎯 **Daily & Events**\n` +
+      `\`!daily\` — Daily quests\n\`!claimdaily\` — Claim quest rewards\n` +
+      `\`!dailyreward\` — Login reward\n\`!events\` — Current event\n\n` +
+      `🤝 **Social & Notifications**\n` +
+      `\`!trade @user your# their#\` — Trade monsters\n` +
+      `\`!monsternotify on/off\` — Toggle reminders\n\n` +
+      `📖 **Help**\n` +
+      `\`!monsterhelp\` | \`!monsterrules\` | \`!pethelp\``
+    );
+  }
+
+  if (command === "!monsterrules" || command === "!rules") {
+    return message.reply(
+      `🐉 **MONSTER HUNT RULES & GUIDE**\n\n` +
+      `🎯 **Hunting**\n` +
+      `Use \`!hunt\` to encounter a monster. Reply with one of the numbered capture choices shown by the bot.\n` +
+      `You can normally hunt once every **2 hours**. Equipped pets with cooldown abilities can reduce this timer.\n\n` +
+      `⭐ **Hunter Points**\n` +
+      `Common = **1** | Rare = **3** | Epic = **5** | Legendary = **10**\n` +
+      `Mythic and secret creatures have special rewards. Shiny monsters award **+10 points**.\n\n` +
+      `📚 **Species Knowledge**\n` +
+      `3 encounters = **+5%** | 5 = **+10%** | 10 = **+15%** | 20 = **+20%**\n\n` +
+      `🎒 **Capture Items**\n` +
+      `🍓 Hunter Berry = **+10%**\n🍯 Sticky Honey = **+20%**\n` +
+      `🕸️ Enchanted Net = **+30%**\n🌟 Master Charm = **Guaranteed capture**\n` +
+      `Use \`!captureitems\` to view your inventory.\n\n` +
+      `🪤 **Bait**\n` +
+      `Use \`!usebait rare\`, \`!usebait epic\`, or \`!usebait legendary\` to improve the rarity of your next normal encounter.\n\n` +
+      `🌌 **Ultra Rare Hunts**\n` +
+      `Ultra monsters appear through random weekly events or Relic summons. Use \`!ultrahunt\` during an active event.\n` +
+      `Each Ultra has a unique ability. Catchers earn **50 points** and participating hunters earn at least **25 points** when it is caught.\n` +
+      `View Relics with \`!relics\` and summon with \`!summon relic name\`.\n\n` +
+      `🥚 **Eggs & Companions**\n` +
+      `Successful hunts can uncover eggs. Incubate and hatch them to collect pets with passive abilities.\n` +
+      `Use \`!pethelp\` for the complete companion guide.\n\n` +
+      `🎯 **Daily Progress**\n` +
+      `Use \`!daily\`, \`!claimdaily\`, and \`!dailyreward\`.\n\n` +
+      `🪙 **Big Game Hunt**\n` +
+      `Three times every week on different random days, a 2-hour Big Game Hunt begins between **3:30 PM and 8:00 PM Mountain Time** and the hunt cooldown becomes **30 minutes**. ` +
+      `Successful catches award Hunt Tokens by rarity. The Top 3 earn **50 / 30 / 15 Hunter Points**, and everyone keeps their tokens.\n` +
+      `Traveling Merchants now make **3 random visits per week**. Use \`!merchant\`, \`!buy\`, \`!tokens\`, and \`!merchantcollection\`.\n\n` +
+      `🏆 **Collections & Rewards**\n` +
+      `Complete the Monster Dex, unlock achievements and titles, collect habitat pet sets, and climb the leaderboard.\n\n` +
+      `Use \`!monstercommands\` for the complete command list.`
+    );
+  }
+
+  if (command === "!moments" || command.startsWith("!moments ")) {
+    const input = content.slice("!moments".length).trim().toLowerCase();
+    const moments = [...(data.seasonMoments || [])].sort(
+      (a, b) => a.timestamp - b.timestamp
+    );
+
+    if (moments.length === 0) {
+      return message.reply(
+        "📜 No Season Chronicle moments have been recorded yet."
+      );
+    }
+
+    const pageSize = 10;
+    const requestedPage = input === "all" ? 1 : Number(input || "1");
+    const totalPages = Math.max(1, Math.ceil(moments.length / pageSize));
+    const page = Number.isInteger(requestedPage)
+      ? Math.max(1, Math.min(totalPages, requestedPage))
+      : 1;
+
+    const pageMoments = moments.slice(
+      (page - 1) * pageSize,
+      page * pageSize
+    );
+
+    return message.reply(
+      `📜 **SEASON CHRONICLE**\n` +
+      `Recorded Moments: **${moments.length}**\n` +
+      `Page **${page}/${totalPages}**\n\n` +
+      `${pageMoments.map(moment => formatSeasonMoment(data, moment)).join("\n\n")}\n\n` +
+      `${page < totalPages
+        ? `Use \`!moments ${page + 1}\` for the next page.`
+        : `Use \`!moments 1\` to return to the beginning.`}`
+    );
+  }
+
+  if (command === "!story") {
+    const moments = [...(data.seasonMoments || [])]
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(-15);
+
+    if (moments.length === 0) {
+      return message.reply(
+        "📖 The season's story has not begun yet. Meaningful moments will appear here as hunters make history."
+      );
+    }
+
+    const storyLines = moments.map((moment, index) => {
+      const transitions = [
+        "The season began when",
+        "Not long after,",
+        "As the hunt continued,",
+        "Then came a moment few expected:",
+        "The chronicles also remember when",
+        "Later,",
+        "Before long,",
+        "The wilderness changed again when"
+      ];
+      const transition = transitions[Math.min(index, transitions.length - 1)];
+      const sentence = moment.text.replace(/[.!]+$/, "");
+      return `${transition} ${sentence.charAt(0).toLowerCase()}${sentence.slice(1)}.`;
+    });
+
+    return message.reply(
+      `📖 **THE MONSTER HUNT SEASON CHRONICLE**\n\n` +
+      `${storyLines.join("\n\n")}\n\n` +
+      `*This story was created from the ${moments.length} most recent recorded moments.*`
+    );
+  }
+
+  if (command.startsWith("!addmoment ")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can add Chronicle moments.");
+    }
+
+    const momentText = content.slice("!addmoment".length).trim();
+    if (!momentText) {
+      return message.reply("Usage: `!addmoment Describe the special moment here`");
+    }
+
+    const moment = addSeasonMoment(data, {
+      type: "manual",
+      playerId: message.author.id,
+      icon: "📝",
+      text: momentText
+    });
+
+    saveData(data);
+    return message.reply(
+      `✅ Added Chronicle Moment **#${moment.id}**:\n${moment.text}`
+    );
+  }
+
+  if (command.startsWith("!removemoment ")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can remove Chronicle moments.");
+    }
+
+    const momentId = Number(content.slice("!removemoment".length).trim());
+    if (!Number.isInteger(momentId)) {
+      return message.reply("Usage: `!removemoment moment#`");
+    }
+
+    const index = (data.seasonMoments || []).findIndex(
+      moment => Number(moment.id) === momentId
+    );
+
+    if (index < 0) {
+      return message.reply("That Chronicle moment could not be found.");
+    }
+
+    const [removed] = data.seasonMoments.splice(index, 1);
+    for (const [key, value] of Object.entries(data.seasonMomentFlags || {})) {
+      if (Number(value) === momentId) delete data.seasonMomentFlags[key];
+    }
+
+    saveData(data);
+    return message.reply(
+      `🗑️ Removed Chronicle Moment **#${removed.id}**:\n${removed.text}`
+    );
+  }
+
+  if (command === "!clearmoments") {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can clear the Season Chronicle.");
+    }
+
+    data.seasonMoments = [];
+    data.seasonMomentFlags = {};
+    data.nextSeasonMomentId = 1;
+    saveData(data);
+
+    return message.reply("🧹 The Season Chronicle has been cleared.");
+  }
+
+  if (["!resetseason", "!startnewseason", "!newseason"].includes(command)) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can reset/start a Monster Hunt season.");
+    }
+
+    const result = hardResetSeasonForNewCompetition(data);
+    saveData(data);
+
+    return message.reply(
+      `🌅 **A NEW MONSTER HUNT SEASON HAS BEGUN!**\n\n` +
+      `✅ Preserved permanent Monster Dex / lifetime catches\n` +
+      `✅ Preserved permanent PetDex discoveries and collection-history titles\n` +
+      `✅ Preserved permanent history for **${result.preservedPlayers} players**\n` +
+      `✅ Preserved **${result.preservedCreatures} lifetime monster catches**\n\n` +
+      `🧹 **WIPED FOR EVERY PLAYER:**\n` +
+      `⭐ Hunter Points\n` +
+      `🪙 Hunt Tokens and token counters\n` +
+      `🪤 Bait / lures / active bait\n` +
+      `🎒 Capture items and merchant inventory\n` +
+      `🥚 Eggs and incubators\n` +
+      `🐾 Owned pets, equipped pet, Companion XP/bond progress\n` +
+      `📚 Species Knowledge bonuses\n` +
+      `🔮 Relics\n` +
+      `🎯 Big Game / Ultra / event progress\n` +
+      `⏱️ Hunt/fetch cooldown state\n` +
+      `📜 Daily quests and seasonal titles/achievements\n\n` +
+      `🏹 Everyone now starts competitively from zero.`
+    );
+  }
+if (command.startsWith("!givepoints ")) {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return message.reply("Only admins can give points.");
+  }
+
+  const target = message.mentions.users.first();
+  const amount = parseInt(content.split(/\s+/)[2]);
+
+  if (!target || Number.isNaN(amount)) {
+    return message.reply("Usage: `!givepoints @user 100`");
+  }
+
+  const targetPlayer = getPlayer(data, target.id);
+  targetPlayer.points += amount;
+
+  saveData(data);
+
+  return message.reply(`✅ Gave **${amount} points** to ${target}.`);
+}
+  if (command.startsWith("!giverelic ")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can give Relics.");
+    }
+
+    const target = message.mentions.users.first();
+    const withoutCommandAndMention = content
+      .replace(/!giverelic\s+<@!?\d+>\s*/i, "")
+      .trim();
+    const parts = withoutCommandAndMention.split(/\s+/);
+    const possibleAmount = parseInt(parts[parts.length - 1]);
+    const amount = Number.isNaN(possibleAmount) ? 1 : possibleAmount;
+    const relicInput = Number.isNaN(possibleAmount)
+      ? withoutCommandAndMention
+      : parts.slice(0, -1).join(" ");
+    const monster = getUltraMonster(relicInput);
+
+    if (!target || !monster || monster.relicCommand.toLowerCase() !== relicInput.toLowerCase() || amount <= 0) {
+      return message.reply("Usage: `!giverelic @user abyssal ink 1`");
+    }
+
+    const targetPlayer = getPlayer(data, target.id);
+    targetPlayer.relics[monster.relicKey] += amount;
+    saveData(data);
+
+    return message.reply(`✅ Gave **${amount} ${monster.relicName}** to ${target}.`);
+  }
+
+  if (command.startsWith("!givecapture ")) {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can give capture items.");
+    }
+
+    const target = message.mentions.users.first();
+    const args = content.split(/\s+/);
+    const itemKey = resolveCaptureItem(args[2] || "");
+    const amount = parseInt(args[3]);
+
+    if (!target || !itemKey || Number.isNaN(amount) || amount <= 0) {
+      return message.reply("Usage: `!givecapture @user berry/honey/net/master amount`");
+    }
+
+    const targetPlayer = getPlayer(data, target.id);
+    targetPlayer.captureItems[itemKey] += amount;
+
+    saveData(data);
+
+    return message.reply(
+      `✅ Gave **${amount} ${CAPTURE_ITEMS[itemKey].name}** to ${target}.`
+    );
+  }
+
+  if (command.startsWith("!givebait ")) {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return message.reply("Only admins can give bait.");
+  }
+
+  const target = message.mentions.users.first();
+  const args = content.split(/\s+/);
+  const baitType = args[2]?.toLowerCase();
+  const amount = parseInt(args[3]);
+
+  if (!target || !["rare", "epic", "legendary"].includes(baitType) || Number.isNaN(amount)) {
+    return message.reply("Usage: `!givebait @user rare 3`");
+  }
+
+  const targetPlayer = getPlayer(data, target.id);
+  targetPlayer.bait[baitType] += amount;
+
+  saveData(data);
+
+  return message.reply(`✅ Gave **${amount} ${baitType} bait** to ${target}.`);
+}
+  if (command === "!rebuildhistory2") {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    return message.reply("Only admins can use this command.");
+  }
+
+  await message.reply("🔄 Starting full recovery scan. This may take a minute...");
+
+  const oldData = loadData();
+  fs.writeFileSync(
+    `data-backup-${Date.now()}.json`,
+    JSON.stringify(oldData, null, 2)
+  );
+
+  const rebuilt = {
+    players: {},
+    pendingTrades: {},
+    ultraRareState: null,
+    worldProgress: Object.fromEntries(RELIC_KEYS.map(key => [key, false])),
+    worldShatterUnlocked: false
+  };
+
+  let recovered = 0;
+  let lastId = null;
+
+  while (true) {
+    const options = { limit: 100 };
+    if (lastId) options.before = lastId;
+
+    const messages = await message.channel.messages.fetch(options);
+    if (messages.size === 0) break;
+
+    for (const [, msg] of messages) {
+      lastId = msg.id;
+
+      if (msg.author.id !== client.user.id) continue;
+      if (!msg.embeds || msg.embeds.length === 0) continue;
+
+      const embed = msg.embeds[0];
+      if (!embed.title || !embed.title.startsWith("✅ You caught")) continue;
+      if (!msg.reference?.messageId) continue;
+
+      const original = await message.channel.messages
+        .fetch(msg.reference.messageId)
+        .catch(() => null);
+
+      if (!original || original.author.bot) continue;
+
+      const userId = original.author.id;
+
+      if (!rebuilt.players[userId]) {
+        rebuilt.players[userId] = {
+          points: 0,
+          caught: [],
+          currentMonster: null,
+          lastHunt: 0,
+          title: null,
+          dailyQuests: [],
+          dailyClaimed: false,
+          dailyRerollsUsed: 0,
+          lastDaily: null,
+          huntCount: 0,
+          dailyReward: 0,
+          bait: {
+            rare: 0,
+            epic: 0,
+            legendary: 0
+          },
+          activeBait: null,
+          knowledge: {},
+          captureItems: {
+            berry: 0,
+            honey: 0,
+            net: 0,
+            masterCharm: 0
+          },
+          relics: {
+            abyssalInk: 0,
+            ancientDragonScale: 0,
+            phoenixFeather: 0,
+            frozenCore: 0,
+            stormCrystal: 0,
+            shadowEssence: 0,
+            heartwoodSeed: 0,
+            starFeather: 0
+          }
+        };
+      }
+
+      const player = rebuilt.players[userId];
+
+      const monsterName = embed.title
+        .replace("✅ You caught ", "")
+        .replace("!", "")
+        .trim();
+
+      const description = embed.description || "";
+
+      const rarityMatch = description.match(/\*\*Rarity:\*\*\s(.+)/);
+      const pointsMatch = description.match(/\*\*\+(\d+)\spoints/);
+
+      const rarity = rarityMatch ? rarityMatch[1].trim() : "Common";
+      const points = pointsMatch ? parseInt(pointsMatch[1]) : 0;
+
+      const isShiny = monsterName.includes("Shiny");
+
+      player.points += points;
+
+      player.caught.push({
+        name: monsterName,
+        rarity,
+        points,
+        shiny: isShiny
+      });
+
+      const rareBaitMatches = description.match(/1 Rare Bait/g) || [];
+      const epicBaitMatches = description.match(/1 Epic Bait/g) || [];
+      const legendaryBaitMatches = description.match(/1 Legendary Bait/g) || [];
+
+      player.bait.rare += rareBaitMatches.length;
+      player.bait.epic += epicBaitMatches.length;
+      player.bait.legendary += legendaryBaitMatches.length;
+
+      recovered++;
+    }
+
+    if (messages.size < 100) break;
+  }
+
+  for (const [, player] of Object.entries(rebuilt.players)) {
+    const unlocked = unlockedAchievements(player);
+    if (unlocked.length > 0) {
+      player.title = unlocked[unlocked.length - 1];
+    }
+  }
+
+  saveData(rebuilt);
+
+  return message.channel.send(
+    `✅ **Full recovery complete!**\n` +
+    `Recovered **${recovered} caught monsters** from channel history.\n\n` +
+    `A backup of the current data was created before replacing it.`
+  );
+}
+  if (command === "!rebuildhistory3") {
+  if (
+    !message.member.permissions.has(
+      PermissionsBitField.Flags.Administrator
+    )
+  ) {
+    return message.reply(
+      "Only admins can use this command."
+    );
+  }
+
+  await message.reply(
+    "🔄 Starting full recovery scan. This may take a few minutes..."
+  );
+
+  const rebuilt = {
+    players: {},
+    pendingTrades: {},
+    ultraRareState: null,
+    worldProgress: Object.fromEntries(RELIC_KEYS.map(key => [key, false])),
+    worldShatterUnlocked: false
+  };
+
+  let recoveredCatches = 0;
+  let recoveredDailyPoints = 0;
+  let recoveredQuestPoints = 0;
+
+  let lastId = null;
+
+  while (true) {
+    const options = {
+      limit: 100
+    };
+
+    if (lastId) {
+      options.before = lastId;
+    }
+
+    const messages =
+      await message.channel.messages.fetch(
+        options
+      );
+
+    if (messages.size === 0) break;
+
+    for (const [, msg] of messages) {
+      lastId = msg.id;
+
+      if (
+        msg.author.id !== client.user.id
+      ) {
+        continue;
+      }
+
+      if (
+        !msg.reference?.messageId
+      ) {
+        continue;
+      }
+
+      const original =
+        await message.channel.messages
+          .fetch(msg.reference.messageId)
+          .catch(() => null);
+
+      if (
+        !original ||
+        original.author.bot
+      ) {
+        continue;
+      }
+
+      const userId =
+        original.author.id;
+
+      if (
+        !rebuilt.players[userId]
+      ) {
+        rebuilt.players[userId] = {
+          points: 0,
+          caught: [],
+          currentMonster: null,
+          lastHunt: 0,
+          title: null,
+          dailyQuests: [],
+          dailyClaimed: false,
+          dailyRerollsUsed: 0,
+          lastDaily: null,
+          huntCount: 0,
+          dailyReward: 0,
+          bait: {
+            rare: 0,
+            epic: 0,
+            legendary: 0
+          },
+          activeBait: null,
+          knowledge: {},
+          captureItems: {
+            berry: 0,
+            honey: 0,
+            net: 0,
+            masterCharm: 0
+          },
+          relics: {
+            abyssalInk: 0,
+            ancientDragonScale: 0,
+            phoenixFeather: 0,
+            frozenCore: 0,
+            stormCrystal: 0,
+            shadowEssence: 0,
+            heartwoodSeed: 0,
+            starFeather: 0
+          }
+        };
+      }
+
+      const player =
+        rebuilt.players[userId];
+
+      let text = "";
+
+      if (
+        msg.embeds.length > 0
+      ) {
+        const embed =
+          msg.embeds[0];
+
+        text =
+          `${embed.title || ""}\n${embed.description || ""}`;
+      } else {
+        text =
+          msg.content || "";
+      }
+
+      //
+      // RECOVER MONSTER CATCHES
+      //
+      if (
+        text.includes(
+          "✅ You caught"
+        )
+      ) {
+        const embed =
+          msg.embeds[0];
+
+        const monsterName =
+          embed.title
+            .replace(
+              "✅ You caught ",
+              ""
+            )
+            .replace(
+              "!",
+              ""
+            )
+            .trim();
+
+        const description =
+          embed.description || "";
+
+        const rarityMatch =
+          description.match(
+            /\*\*Rarity:\*\*\s(.+)/
+          );
+
+        const pointsMatch =
+          description.match(
+            /\*\*\+(\d+)\spoints/
+          );
+
+        const rarity =
+          rarityMatch
+            ? rarityMatch[1].trim()
+            : "Common";
+
+        const points =
+          pointsMatch
+            ? parseInt(
+                pointsMatch[1]
+              )
+            : 0;
+
+        player.points +=
+          points;
+
+        player.caught.push({
+          name: monsterName,
+          rarity,
+          points,
+          shiny:
+            monsterName.includes(
+              "Shiny"
+            )
+        });
+
+        const rare =
+          description.match(
+            /1 Rare Bait/g
+          ) || [];
+
+        const epic =
+          description.match(
+            /1 Epic Bait/g
+          ) || [];
+
+        const legendary =
+          description.match(
+            /1 Legendary Bait/g
+          ) || [];
+
+        player.bait.rare +=
+          rare.length;
+
+        player.bait.epic +=
+          epic.length;
+
+        player.bait.legendary +=
+          legendary.length;
+
+        recoveredCatches++;
+      }
+
+      //
+      // RECOVER DAILY REWARDS
+      //
+      if (
+        text.includes(
+          "🎁 Daily Reward!"
+        )
+      ) {
+        const pointsMatch =
+          text.match(
+            /\+(\d+)\sPoints/
+          );
+
+        if (pointsMatch) {
+          const points =
+            parseInt(
+              pointsMatch[1]
+            );
+
+          player.points +=
+            points;
+
+          recoveredDailyPoints +=
+            points;
+        }
+
+        if (
+          text.includes(
+            "Rare Bait"
+          )
+        ) {
+          player.bait.rare++;
+        }
+
+        if (
+          text.includes(
+            "Epic Bait"
+          )
+        ) {
+          player.bait.epic++;
+        }
+
+        if (
+          text.includes(
+            "Legendary Bait"
+          )
+        ) {
+          player.bait.legendary++;
+        }
+      }
+
+      //
+      // RECOVER DAILY QUEST CLAIMS
+      //
+      if (
+        text.includes(
+          "Daily quests complete!"
+        )
+      ) {
+        const pointsMatch =
+          text.match(
+            /\+(\d+) bonus points/
+          );
+
+        if (pointsMatch) {
+          const points =
+            parseInt(
+              pointsMatch[1]
+            );
+
+          player.points +=
+            points;
+
+          recoveredQuestPoints +=
+            points;
+        }
+
+        const rare =
+          text.match(
+            /1 Rare Bait/g
+          ) || [];
+
+        const epic =
+          text.match(
+            /1 Epic Bait/g
+          ) || [];
+
+        const legendary =
+          text.match(
+            /1 Legendary Bait/g
+          ) || [];
+
+        player.bait.rare +=
+          rare.length;
+
+        player.bait.epic +=
+          epic.length;
+
+        player.bait.legendary +=
+          legendary.length;
+      }
+    }
+
+    if (
+      messages.size < 100
+    ) {
+      break;
+    }
+  }
+
+  //
+  // RECALCULATE TITLES
+  //
+  for (const [, player] of Object.entries(
+    rebuilt.players
+  )) {
+    const unlocked =
+      unlockedAchievements(
+        player
+      );
+
+    if (
+      unlocked.length > 0
+    ) {
+      player.title =
+        unlocked[
+          unlocked.length - 1
+        ];
+    }
+  }
+
+  fs.writeFileSync(
+    path.join(DATA_DIRECTORY, "recovered-data.json"),
+    JSON.stringify(
+      rebuilt,
+      null,
+      2
+    )
+  );
+
+  return message.channel.send(
+    `✅ Recovery complete!\n\n` +
+      `Recovered Catches: ${recoveredCatches}\n` +
+      `Recovered Daily Points: ${recoveredDailyPoints}\n` +
+      `Recovered Quest Points: ${recoveredQuestPoints}\n\n` +
+      `A file called recovered-data.json has been created. Review it before replacing data.json.`
+  );
+}
+  if (command === "!downloadrecovery") {
+  return message.channel.send({
+    files: [path.join(DATA_DIRECTORY, "recovered-data.json")]
+  });
+}
+
+  // ==================== H.0.1 VOLUME / ACTIVITY BRIDGE ADMIN TOOLS ====================
+  if (command === "!volumestatus") {
+    if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only administrators can view Volume status.");
+    }
+
+    const row = db.prepare("SELECT updated_at, length(payload) AS bytes FROM game_state WHERE id = 1").get();
+    const current = loadData();
+
+    return message.reply(
+      `💾 **MONSTER HUNT VOLUME STATUS**\n\n` +
+      `Season: **Fresh Season / H.0.1**\n` +
+      `Database: \`${DATABASE_FILE}\`\n` +
+      `Volume mounted: **${fs.existsSync("/data") ? "YES" : "NO"}**\n` +
+      `Players: **${Object.keys(current.players || {}).length}**\n` +
+      `Saved state size: **${Number(row?.bytes || 0).toLocaleString()} bytes**\n` +
+      `Last save: ${row?.updated_at ? `<t:${Math.floor(Number(row.updated_at) / 1000)}:R>` : "Unknown"}\n` +
+      `Activity writes: **OFF**`
+    );
+  }
+
+  if (command === "!activitytest") {
+    if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only administrators can test the Activity bridge.");
+    }
+
+    const target = await getTextChannel(MONSTER_CHANNEL_ID);
+    if (!target?.isTextBased()) {
+      return message.reply("❌ I could not access the configured Monster Hunt channel.");
+    }
+
+    await target.send({
+      content:
+        `🧪 **ACTIVITY BRIDGE TEST**\n\n` +
+        `${message.author} triggered a test from the new combined Monster Hunt service.\n` +
+        `✅ Discord bot connection\n✅ Monster Hunt channel connection\n✅ Activity-to-Discord announcement path ready`,
+      allowedMentions: { users: [message.author.id] }
+    });
+
+    return message.reply("✅ Activity bridge message sent to the Monster Hunt channel.");
+  }
+
+  if (command === "!monsterhelp" || command === "!help" || command === "!guide") {
+    return message.reply(
+      `🌌 **MONSTER HUNT HELP**\n\n` +
+      `Welcome, Hunter! Choose the guide you need:\n\n` +
+      `🐉 **Game Rules & Core Systems**\nUse \`!monsterrules\`\n\n` +
+      `🥚 **Eggs, Incubators & Companions**\nUse \`!pethelp\`\n\n` +
+      `📜 **Complete Player Command List**\nUse \`!monstercommands\`\n\n` +
+      `⭐ **Popular Commands**\n` +
+      `\`!hunt\` — Find a monster\n` +
+      `\`!eggs\` — View eggs and incubators\n` +
+      `\`!pets\` — View your companions\n` +
+      `\`!petdex\` — View companion collections\n` +
+      `\`!dex\` — View your Monster Dex\n` +
+      `\`!leaderboard\` — View the rankings\n` +
+      `\`!events\` — View the current event\n` +
+      `\`!relics\` — View Ultra Relics\n` +
+      `\`!biggame\` — Big Game Hunt status\n` +
+      `\`!tokens\` — Hunt Token wallet\n` +
+      `\`!merchant\` — Traveling Merchant\n\n` +
+      `New players should begin with \`!monsterrules\` and \`!pethelp\`.`
+    );
+  }
+});
+
+
+// ==================== H.1 ACTIVITY UI LAYOUT DATA ====================
+const H1_PET_DEX = [
+  { key:"briar_pup", name:"Briar Pup", icon:"🌿", habitat:"Forest", rarity:"Common", ability:"Capture", description:"Slightly increases normal monster capture chance." },
+  { key:"myceling", name:"Myceling", icon:"🍄", habitat:"Forest", rarity:"Rare", ability:"Egg Finder", description:"Increases the chance to discover eggs." },
+  { key:"rootling_guardian", name:"Rootling Guardian", icon:"🌳", habitat:"Forest", rarity:"Epic", ability:"Item Finder", description:"Finds useful hunting supplies after successful hunts." },
+  { key:"verdant_sentinel", name:"Verdant Sentinel", icon:"🦉", habitat:"Forest", rarity:"Legendary", ability:"Shiny Hunter", description:"Greatly increases shiny monster odds." },
+
+  { key:"reef_snapper", name:"Reef Snapper", icon:"🪸", habitat:"Ocean", rarity:"Common", ability:"Bonus Points", description:"Earns bonus points from successful hunts." },
+  { key:"abyss_prowler", name:"Abyss Prowler", icon:"🌊", habitat:"Ocean", rarity:"Rare", ability:"Cooldown", description:"Reduces the normal hunt cooldown." },
+  { key:"inkfiend_hatchling", name:"Inkfiend Hatchling", icon:"🦑", habitat:"Ocean", rarity:"Epic", ability:"Item Finder", description:"Frequently finds useful hunting supplies." },
+  { key:"leviacub", name:"Leviacub", icon:"🐉", habitat:"Ocean", rarity:"Legendary", ability:"Bonus Points", description:"Earns a large point bonus from successful hunts." },
+
+  { key:"pebble_maw", name:"Pebble Maw", icon:"🪨", habitat:"Mountain", rarity:"Common", ability:"Item Finder", description:"Occasionally finds capture items after successful hunts." },
+  { key:"crystal_burrower", name:"Crystal Burrower", icon:"💎", habitat:"Mountain", rarity:"Rare", ability:"Egg Finder", description:"Increases the chance to discover eggs." },
+  { key:"ironhide_cub", name:"Ironhide Cub", icon:"🦍", habitat:"Mountain", rarity:"Epic", ability:"Capture", description:"Increases normal monster capture chance." },
+  { key:"titan_spawn", name:"Titan Spawn", icon:"⛰️", habitat:"Mountain", rarity:"Legendary", ability:"Bonus Points", description:"Earns a large point bonus from successful hunts." },
+
+  { key:"cinderling", name:"Cinderling", icon:"🔥", habitat:"Volcano", rarity:"Common", ability:"Bonus Points", description:"Earns bonus points from successful hunts." },
+  { key:"ashfang", name:"Ashfang", icon:"🌋", habitat:"Volcano", rarity:"Rare", ability:"Item Finder", description:"Finds useful items after successful hunts." },
+  { key:"ember_drake", name:"Ember Drake", icon:"🐉", habitat:"Volcano", rarity:"Epic", ability:"Egg Finder", description:"Greatly increases the chance to discover eggs." },
+  { key:"infernal_wyrmling", name:"Infernal Wyrmling", icon:"🌋", habitat:"Volcano", rarity:"Legendary", ability:"Shiny Hunter", description:"Greatly increases shiny monster odds." },
+
+  { key:"ice_crawler", name:"Ice Crawler", icon:"❄️", habitat:"Arctic", rarity:"Common", ability:"Cooldown", description:"Slightly reduces the normal hunt cooldown." },
+  { key:"frost_wretch", name:"Frost Wretch", icon:"🐺", habitat:"Arctic", rarity:"Rare", ability:"Capture", description:"Increases normal monster capture chance." },
+  { key:"glacier_horror", name:"Glacier Horror", icon:"🐻", habitat:"Arctic", rarity:"Epic", ability:"Bonus Points", description:"Earns additional points from successful hunts." },
+  { key:"white_tyrant_cub", name:"White Tyrant Cub", icon:"👑", habitat:"Arctic", rarity:"Legendary", ability:"Capture", description:"Greatly increases normal monster capture chance." },
+
+  { key:"living_eye", name:"Living Eye", icon:"👁️", habitat:"Void", rarity:"Common", ability:"Egg Finder", description:"Slightly increases the chance to discover eggs." },
+  { key:"night_skitter", name:"Night Skitter", icon:"🕷️", habitat:"Void", rarity:"Rare", ability:"Shiny Hunter", description:"Slightly increases shiny monster odds." },
+  { key:"void_watcher", name:"Void Watcher", icon:"🌌", habitat:"Void", rarity:"Epic", ability:"Egg Finder", description:"Greatly increases the chance to discover eggs." },
+  { key:"astral_spawn", name:"Astral Spawn", icon:"🌠", habitat:"Void", rarity:"Legendary", ability:"Shiny Hunter", description:"Massively increases shiny monster odds." },
+
+  { key:"storm_imp", name:"Storm Imp", icon:"⚡", habitat:"Sky", rarity:"Common", ability:"Item Finder", description:"Occasionally finds capture items after successful hunts." },
+  { key:"cloud_ripper", name:"Cloud Ripper", icon:"☁️", habitat:"Sky", rarity:"Rare", ability:"Cooldown", description:"Reduces the normal hunt cooldown." },
+  { key:"tempest_hatchling", name:"Tempest Hatchling", icon:"🌩️", habitat:"Sky", rarity:"Epic", ability:"Capture", description:"Greatly increases normal monster capture chance." },
+  { key:"storm_emperor_cub", name:"Storm Emperor Cub", icon:"👑", habitat:"Sky", rarity:"Legendary", ability:"Cooldown", description:"Greatly reduces the normal hunt cooldown." },
+
+  { key:"bone_gnawer", name:"Bone Gnawer", icon:"🦴", habitat:"Undead", rarity:"Common", ability:"Bonus Points", description:"Earns bonus points from successful hunts." },
+  { key:"grave_whisper", name:"Grave Whisper", icon:"👻", habitat:"Undead", rarity:"Rare", ability:"Egg Finder", description:"Increases the chance to discover eggs." },
+  { key:"crypt_fiend", name:"Crypt Fiend", icon:"⚔️", habitat:"Undead", rarity:"Epic", ability:"Item Finder", description:"Frequently finds valuable hunting supplies." },
+  { key:"hollow_prince", name:"Hollow Prince", icon:"👑", habitat:"Undead", rarity:"Legendary", ability:"Bonus Points", description:"Earns a massive point bonus from successful hunts." }
+];
+
+const H1_BEYOND_PETS = [
+  { key:"gleamlet", name:"Gleamlet", icon:"🪞", habitat:"The Mirror Scar", rarity:"Common", ability:"Capture", description:"A tiny reflective familiar from the Mirror Scar.", image:"gleamlet.png" },
+  { key:"shardpup", name:"Shardpup", icon:"💎", habitat:"The Mirror Scar", rarity:"Rare", ability:"Rare Tracker", description:"Tracks prey through impossible reflections.", image:"shardpup.png" },
+  { key:"echo_sprite", name:"Echo Sprite", icon:"✨", habitat:"The Mirror Scar", rarity:"Epic", ability:"Item Finder", description:"Retrieves supplies from mirrored spaces.", image:"echo_sprite.png" },
+  { key:"mirrormane", name:"Mirrormane", icon:"🦁", habitat:"The Mirror Scar", rarity:"Legendary", ability:"Shiny Hunter", description:"Fractures light around rare prey.", image:"mirrormane.png" },
+  { key:"buddle", name:"Buddle", icon:"🌱", habitat:"The Black Bloom", rarity:"Common", ability:"Egg Finder", description:"A cheerful Black Bloom bud companion.", image:"buddle.png" },
+  { key:"thorntail", name:"Thorntail", icon:"🌿", habitat:"The Black Bloom", rarity:"Rare", ability:"Item Finder", description:"A clever vine-tailed woodland companion.", image:"thorntail.png" },
+  { key:"sporewisp", name:"Sporewisp", icon:"🍄", habitat:"The Black Bloom", rarity:"Epic", ability:"Capture", description:"A floating fungal spirit surrounded by luminous spores.", image:"sporewisp.png" },
+  { key:"bloomheart", name:"Bloomheart", icon:"🖤", habitat:"The Black Bloom", rarity:"Legendary", ability:"Eventborn", description:"A regal guardian with a living emerald heart-core.", image:"bloomheart.png" },
+  { key:"pendlet", name:"Pendlet", icon:"⏱️", habitat:"The Chrono Tear", rarity:"Common", ability:"Cooldown", description:"Its pendulum tail leaves temporal afterimages.", image:"pendlet.png" },
+  { key:"hourhound", name:"Hourhound", icon:"⌛", habitat:"The Chrono Tear", rarity:"Rare", ability:"First Light", description:"A disciplined temporal hunting companion.", image:"hourhound.png" },
+  { key:"epoch_raven", name:"Epoch Raven", icon:"🐦‍⬛", habitat:"The Chrono Tear", rarity:"Epic", ability:"Second Chance", description:"An eerie four-eyed raven overlapping several moments.", image:"epoch_raven.png" },
+  { key:"chronarch", name:"Chronarch", icon:"🐉", habitat:"The Chrono Tear", rarity:"Legendary", ability:"Cooldown", description:"A regal guardian dragon wrapped in broken time.", image:"chronarch.png" },
+  { key:"bubblefin", name:"Bubblefin", icon:"🐟", habitat:"The Upside-Down Sea", rarity:"Common", ability:"Item Finder", description:"Swims through open air with water around its gills.", image:"bubblefin.png" },
+  { key:"riftskate", name:"Riftskate", icon:"🌊", habitat:"The Upside-Down Sea", rarity:"Rare", ability:"Capture", description:"Glides gracefully along gravity currents.", image:"riftskate.png" },
+  { key:"abyssal_warden", name:"Abyssal Warden", icon:"🛡️", habitat:"The Upside-Down Sea", rarity:"Epic", ability:"Rare Tracker", description:"An intimidating deep-sea guardian companion.", image:"abyssal_warden.png" },
+  { key:"tideborn_seraph", name:"Tideborn Seraph", icon:"🐉", habitat:"The Upside-Down Sea", rarity:"Legendary", ability:"Egg Finder", description:"A majestic sea-dragon that swims through open air.", image:"tideborn_seraph.png" },
+  { key:"drowser", name:"Drowser", icon:"💤", habitat:"The Dreaming Gate", rarity:"Common", ability:"Lucky Hunter", description:"Its sleepy shadow always seems a moment behind.", image:"drowser.png" },
+  { key:"veilfox", name:"Veilfox", icon:"🦊", habitat:"The Dreaming Gate", rarity:"Rare", ability:"Egg Finder", description:"A three-tailed dream hunter that slips through impossible doors.", image:"veilfox.png" },
+  { key:"pale_somnambulist", name:"Pale Somnambulist", icon:"👁️", habitat:"The Dreaming Gate", rarity:"Epic", ability:"Shiny Hunter", description:"A silent dream entity watched by a separate waking eye.", image:"pale_somnambulist.png" },
+  { key:"oneirarch", name:"Oneirarch", icon:"🌙", habitat:"The Dreaming Gate", rarity:"Legendary", ability:"Persistence", description:"An ancient dream guardian that anticipates its hunter's intent.", image:"oneirarch.png" }
+];
+
+const H1_OWNED_KEYS = [
+  "briar_pup","myceling","verdant_sentinel","reef_snapper","leviacub",
+  "crystal_burrower","ember_drake","ice_crawler","living_eye","storm_imp",
+  "bone_gnawer","frost_mephit","rime_sprite","star_familiar","veilkin"
+];
+
+const H1_OWNED_PETS = [...H1_PET_DEX, ...H1_BEYOND_PETS]
+  .filter(p => H1_OWNED_KEYS.includes(p.key))
+  .map((p, index) => ({
+    ...p,
+    id: index + 1,
+    nickname: p.key === "rime_sprite" ? "Rimebit" : null,
+    level: [4,7,12,3,9,5,10,6,2,8,5,8,11,7][index] || 1,
+    xp: [35,82,56,20,77,46,92,61,18,69,43,74,89,58][index] || 0,
+    bond: [2,3,4,2,3,2,4,3,1,3,2,4,5,3][index] || 1
+  }));
+
+const H1_DEV_INVENTORY = [
+  { key:"berry", name:"Hunter Berry", icon:"🍓", qty:5, type:"Capture Item", effect:"+10% capture chance." },
+  { key:"honey", name:"Sticky Honey", icon:"🍯", qty:2, type:"Capture Item", effect:"+20% capture chance." },
+  { key:"net", name:"Enchanted Net", icon:"🕸️", qty:1, type:"Capture Item", effect:"+30% capture chance." },
+  { key:"masterCharm", name:"Master Charm", icon:"🌟", qty:0, type:"Capture Item", effect:"Guaranteed capture." },
+  { key:"rare_bait", name:"Rare Bait", icon:"🟦", qty:3, type:"Bait", effect:"Improves the rarity of the next ordinary encounter." },
+  { key:"epic_bait", name:"Epic Bait", icon:"🟪", qty:1, type:"Bait", effect:"Greatly improves the rarity of the next ordinary encounter." },
+  { key:"legendary_bait", name:"Legendary Bait", icon:"🟨", qty:1, type:"Bait", effect:"Targets the highest rarity tier for the next ordinary encounter." },
+  { key:"fresh_tracks", name:"Fresh Tracks", icon:"🐾", qty:1, type:"Merchant", effect:"Immediately clears the normal hunt cooldown.", image:"fresh_tracks.png" },
+  { key:"golden_lure", name:"Golden Lure", icon:"🟡", qty:1, type:"Merchant", effect:"Next ordinary encounter is guaranteed Legendary.", image:"golden_lure.png" },
+  { key:"mystery_sack", name:"Mystery Sack", icon:"🎒", qty:2, type:"Merchant", effect:"Opens for a random reward.", image:"mystery_sack.png" },
+  { key:"rusted_key", name:"Rusted Key", icon:"🗝️", qty:1, type:"Collectible", effect:"Opens a forgotten hunter cache containing Hunt Tokens.", image:"rusted_key.png" },
+  { key:"monster_whistle", name:"Monster Whistle", icon:"📯", qty:1, type:"Collectible", effect:"Clears hunt cooldown and guarantees Rare or better.", image:"monster_whistle.png" }
+];
+
+const H1_TROPHIES = [
+  { key:"briarjaw_fang", name:"Briarjaw Fang", icon:"🦷", earned:true, source:"Bounty Hunt", description:"Taken from the Briarjaw after a successful bounty." },
+  { key:"loaded_knucklebone", name:"Loaded Knucklebone", icon:"🎲", earned:true, source:"Bounty Hunt", description:"A warped bone die recovered from the Knucklebone Horror." },
+  { key:"crowned_horn", name:"Crowned Horn", icon:"🦌", earned:true, source:"Bounty Hunt", description:"A prestigious trophy from the Crowned Ravager." },
+  { key:"graveglass_eye", name:"Graveglass Eye", icon:"👁️", earned:true, source:"Bounty Hunt", description:"A black crystal eye carrying a ghostly pupil." },
+  { key:"riftmaw_shard", name:"Riftmaw Shard", icon:"💠", earned:false, source:"Bounty Hunt", description:"A dimensional shard from the Riftmaw." }
+];
+
+const H1_TITLES = [
+  { name:"Rift Hunter", unlocked:true },
+  { name:"Shiny Hunter", unlocked:true },
+  { name:"Event Hunter", unlocked:true },
+  { name:"Perfectly Executed", unlocked:true },
+  { name:"Against All Odds", unlocked:false },
+  { name:"The Chosen Mixer", unlocked:false, secret:true }
+];
+
+const H1_COSMETICS = [
+  { key:"forest_cloak", name:"Forest Cloak", slot:"Cloak", unlocked:true, requirement:"Starter cosmetic" },
+  { key:"rift_cloak", name:"Rift Cloak", slot:"Cloak", unlocked:true, requirement:"Reach Level 10" },
+  { key:"frost_cloak", name:"Frost Cloak", slot:"Cloak", unlocked:false, requirement:"Reach Level 15" },
+  { key:"trophy_horns", name:"Trophy Horns", slot:"Headgear", unlocked:false, requirement:"Earn 5 bounty trophies" },
+  { key:"ember_outfit", name:"Ember Hunter Armor", slot:"Outfit", unlocked:false, requirement:"Discover 20 PetDex companions" },
+  { key:"big_game_mantle", name:"Big Game Champion Mantle", slot:"Cloak", unlocked:false, requirement:"Win a Big Game Hunt" }
+];
+
+
+const H1_PHASE_E_EVENTS = {
+  bigGame: {
+    active: true,
+    title: "Big Game Hunt",
+    startedAt: Date.now() - 34 * 60 * 1000,
+    endsAt: Date.now() + 86 * 60 * 1000,
+    huntCooldownMinutes: 30,
+    playerScore: 11,
+    tokenBalance: 18,
+    leaderboard: [
+      { name: "Fiddle", score: 18 },
+      { name: "Card and Book Dragon", score: 14 },
+      { name: "Activity Test Hunter", score: 11 },
+      { name: "daba9494", score: 8 },
+      { name: "Mythicredd", score: 5 }
+    ],
+    tokenRewards: { Common: 1, Rare: 2, Epic: 4, Legendary: 8, Mythic: 15 },
+    placementRewards: [50, 30, 15]
+  },
+
+  bounty: {
+    active: true,
+    id: "bounty-briarjaw-dev",
+    npc: "Aldric",
+    npcIcon: "🧔",
+    targetHidden: true,
+    discoveredName: null,
+    clue: "Deep claw marks score the old trees. The tracks are too broad for a wolf, and thorn-covered fur has been found near the creek.",
+    difficulty: "Dangerous",
+    participants: 6,
+    attempts: 17,
+    postedAt: Date.now() - 9 * 60 * 60 * 1000,
+    durationText: "Until captured",
+    participationReward: "+20 Hunter Points • +5 Hunt Tokens",
+    catcherReward: "Major bounty reward + trophy",
+    trophy: "Briarjaw Fang",
+    possibleTargets: [
+      { name: "The Briarjaw", icon: "🌿", trophy: "Briarjaw Fang" },
+      { name: "The Knucklebone Horror", icon: "🎲", trophy: "Loaded Knucklebone" },
+      { name: "The Crowned Ravager", icon: "🦌", trophy: "Crowned Horn" },
+      { name: "The Graveglass Stalker", icon: "👁️", trophy: "Graveglass Eye" },
+      { name: "The Riftmaw", icon: "💠", trophy: "Riftmaw Shard" }
+    ]
+  },
+
+  distortion: {
+    active: true,
+    key: "frost",
+    name: "The Shattered Frost",
+    icon: "❄️",
+    plane: "Shattered Frost",
+    startedAt: Date.now() - 41 * 60 * 1000,
+    endsAt: Date.now() + 139 * 60 * 1000,
+    huntCooldownMinutes: 30,
+    eventMonsterChance: 60,
+    eggDropChance: 40,
+    egg: "Shardbound Egg",
+    colorClass: "frost",
+    story: "A fracture has opened above the hunting grounds. Frozen ruins can be seen through the breach, and creatures from the Shattered Frost are crossing into our world.",
+    monsters: [
+      { name: "Shardling", rarity: "Common", icon: "❄️", points: 3 },
+      { name: "Frostgaze Watcher", rarity: "Rare", icon: "👁️", points: 5 },
+      { name: "Rimeclaw Horror", rarity: "Rare", icon: "🐺", points: 5 },
+      { name: "Glacial Runegolem", rarity: "Epic", icon: "🧊", points: 8 },
+      { name: "Aurora Wyrm", rarity: "Legendary", icon: "🐉", points: 15 }
+    ],
+    knownPlanes: [
+      { key:"infernal", name:"The Infernal Rift", icon:"🔥", discovered:true },
+      { key:"frost", name:"The Shattered Frost", icon:"❄️", discovered:true },
+      { key:"arcane", name:"The Sunken Arcane", icon:"🌊", discovered:true },
+      { key:"hollow", name:"The Hollow Veil", icon:"👻", discovered:true },
+      { key:"astral", name:"The Astral Fracture", icon:"🌌", discovered:true },
+      { key:"verdant", name:"Unknown Plane", icon:"❔", discovered:false },
+      { key:"dream", name:"Unknown Plane", icon:"❔", discovered:false }
+    ]
+  },
+
+  nextSeason: {
+    focus: ["Big Game Hunts", "Bounty Hunts"],
+    ambientSystem: "Distortions",
+    ultrasEnabled: false
+  }
+};
+
+
+const H1_PHASE_F_HUNTING = {
+  zones: [
+    {
+      key: "wildwood",
+      name: "Wildwood Trail",
+      icon: "🌲",
+      subtitle: "Standard Hunt",
+      description: "A balanced hunting zone with common, rare, epic, and legendary creatures.",
+      backgroundClass: "forest",
+      monsters: [
+        { name:"Mossback Grazer", icon:"🦌", rarity:"Common", baseChance:72, points:1 },
+        { name:"Thornfang Lynx", icon:"🐆", rarity:"Rare", baseChance:52, points:3 },
+        { name:"Gloomwing Owlbear", icon:"🦉", rarity:"Epic", baseChance:31, points:5 },
+        { name:"The Hollow King", icon:"👑", image:"/assets/monsters/the_hollow_king.png", rarity:"Legendary", baseChance:12, points:10 }
+      ]
+    },
+    {
+      key: "biggame",
+      name: "Big Game Grounds",
+      icon: "🎯",
+      subtitle: "Event Hunt",
+      description: "Fast-paced event hunting with Hunt Tokens on every successful capture.",
+      backgroundClass: "biggame",
+      monsters: [
+        { name:"Ironhide Boar", icon:"🐗", rarity:"Common", baseChance:70, points:1, tokens:1 },
+        { name:"Highland Stalker", icon:"🐺", rarity:"Rare", baseChance:50, points:3, tokens:2 },
+        { name:"Crowned Behemoth", icon:"🦬", rarity:"Epic", baseChance:29, points:5, tokens:4 },
+        { name:"Stormhorn Titan", icon:"⚡", rarity:"Legendary", baseChance:12, points:10, tokens:8 }
+      ]
+    },
+    {
+      key: "bounty",
+      name: "Bounty Trail",
+      icon: "📜",
+      subtitle: "Investigation Hunt",
+      description: "Follow clues and attempt to expose the hidden bounty target.",
+      backgroundClass: "bounty",
+      monsters: [
+        { name:"Unknown Trackmaker", icon:"❔", rarity:"Bounty", baseChance:38, points:0, clue:true }
+      ]
+    },
+    {
+      key: "distortion",
+      name: "Shattered Frost",
+      icon: "❄️",
+      subtitle: "Distortion Hunt",
+      description: "Planar monsters bleed through the breach. Special eggs may appear.",
+      backgroundClass: "frost",
+      monsters: [
+        { name:"Shardling", icon:"❄️", rarity:"Common", baseChance:72, points:3 },
+        { name:"Frostgaze Watcher", icon:"👁️", rarity:"Rare", baseChance:48, points:5 },
+        { name:"Glacial Runegolem", icon:"🧊", rarity:"Epic", baseChance:26, points:8 },
+        { name:"Aurora Wyrm", icon:"🐉", rarity:"Legendary", baseChance:10, points:15 }
+      ]
+    }
+  ],
+  lures: [
+    { key:"none", name:"No Lure", icon:"🏹", description:"Use normal encounter odds.", uses:null },
+    { key:"rare", name:"Rare Bait", icon:"🔵", description:"Improves Rare odds on the next normal hunt.", uses:3 },
+    { key:"epic", name:"Epic Bait", icon:"🟣", description:"Improves Epic odds on the next normal hunt.", uses:2 },
+    { key:"legendary", name:"Legendary Bait", icon:"🟠", description:"Improves Legendary odds on the next normal hunt.", uses:1 },
+    { key:"compass", name:"Hunter's Compass", icon:"🧭", description:"Guarantees the next ordinary encounter is Rare or better.", uses:1 },
+    { key:"golden", name:"Golden Lure", icon:"🟡", description:"Guarantees the next ordinary encounter is Legendary.", uses:1 }
+  ],
+  captureTools: [
+    { key:"none", name:"Normal Hunt", icon:"🏹", bonus:0, uses:null },
+    { key:"berry", name:"🍓 Bait", icon:"🍓", bonus:10, uses:5 },
+    { key:"honey", name:"🍯 Bait", icon:"🍯", bonus:20, uses:2 },
+    { key:"net", name:"🕸️ Bait", icon:"🕸️", bonus:30, uses:1 },
+    { key:"master", name:"🌟 Bait", icon:"🌟", bonus:100, uses:1 }
+  ],
+  companion: {
+    name:"Rimebit",
+    icon:"💎",
+    ability:"Second Chance",
+    description:"Once per DEV encounter, Rimebit can freeze a failed capture and allow one reroll."
+  }
+};
+
+
+const H1_PHASE_G_ALIGNMENT = {
+  version: "G",
+  principle: "Activity mirrors Monster Hunt instead of adding a separate ruleset.",
+  huntActions: ["hunt", "bait", "capture-result"],
+  excludedActions: ["approach", "observe", "combat"],
+  baitBonuses: { strawberry:10, honey:20, web:30, star:"guaranteed" },
+  seasonFocus: {
+    primary:["Big Game Hunts","Bounty Hunts"],
+    storySystem:"Random Distortions",
+    ultraHunts:false
+  },
+  notes:[
+    "No Approach action.",
+    "No Observe action.",
+    "No monster combat system.",
+    "No new currencies.",
+    "DEV rewards remain simulated only."
+  ]
+};
+
+
+const H1_PHASE_G5_LEADERBOARDS = {
+  current: [
+    { rank:1, name:"Mythicredd", points:412 },
+    { rank:2, name:"Activity Test Hunter", points:245, self:true },
+    { rank:3, name:"Card and Book Dragon", points:221 },
+    { rank:4, name:"daba9494", points:198 },
+    { rank:5, name:"Fiddle", points:176 }
+  ],
+  weekly: [
+    { rank:1, name:"daba9494", points:86 },
+    { rank:2, name:"Activity Test Hunter", points:74, self:true },
+    { rank:3, name:"Fiddle", points:63 },
+    { rank:4, name:"Mythicredd", points:59 },
+    { rank:5, name:"Card and Book Dragon", points:48 }
+  ]
+};
+
+
+const H1_PHASE_G9_SOCIAL = {
+  eggs: [
+    { key:"common_egg", name:"Common Egg", icon:"🥚", rarity:"Common", count:2, hatchMinutes:30 },
+    { key:"rare_egg", name:"Rare Egg", icon:"🔵", rarity:"Rare", count:1, hatchMinutes:90 },
+    { key:"ancient_egg", name:"Ancient Egg", icon:"🟣", rarity:"Epic", count:1, hatchMinutes:180 },
+    { key:"shardbound_egg", name:"Shardbound Egg", icon:"❄️", rarity:"Distortion", count:1, hatchMinutes:240 }
+  ],
+  recentHunts: [
+    { player:"Mythicredd", icon:"🏹", action:"caught", monster:"The Hollow King", rarity:"Legendary", points:10, pet:"Rimebit", age:"2m" },
+    { player:"daba9494", icon:"✨", action:"discovered a Shiny", monster:"Crypt Fiend", rarity:"Epic", points:5, pet:"Ember Drake", age:"8m" },
+    { player:"Fiddle", icon:"🥚", action:"found", monster:"Rare Egg", rarity:"Rare", points:0, pet:"Star Familiar", age:"14m" },
+    { player:"Card and Book Dragon", icon:"🏹", action:"caught", monster:"Dread Sentinel", rarity:"Epic", points:5, pet:"Veilkin", age:"21m" },
+    { player:"Activity Test Hunter", icon:"🏹", action:"caught", monster:"Grave Whisper", rarity:"Common", points:1, pet:"Veilkin", age:"31m", self:true }
+  ]
+};
+
+function safeFilePath(urlPath) {
+  const cleanPath = decodeURIComponent((urlPath || "/").split("?")[0]);
+  const requested = cleanPath === "/" ? "/index.html" : cleanPath;
+  const resolved = path.normalize(path.join(PUBLIC_DIR, requested));
+  if (!resolved.startsWith(PUBLIC_DIR)) return null;
+  return resolved;
+}
+
+function json(res, payload) {
+  res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  res.end(JSON.stringify(payload));
+}
+
+
+
+
+// ==================== H.2A LIVE SYSTEM HELPERS ====================
+
+function ensureRecentHunts(data) {
+  if (!Array.isArray(data.recentHunts)) data.recentHunts = [];
+  return data.recentHunts;
+}
+
+function recordRecentHunt(data, userId, monster, pointsEarned = 0, source = "Discord") {
+  if (!monster) return;
+  const player = getPlayer(data, userId);
+  const recent = ensureRecentHunts(data);
+  recent.unshift({
+    id: `${Date.now()}-${userId}-${Math.random().toString(36).slice(2,7)}`,
+    userId,
+    player: player.discordDisplayName || player.discordUsername || `Hunter ${String(userId).slice(-4)}`,
+    monster: cleanMonsterName(monster.name || "Unknown Monster"),
+    rarity: monster.rarity || "Unknown",
+    points: Number(pointsEarned || monster.points || 0),
+    shiny: Boolean(monster.shiny || String(monster.name || "").includes("Shiny")),
+    habitat: monster.habitat || "Unknown",
+    icon: monster.shiny ? "✨" : "🏹",
+    image: monster.image || null,
+    source,
+    at: Date.now()
+  });
+  data.recentHunts = recent.slice(0, 50);
+}
+
+function activityEggInventoryPayload(player) {
+  return (player.eggs || []).map((egg, index) => {
+    const eggKey = egg.eggKey || egg.distortionKey || null;
+    const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
+    const rarity = egg.rarity || "Common";
+    return {
+      id: egg.id || `egg-${index + 1}`,
+      inventoryIndex: index,
+      eggKey,
+      rarity,
+      name: distortion?.name || `${rarity} Egg`,
+      icon: distortion?.icon || EGG_TYPES[rarity]?.icon || "🥚",
+      image: distortion?.image || EGG_TYPES[rarity]?.image || null,
+      incubationMs: Number(distortion?.incubationMs || EGG_TYPES[rarity]?.incubationMs || EGG_TYPES.Common.incubationMs)
+    };
+  });
+}
+
+function activityIncubatorPayload(player) {
+  const slots = getIncubatorSlots(player);
+  const incubations = (player.incubatingEggs || []).map((egg, index) => {
+    const eggKey = egg.eggKey || egg.distortionKey || null;
+    const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
+    const rarity = egg.rarity || "Common";
+    return {
+      slot:index + 1,
+      id:egg.id || `incubation-${index + 1}`,
+      eggKey,
+      rarity,
+      name:distortion?.name || `${rarity} Egg`,
+      icon:distortion?.icon || EGG_TYPES[rarity]?.icon || "🥚",
+      image:distortion?.image || EGG_TYPES[rarity]?.image || null,
+      startedAt:Number(egg.startedAt || 0),
+      readyAt:Number(egg.readyAt || 0),
+      ready:Date.now() >= Number(egg.readyAt || 0)
+    };
+  });
+  return { slots, incubations };
+}
+
+function activityFullInventoryPayload(player) {
+  const rows = [
+    { key:"berry", name:"Hunter Berry", icon:"🍓", image:"hunter_berry.png", qty:Number(player.captureItems?.berry || 0), type:"Capture Item", effect:"+10% to one capture attempt." },
+    { key:"honey", name:"Sticky Honey", icon:"🍯", image:"sticky_honey.png", qty:Number(player.captureItems?.honey || 0), type:"Capture Item", effect:"+20% to one capture attempt." },
+    { key:"net", name:"Enchanted Net", icon:"🕸️", image:"enchanted_net.png", qty:Number(player.captureItems?.net || 0), type:"Capture Item", effect:"+30% to one capture attempt." },
+    { key:"masterCharm", name:"Master Charm", icon:"🌟", image:"master_charm.png", qty:Number(player.captureItems?.masterCharm || 0), type:"Capture Item", effect:"Guarantees one capture attempt." },
+    { key:"rare_bait", name:"Rare Bait", icon:"🔵", image:"rare_bait.png", qty:Number(player.bait?.rare || 0), type:"Bait", effect:"Improves Rare odds on your next normal hunt." },
+    { key:"epic_bait", name:"Epic Bait", icon:"🟣", image:"epic_bait.png", qty:Number(player.bait?.epic || 0), type:"Bait", effect:"Improves Epic odds on your next normal hunt." },
+    { key:"legendary_bait", name:"Legendary Bait", icon:"🟠", image:"legendary_bait.png", qty:Number(player.bait?.legendary || 0), type:"Bait", effect:"Improves Legendary odds on your next normal hunt." }
+  ];
+
+  // Merchant purchases/collection are real live values.
+  for (const [key, qtyRaw] of Object.entries(player.merchantCollection || {})) {
+    const qty = Number(qtyRaw || 0);
+    const def = MERCHANT_ITEMS[key];
+    if (!def || qty <= 0) continue;
+    rows.push({
+      key,
+      name:def.name,
+      icon:def.icon || "🎒",
+      image:def.image || null,
+      qty,
+      type:def.kind === "collectible" ? "Collectible" : "Merchant",
+      effect:def.effectDescription || def.description || "Merchant item.",
+      usable:def.kind !== "egg" && !(def.kind === "collectible" && !def.usable)
+    });
+  }
+
+  return rows.filter(item => Number(item.qty || 0) > 0);
+}
+
+function activityLeaderboardPayload(data, userId) {
+  const entries = Object.entries(data.players || {}).map(([id]) => {
+    const p = getPlayer(data, id);
+    return {
+      id,
+      name:p.discordDisplayName || p.discordUsername || `Hunter ${String(id).slice(-4)}`,
+      points:Number(p.points || 0),
+      self:id === userId
+    };
+  }).sort((a,b) => b.points - a.points || a.name.localeCompare(b.name));
+
+  const current = entries.slice(0,10).map((row,index) => ({...row, rank:index+1}));
+  const weeklyRows = Object.entries(data.weeklyCompetition?.scores || data.weeklyScores || {}).map(([id, score]) => {
+    const p = getPlayer(data,id);
+    return {
+      id,
+      name:p.discordDisplayName || p.discordUsername || `Hunter ${String(id).slice(-4)}`,
+      points:Number(score || 0),
+      self:id === userId
+    };
+  }).sort((a,b) => b.points-a.points || a.name.localeCompare(b.name))
+    .slice(0,10).map((row,index) => ({...row,rank:index+1}));
+
+  return { current, weekly: weeklyRows.length ? weeklyRows : current, userId };
+}
+
+function activityRecentHuntsPayload(data) {
+  return ensureRecentHunts(data).slice(0,12).map(entry => ({
+    ...entry,
+    ageMs:Math.max(0, Date.now() - Number(entry.at || Date.now()))
+  }));
+}
+
+
+// ==================== H.2D LIVE BOUNTY HUNTS ====================
+const BOUNTY_HUNT_COOLDOWN=60*60*1000, BOUNTY_NEXT_DELAY=24*60*60*1000;
+const BOUNTY_TARGETS=[
+ {key:"briarjaw",name:"The Briarjaw",trophy:"Briarjaw Fang",image:"the_briarjaw.png",trophyImage:"briarjaw_fang.png",clues:["Whole trees have been bitten through near the old trail.","Hunters found thorn-covered tracks wider than a shield.","A deep growl has been heard beneath the roots after sunset."]},
+ {key:"knucklebone_horror",name:"The Knucklebone Horror",trophy:"Loaded Knucklebone",image:"knucklebone_horror.png",trophyImage:"loaded_knucklebone.png",clues:["Small piles of polished bone have appeared beside fresh tracks.","Something has been clicking through the dark like dice in a cup.","The target leaves cracked knucklebones arranged in deliberate patterns."]},
+ {key:"crowned_ravager",name:"The Crowned Ravager",trophy:"Crowned Horn",image:"crowned_ravager.png",trophyImage:"crowned_horn.png",clues:["Trees have been split high above a hunter's head.","A massive horned silhouette was seen crossing a ridge at dawn.","Black horn fragments were recovered from a shattered stone wall."]},
+ {key:"graveglass_stalker",name:"The Graveglass Stalker",trophy:"Graveglass Eye",image:"graveglass_stalker.png",trophyImage:"graveglass_eye.png",clues:["Black glass splinters appear where tracks suddenly vanish.","Something has been watching hunters from inside their reflections.","A pale eye has been seen moving beneath translucent black crystal."]},
+ {key:"riftmaw",name:"The Riftmaw",trophy:"Riftmaw Shard",image:"riftmaw.png",trophyImage:"riftmaw_shard.png",clues:["Tracks end beside thin violet fractures in the air.","Loose stones float for seconds at a time along the trail.","Something enormous is moving between places without crossing the ground."]},
+ {key:"hollow_antler",name:"The Hollow Antler",trophy:"Hollow Antler",image:"hollow_antler.png",trophyImage:"hollow_antler_trophy.png",clues:["Bark has been scraped away in long branching patterns.","Hunters hear hoofbeats with no creature in sight.","A hollow antler-shaped shadow appears between the trees before dawn."]}
+];
+const BOUNTY_NPCS=["aldric","gribble","beastkeeper","pale_collector","riftwalker","nameless"];
+function ensureBountyData(data){
+ if(!data.bounty||typeof data.bounty!=="object")data.bounty={};
+ const b=data.bounty;
+ if(typeof b.active!=="boolean")b.active=false;if(!b.status)b.status="idle";
+ b.participants=(b.participants&&typeof b.participants==="object")?b.participants:{};
+ b.lastAttempts=(b.lastAttempts&&typeof b.lastAttempts==="object")?b.lastAttempts:{};
+ b.trackers=(b.trackers&&typeof b.trackers==="object")?b.trackers:{};
+ b.history=Array.isArray(b.history)?b.history:[]; b.attempts=Number(b.attempts||0);b.clueLevel=Number(b.clueLevel||0);b.nextAt=Number(b.nextAt||0);
+ return b;
+}
+function bountyTarget(data){const b=ensureBountyData(data);return BOUNTY_TARGETS.find(x=>x.key===b.targetKey)||null}
+function bountyNpc(data){return MERCHANT_TYPE_DEFINITIONS[ensureBountyData(data).npcKey]||null}
+function bountyClue(data){const b=ensureBountyData(data),t=bountyTarget(data);return t?t.clues[Math.min(t.clues.length-1,Math.max(0,b.clueLevel||0))]:"No active trail."}
+function bountyReadyAt(data,id){return Number(ensureBountyData(data).lastAttempts[id]||0)+BOUNTY_HUNT_COOLDOWN}
+function bountyCount(data){return Object.keys(ensureBountyData(data).participants).length}
+function bountyTracker(data,userId){
+ const b=ensureBountyData(data);
+ if(!b.trackers[userId]||typeof b.trackers[userId]!=="object"){
+   b.trackers[userId]={chance:10,clues:0};
+ }
+ const tracker=b.trackers[userId];
+ tracker.chance=Math.max(10,Math.min(70,Number(tracker.chance||10)));
+ tracker.clues=Math.max(0,Number(tracker.clues||0));
+ return tracker;
+}
+function bountyTrackingReward(data,userId){
+ const tracker=bountyTracker(data,userId);
+ tracker.clues++;
+ tracker.chance=Math.min(70,tracker.chance+10);
+ return tracker;
+}
+function startBounty(data,forced=null){
+ const old=ensureBountyData(data), pool=BOUNTY_TARGETS.filter(x=>x.key!==old.lastTargetKey);
+ const t=BOUNTY_TARGETS.find(x=>x.key===forced)||pool[Math.floor(Math.random()*pool.length)]||BOUNTY_TARGETS[0];
+ const npc=BOUNTY_NPCS[Math.floor(Math.random()*BOUNTY_NPCS.length)];
+ data.bounty={...old,active:true,status:"hunting",targetKey:t.key,npcKey:npc,startedAt:Date.now(),nextAt:0,participants:{},lastAttempts:{},trackers:{},attempts:0,clueLevel:0,catcherId:null,trophyHolderId:null};
+ return data.bounty;
+}
+async function announceBountyStart(ch,data){
+ const n=bountyNpc(data);
+ const targetChannel = await getAnnouncementChannel() || ch;
+ return sendRoleImageAnnouncement(targetChannel,`<@&${H4_BOUNTY_ALERT_ROLE_ID}>\n\n📜 **A NEW BOUNTY HAS BEEN POSTED**\n\n**${n?.name||"A traveling hunter"}** needs help tracking a dangerous creature.\n\n🎯 **Target: UNKNOWN**\n🔎 ${bountyClue(data)}\n\nUse \`!bountyhunt\` once every **60 minutes**.`,n?.image||null,H4_BOUNTY_ALERT_ROLE_ID);
+}
+async function performBountyHunt(data,id,ch=null){
+ const b=ensureBountyData(data);
+ if(!b.active||b.status!=="hunting")return{ok:false,code:"inactive",error:"There is no active bounty hunt."};
+
+ const now=Date.now(),ready=bountyReadyAt(data,id);
+ if(now<ready)return{ok:false,code:"cooldown",readyAt:ready,error:"Your Bounty Hunt is still on cooldown."};
+
+ const player=getPlayer(data,id),target=bountyTarget(data),tracker=bountyTracker(data,id);
+ b.lastAttempts[id]=now;
+ b.participants[id]=true;
+ b.attempts=Number(b.attempts||0)+1;
+
+ // Each hunter begins every new Bounty at a 10% personal target-tracking chance.
+ // Catching a non-target trail monster awards a clue and +10%, capped at 70%.
+ const targetFound=(Math.random()*100)<tracker.chance;
+ prepareSignatureForHunt(player);
+
+ let monster;
+ if(targetFound){
+   monster={
+     name:target.name,
+     habitat:"Bounty Trail",
+     rarity:"Bounty",
+     points:0,
+     chance:30,
+     image:target.image,
+     description:"The contracted target has finally been tracked down.",
+     bountyEncounter:true,
+     bountyTargetKey:target.key
+   };
+ }else{
+   // A wrong trail always produces a real normal monster encounter.
+   // It must be caught normally to earn the clue/tracking increase.
+   monster=getRandomMonsterForPlayer(player,data,id);
+   // Keep Bounty trail decoys out of Distortion/World-Shatter special pools.
+   if(monster.distortionEncounter||monster.worldShatterEncounter||monster.rarity==="Mythic"){
+     monster=getRandomMonster(player);
+   }
+   monster={
+     ...monster,
+     habitat:monster.habitat||"Hunting Grounds",
+     bountyTrailEncounter:true,
+     bountyTargetKey:target.key
+   };
+ }
+
+ const encounters=addEncounterKnowledge(player,monster);
+ const chanceInfo=calculateCaptureChance(player,monster,null,data,id);
+ player.currentMonster=monster;
+ saveData(data);
+
+ const choices=buildCaptureChoices(player,monster).map(choice=>({
+   number:choice.number,
+   itemKey:choice.itemKey,
+   label:choice.label,
+   chance:choice.chance
+ }));
+
+ return{
+   ok:true,
+   result:"encounter",
+   encountered:true,
+   isTarget:Boolean(targetFound),
+   monster:{...monster,imageUrl:monster.image?`/assets/monsters/${monster.image}`:null},
+   chance:chanceInfo.total,
+   baseChance:Number(monster.chance||0),
+   encounters,
+   choices,
+   trackingChance:tracker.chance,
+   clues:tracker.clues,
+   participants:bountyCount(data),
+   attempts:b.attempts,
+   readyAt:now+BOUNTY_HUNT_COOLDOWN
+ };
+}
+
+async function turnInBounty(data,id,ch=null){
+ const b=ensureBountyData(data),t=bountyTarget(data),n=bountyNpc(data);if(!b.active||b.status!=="awaiting_turnin"||!t)return{ok:false,error:"No captured bounty is waiting for turn-in."};
+ if(b.trophyHolderId!==id)return{ok:false,error:"Only the hunter carrying the trophy can turn it in."};const c=getPlayer(data,id);c.bountyTrophies||={};if(Number(c.bountyTrophies[t.key]||0)<1)return{ok:false,error:`You are not carrying the ${t.trophy}.`};c.bountyTrophies[t.key]--;
+ const ids=Object.keys(b.participants);for(const uid of ids){const p=getPlayer(data,uid);p.points=Number(p.points||0)+20;p.huntTokens=Number(p.huntTokens||0)+5;p.lifetimeTokens=Number(p.lifetimeTokens||0)+5}
+ c.points=Number(c.points||0)+50;c.huntTokens=Number(c.huntTokens||0)+20;c.lifetimeTokens=Number(c.lifetimeTokens||0)+20;
+ const done=Date.now();b.history.push({targetKey:t.key,npcKey:b.npcKey,catcherId:id,participants:ids.length,attempts:b.attempts,startedAt:b.startedAt,completedAt:done});b.lastTargetKey=t.key;b.active=false;b.status="cooldown";b.nextAt=done+BOUNTY_NEXT_DELAY;b.trophyHolderId=null;saveData(data);
+ if(ch?.isTextBased())await sendRoleImageAnnouncement(ch,`📜 **BOUNTY COMPLETE — ${t.name.toUpperCase()}**\n\n<@${id}> returned the **${t.trophy}** to **${n?.name||"the bounty giver"}**.\n\n👥 Participants: **+20 Hunter Points +5 Hunt Tokens**\n🏆 Catcher bonus: **+50 Hunter Points +20 Hunt Tokens**\n\nAnother bounty will be posted in **24 hours**.`,t.trophyImage||t.image,true);
+ return{ok:true,targetName:t.name,nextAt:b.nextAt,participantCount:ids.length};
+}
+let bountyMonitorBusy=false;
+async function bountyMonitor(){if(bountyMonitorBusy)return;bountyMonitorBusy=true;try{const d=loadData(),b=ensureBountyData(d);if(!b.active&&b.status==="cooldown"&&b.nextAt&&Date.now()>=b.nextAt){startBounty(d);saveData(d);const ch=await getAnnouncementChannel();if(ch?.isTextBased())await announceBountyStart(ch,d)}}catch(e){console.error("Bounty monitor failed:",e)}finally{bountyMonitorBusy=false}}
+setInterval(()=>bountyMonitor().catch(console.error),60*1000);
+
+function activityLiveEventsPayload(data, userId) {
+  const now = Date.now();
+  const daily = getActiveEvent();
+  const active = [];
+
+  if (daily) {
+    active.push({
+      key:"daily",
+      icon:"🎉",
+      name:daily.name,
+      description:daily.description,
+      endsAt:0,
+      type:"Daily Event"
+    });
+  }
+
+  if (isBigGameActive(data, now)) {
+    active.push({
+      key:"biggame",
+      icon:"🎯",
+      name:"Big Game Hunt",
+      description:"30-minute hunt cooldowns, DOUBLE Hunt Tokens on successful catches, and Top 3 placement rewards.",
+      endsAt:Number(data.bigGame?.endsAt || 0),
+      type:"Live Event"
+    });
+  }
+
+  if (data.activeDistortion && !data.activeDistortion.ended && now < Number(data.activeDistortion.endAt || 0)) {
+    const def = DISTORTIONS[data.activeDistortion.key];
+    active.push({
+      key:"distortion",
+      icon:def?.icon || "🌀",
+      name:def?.name || "World Distortion",
+      description:"Reality is distorted: 30-minute hunts, exclusive monsters, a special egg, and one final free hunt at 10 minutes remaining.",
+      endsAt:Number(data.activeDistortion.endAt || 0),
+      distortionKey:data.activeDistortion.key,
+      backgroundUrl:def?.backgroundImage ? `/assets/distortions/${def.backgroundImage}` : null,
+      openingImageUrl:def?.openingImage ? `/assets/distortions/${def.openingImage}` : null,
+      closingImageUrl:def?.closingImage ? `/assets/distortions/${def.closingImage}` : null,
+      eggName:DISTORTION_EGGS[def?.eggKey]?.name || null,
+      huntCooldownMs:DISTORTION_HUNT_COOLDOWN,
+      finalHuntAt:Number(data.activeDistortion.endAt || 0) - DISTORTION_FINAL_RESET_MINUTES*60*1000,
+      type:"Distortion Event"
+    });
+  }
+
+  if (data.tokenSurge?.active && now < Number(data.tokenSurge.endsAt || 0)) {
+    active.push({
+      key:"tokensurge",
+      icon:"🪙",
+      name:"Token Surge",
+      description:"Successful catches may award bonus Hunt Tokens.",
+      endsAt:Number(data.tokenSurge.endsAt || 0),
+      type:"Live Event"
+    });
+  }
+
+  if (data.merchant?.active && now < Number(data.merchant.departureAt || 0)) {
+    const def = MERCHANT_TYPE_DEFINITIONS[data.merchant.type];
+    active.push({
+      key:"merchant",
+      icon:def?.icon || "🧙",
+      name:def?.name || "Traveling Merchant",
+      description:"A merchant is currently visiting the hunting grounds.",
+      endsAt:Number(data.merchant.departureAt || 0),
+      type:"Merchant"
+    });
+  }
+
+  const bountyState=ensureBountyData(data);
+  const bountyActive=Boolean(bountyState.active&&["hunting","awaiting_turnin"].includes(bountyState.status));
+  if(bountyActive)active.push({key:"bounty",icon:"📜",name:"Active Bounty",description:bountyState.status==="awaiting_turnin"?"Target captured — trophy return pending.":"A hidden server bounty is being hunted.",endsAt:0,type:"Bounty"});
+
+  // Build compatible detailed objects only when those systems are active.
+  const bigActive = isBigGameActive(data, now);
+  const rankedBigGame = getBigGameRanking(data);
+  const bigScores = rankedBigGame.slice(0,10).map(entry => {
+    const p = getPlayer(data,entry.userId);
+    return {
+      name:p.discordDisplayName || p.discordUsername || `Hunter ${String(entry.userId).slice(-4)}`,
+      score:Number(entry.score || 0),
+      id:entry.userId
+    };
+  });
+  const bigPlayer = getPlayer(data,userId);
+  const bigPlayerRankIndex = rankedBigGame.findIndex(entry => entry.userId === userId);
+  const bigHuntCooldown = getPlayerHuntCooldown(bigPlayer,data,userId);
+  const bigHuntReadyAt = Number(bigPlayer.lastHunt || 0) + bigHuntCooldown;
+
+  const distortionState = data.activeDistortion;
+  const distortionDef = distortionState ? DISTORTIONS[distortionState.key] : null;
+
+  return {
+    active,
+    hasAny:active.length > 0,
+    bigGame:{
+      active:bigActive,
+      startedAt:Number(data.bigGame?.startedAt || 0),
+      endsAt:Number(data.bigGame?.endsAt || 0),
+      playerScore:Number(data.bigGame?.scores?.[userId] || 0),
+      playerRank:bigPlayerRankIndex >= 0 ? bigPlayerRankIndex + 1 : null,
+      tokenBalance:Number(bigPlayer.huntTokens || 0),
+      huntCooldownMs:Number(bigHuntCooldown || 0),
+      huntReadyAt:Number(bigHuntReadyAt || 0),
+      leaderboard:bigScores,
+      tokenRewards:{...BIG_GAME_TOKEN_REWARDS},
+      placementRewards:[...BIG_GAME_PLACEMENT_REWARDS]
+    },
+    bounty:{active:bountyActive,status:bountyState.status,npc:bountyNpc(data)?.name||"",clue:bountyActive?bountyClue(data):"",participants:bountyCount(data),attempts:Number(bountyState.attempts||0),huntReadyAt:bountyReadyAt(data,userId),cooldownMs:BOUNTY_HUNT_COOLDOWN,trackingChance:bountyTracker(data,userId).chance,cluesFound:bountyTracker(data,userId).clues,isCatcher:bountyState.catcherId===userId,canTurnIn:bountyState.status==="awaiting_turnin"&&bountyState.trophyHolderId===userId,targetName:bountyState.status==="awaiting_turnin"?(bountyTarget(data)?.name||""):"",trophy:bountyState.status==="awaiting_turnin"?(bountyTarget(data)?.trophy||""):"",nextAt:Number(bountyState.nextAt||0)},
+    distortion:{
+      active:Boolean(distortionDef),
+      name:distortionDef?.name || "No Distortion Active",
+      icon:distortionDef?.icon || "🌀",
+      endsAt:Number(distortionState?.endAt || 0),
+      story:distortionDef ? "A live planar breach is affecting the Monster Hunt world." : "No planar breach is currently active.",
+      monsters:(distortionDef?.monsters || []).map(m => ({...m,icon:"👹"})),
+      knownPlanes:Object.entries(DISTORTIONS).filter(([key])=>key!=="unmade").map(([key,def])=>({
+        key, name:def.name, icon:def.icon, discovered:Boolean(data.worldStory?.knownDistortions?.includes?.(key) || data.worldProgress?.[key])
+      }))
+    }
+  };
+}
+
+function activityPetById(player, petId) {
+  return (player.pets || []).find(p => String(p.id) === String(petId)) || null;
+}
+
+async function activityIncubateEgg(user, inventoryIndex) {
+  const data = loadData();
+  if (isSeasonLocked(data)) return {ok:false,error:"The season is currently locked."};
+  const player = getPlayer(data,user.id);
+  const slots = getIncubatorSlots(player);
+
+  if ((player.incubatingEggs || []).length >= slots) return {ok:false,error:`All ${slots} incubator slot${slots===1?" is":"s are"} in use.`};
+  if (!player.eggs?.length) return {ok:false,error:"You do not have any eggs available to incubate."};
+
+  const index = Number(inventoryIndex);
+  if (!Number.isInteger(index) || index < 0 || !player.eggs[index]) return {ok:false,error:"That egg is no longer in your inventory."};
+
+  const [egg] = player.eggs.splice(index,1);
+  const eggKey = egg.eggKey || egg.distortionKey || null;
+  const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
+  const baseDuration = Number(distortion?.incubationMs || EGG_TYPES[egg.rarity]?.incubationMs || EGG_TYPES.Common.incubationMs);
+  const incubationReduction = Math.min(H3_GLOBAL_CAPS.incubator, getPetBonus(player,"incubator"));
+  const duration = Math.max(60 * 1000, Math.round(baseDuration * (1 - incubationReduction / 100)));
+  const incubationStartedAt = Date.now();
+  const incubationReadyAt = incubationStartedAt + duration;
+  player.incubatingEggs.push({
+    id:egg.id,
+    rarity:egg.rarity || "Common",
+    eggKey,
+    adminTest:Boolean(egg.adminTest),
+    startedAt:incubationStartedAt,
+    readyAt:incubationReadyAt,
+    notified:false
+  });
+  saveData(data);
+
+  // Exact-time backup in addition to the global once-per-minute checker.
+  // The startup catch-up checker still covers Railway redeploys/restarts.
+  setTimeout(() => {
+    checkReadyEggNotifications().catch(error =>
+      console.error("Exact egg-ready notification check failed:", error)
+    );
+  }, Math.max(1000, incubationReadyAt - Date.now() + 1000));
+  return {ok:true, ...activityIncubatorPayload(player), eggs:activityEggInventoryPayload(player)};
+}
+
+function activityPetHatchFlavor(definition) {
+  if (!definition) return "A new companion answers the call of the hunt.";
+  if (definition.key === "mixlet") return "Small body. Infinite chaos. Somehow, it already looks like it owns the place.";
+  const habitatFlavor = {
+    Moonfen: "Moonlit swamp magic clings to your new companion as it takes its first curious look around.",
+    Glasswaste: "Crystal dust glitters around your new companion as it emerges, alert and ready to explore.",
+    Gloamwood: "For one strange moment the room goes quiet—then your new companion decides you are safe.",
+    Stormreach: "A tiny charge dances through the air as your new companion lands beside you.",
+    Emberdeep: "Warm sparks drift from the shell as your new companion steps forward without fear.",
+    Frostgrave: "Cold mist spills away from the shell, revealing a companion that seems perfectly at home in the chill.",
+    Sporewilds: "A shimmer of harmless spores follows your new companion as it eagerly investigates its surroundings.",
+    "Starfall Basin": "Tiny points of starlight linger around your new companion before fading into the air."
+  };
+  return habitatFlavor[definition.habitat] || definition.description || "A new companion answers the call of the hunt.";
+}
+
+async function activityHatchEgg(user, slotNumber) {
+  const data = loadData();
+  const player = getPlayer(data,user.id);
+  const index = Number(slotNumber) - 1;
+  const incubation = player.incubatingEggs?.[index];
+  if (!incubation) return {ok:false,error:"That incubator slot is empty."};
+  if (Date.now() < Number(incubation.readyAt || 0)) return {ok:false,error:"That egg is not ready to hatch yet.",readyAt:incubation.readyAt};
+
+  const distortionEgg = incubation.eggKey ? DISTORTION_EGGS[incubation.eggKey] : null;
+  const rarity = incubation.rarity;
+  const definition = distortionEgg ? chooseDistortionPet(incubation.eggKey) : choosePetFromEgg(rarity);
+  if (!definition) return {ok:false,error:"That egg could not find a matching pet."};
+  if (!distortionEgg && !isNormalEggPet(definition)) return {ok:false,error:"Egg pool safety blocked an invalid companion."};
+  if (distortionEgg && !distortionEgg.pets.some(choice => choice.key === definition.key)) return {ok:false,error:"Distortion Egg pool safety blocked an invalid companion."};
+
+  const already = player.discoveredPetKeys.includes(definition.key);
+  const owned = {
+    id:player.nextPetId++,
+    key:definition.key,
+    nickname:null,
+    personality:PET_PERSONALITIES[Math.floor(Math.random()*PET_PERSONALITIES.length)],
+    companionXp:0,
+    naturalAbilityRank:1,
+    naturalAbilityXp:0,
+    inheritedAbilities:[],
+    affectionEvents:0,
+    timesHelped:0,
+    hatchedAt:Date.now()
+  };
+
+  const previousPoints = player.points;
+  const hatchPoints = HATCH_POINT_REWARDS[distortionEgg ? definition.rarity : rarity] || 0;
+  const dexBonus = already ? 0 : NEW_PET_SPECIES_BONUS;
+  player.pets.push(owned);
+  if (!already) player.discoveredPetKeys.push(definition.key);
+  player.incubatingEggs.splice(index,1);
+  const total = applyCommunityPointBlessing(data,hatchPoints+dexBonus);
+  player.points += total;
+  addWeeklyProgress(data,player,total);
+  player.titleProgress.eggsHatched=(player.titleProgress.eggsHatched||0)+1;
+  evaluatePetCollectionRewards(data,player);
+  checkTitleUnlocks(player);
+  recordPointMilestoneMoments(data,user.id,previousPoints,player.points);
+
+  saveData(data);
+
+  const channel = await getTextChannel(EGGS_PETS_CHANNEL_ID);
+  if (channel?.isTextBased()) {
+    await channel.send({
+      content:`🐣 **ACTIVITY HATCH!**\n<@${user.id}> hatched ${getPetDisplayIcon(definition)} **${definition.name}** (${definition.rarity})!\n⭐ +${total} Hunter Points`,
+      allowedMentions:{users:[user.id]}
+    }).catch(()=>{});
+  }
+
+  return {
+    ok:true,
+    pet:{
+      id:owned.id,key:definition.key,name:definition.name,nickname:null,icon:definition.icon,
+      rarity:definition.rarity,habitat:definition.habitat,image:definition.image||null,
+      level:1,bond:1,xp:0,ability:definition.signatureName||abilityDisplayName(definition.ability),
+      abilityEffect:definition.signatureAbility ? definition.description : formatAbilityEffect({ability:definition.ability,baseBonus:definition.baseBonus,level:1}),
+      description:definition.description,flavor:activityPetHatchFlavor(definition)
+    },
+    pointsAwarded:total,
+    newDex:!already
+  };
+}
+
+function activityEquipPet(user, petId) {
+  const data=loadData();
+  const player=getPlayer(data,user.id);
+  const owned=activityPetById(player,petId);
+  if (!owned) return {ok:false,error:"That pet is not in your collection."};
+  player.equippedPetId=owned.id;
+  saveData(data);
+  const def=getOwnedPetDefinition(owned);
+  return {ok:true,petId:owned.id,key:def?.key||owned.key,name:getOwnedPetName(owned)};
+}
+
+function activityRenamePet(user, petId, nickname) {
+  const data=loadData();
+  const player=getPlayer(data,user.id);
+  const owned=activityPetById(player,petId);
+  if (!owned) return {ok:false,error:"That pet is not in your collection."};
+
+  const clean=String(nickname||"").replace(/\s+/g," ").trim();
+  if (!clean) {
+    owned.nickname=null;
+  } else {
+    const length=[...clean].length;
+    if (length<2 || length>24) return {ok:false,error:"Pet names must contain 2-24 characters."};
+    if (/[@`*_~|<>\\\r\n]/u.test(clean)) return {ok:false,error:"That pet name contains unsupported characters."};
+    owned.nickname=clean;
+  }
+  saveData(data);
+  return {ok:true,nickname:owned.nickname,name:getOwnedPetName(owned)};
+}
+
+
+
+
+function h3DonorAbilityEntries(ownedPet){
+  return getPetAbilityEntries(ownedPet).map(entry=>({key:entry.ability,name:abilityDisplayName(entry.ability),rank:entry.level,rankRoman:h3RankRoman(entry.level),tier:h3AbilityDef(entry.ability).tier,inheritable:Boolean(h3AbilityDef(entry.ability).inheritable),natural:Boolean(entry.natural),effect:formatAbilityEffect(entry)}));
+}
+function h3CombineValidate(player,targetId,donorId){
+  const target=activityPetById(player,targetId), donor=activityPetById(player,donorId);
+  if(!target||!donor||target===donor) return {ok:false,error:"Choose two different pets you own."};
+  if(String(player.equippedPetId)===String(donor.id)) return {ok:false,error:"Your active pet cannot be sacrificed. Equip another companion first."};
+  return {ok:true,target,donor,targetDef:getOwnedPetDefinition(target),donorDef:getOwnedPetDefinition(donor)};
+}
+function activityPetCombinePreview(user,body={}){
+  const data=loadData(), player=getPlayer(data,user.id); ensureActivityProfile(player,user);
+  const check=h3CombineValidate(player,body.targetId,body.donorId); if(!check.ok) return check;
+  const {target,donor,targetDef,donorDef}=check;
+  const abilityKey=String(body.abilityKey||h3DonorAbilityEntries(donor)[0]?.key||"");
+  const donorAbility=h3DonorAbilityEntries(donor).find(a=>a.key===abilityKey);
+  if(!donorAbility) return {ok:false,error:"That donor does not know the selected ability."};
+  const known=getKnownPetAbility(target,abilityKey), slotsMax=h3InheritedSlotLimit(player), slotsUsed=(target.inheritedAbilities||[]).length;
+  const xpAmount=PET_COMBINE_XP[donorDef?.rarity]||50;
+  const trainingAmount=PET_ABILITY_COMBINE_XP[donorDef?.rarity]||25;
+  const chance=h3AbilityInheritanceChance(target,donor,abilityKey);
+  const mode=known?"duplicate":(!donorAbility.inheritable?"locked":"inherit");
+  return {ok:true,targetId:target.id,donorId:donor.id,targetName:getOwnedPetName(target),donorName:getOwnedPetName(donor),donorRarity:donorDef?.rarity||"Common",
+    ability:donorAbility,mode,known:Boolean(known),slotsUsed,slotsMax,totalAbilitySlots:1+slotsMax,canInherit:mode==="inherit"&&slotsUsed<slotsMax,
+    chance,xpSacrifice:{amount:xpAmount,...previewPetXpDistribution(target,xpAmount)},duplicateTraining:{amount:trainingAmount,...previewPetXpDistribution(target,trainingAmount)}};
+}
+function activityPetCombineXp(user,body={}){
+  const data=loadData(), player=getPlayer(data,user.id); ensureActivityProfile(player,user);
+  const check=h3CombineValidate(player,body.targetId,body.donorId); if(!check.ok) return check;
+  const {target,donor,donorDef}=check, amount=PET_COMBINE_XP[donorDef?.rarity]||50;
+  const distribution=distributePetXpAcrossAbilities(target,amount);
+  player.pets=player.pets.filter(p=>String(p.id)!==String(donor.id));
+  if(player.pendingHatchChoice&&String(player.pendingHatchChoice.petId)===String(donor.id)) player.pendingHatchChoice=null;
+  saveData(data);
+  return {ok:true,mode:"xp",message:`${getOwnedPetName(donor)} was sacrificed. ${amount} Ability XP was spread across ${distribution.abilityCount} non-maxed abilities.`,distribution,pets:activityOwnedPetPayload(player)};
+}
+function activityPetCombineInherit(user,body={}){
+  const data=loadData(), player=getPlayer(data,user.id); ensureActivityProfile(player,user);
+  const check=h3CombineValidate(player,body.targetId,body.donorId); if(!check.ok) return check;
+  const {target,donor,donorDef}=check, abilityKey=String(body.abilityKey||"");
+  const donorAbility=h3DonorAbilityEntries(donor).find(a=>a.key===abilityKey); if(!donorAbility) return {ok:false,error:"That donor does not know the selected ability."};
+  if(getKnownPetAbility(target,abilityKey)){
+    const amount=PET_ABILITY_COMBINE_XP[donorDef?.rarity]||25, distribution=distributePetXpAcrossAbilities(target,amount);
+    player.pets=player.pets.filter(p=>String(p.id)!==String(donor.id)); saveData(data);
+    return {ok:true,mode:"training",success:true,chance:100,message:`Duplicate ${abilityDisplayName(abilityKey)} converted into ${amount} Ability XP and was evenly spread across the target pet.`,distribution,pets:activityOwnedPetPayload(player)};
+  }
+  const def=h3AbilityDef(abilityKey); if(!def.inheritable||def.tier==="Special") return {ok:false,error:"That special ability cannot be inherited."};
+  const slotsMax=h3InheritedSlotLimit(player), slotsUsed=(target.inheritedAbilities||[]).length;
+  if(slotsUsed>=slotsMax) return {ok:false,error:`This pet has ${slotsUsed}/${slotsMax} inherited ability slots filled. Reach the next odd Hunter Level to unlock another slot.`};
+  const chance=h3AbilityInheritanceChance(target,donor,abilityKey), success=Math.random()*100<chance.total;
+  if(success){ target.inheritedAbilities.push({ability:abilityKey,baseBonus:1,rank:donorAbility.rank,xp:0,sourcePetKey:donor.key,sourceName:getOwnedPetName(donor),sourceRarity:donorDef?.rarity||"Common",inheritedAt:Date.now()}); }
+  player.pets=player.pets.filter(p=>String(p.id)!==String(donor.id));
+  if(player.pendingHatchChoice&&String(player.pendingHatchChoice.petId)===String(donor.id)) player.pendingHatchChoice=null;
+  saveData(data);
+  return {ok:true,mode:"inherit",success,chance:chance.total,ability:{...donorAbility,sourceName:getOwnedPetName(donor)},message:success?`${getOwnedPetName(target)} inherited ${abilityDisplayName(abilityKey)} at Rank ${h3RankRoman(donorAbility.rank)}!`:`Inheritance failed. ${getOwnedPetName(donor)} was still sacrificed.`,pets:activityOwnedPetPayload(player)};
+}
+
+function activityMerchantPayload(data, userId) {
+  ensureBigGameMerchantData(data);
+  const merchant=data.merchant;
+  const player=getPlayer(data,userId);
+  if (!merchant?.active || Date.now() >= Number(merchant.departureAt||0)) {
+    return {active:false,tokens:Number(player.huntTokens||0),merchant:null,offers:[]};
+  }
+  const def=MERCHANT_TYPE_DEFINITIONS[merchant.type];
+  return {
+    active:true,
+    tokens:Number(player.huntTokens||0),
+    merchant:{
+      type:merchant.type,
+      name:def?.name||"Traveling Merchant",
+      icon:def?.icon||"🛒",
+      image:def?.image||null,
+      departureAt:Number(merchant.departureAt||0),
+      clearance:Boolean(merchant.clearance),
+      gribble:merchant.type==="gribble"
+    },
+    offers:(merchant.inventory||[]).map(offer=>{
+      const item=MERCHANT_ITEMS[offer.key];
+      return {
+        key:offer.key,
+        name:item?.name||offer.key,
+        icon:item?.icon||"🎒",
+        description:item?.description||"",
+        effect:item?.effectDescription||"",
+        image:item?.image||null,
+        price:offer.barter?null:Number(offer.price||0),
+        barter:offer.barter?merchantBarterText(offer.barter):null,
+        stock:offer.stock===null?null:Number(offer.stock||0),
+        soldOut:offer.stock!==null && Number(offer.stock||0)<=0
+      };
+    })
+  };
+}
+
+
+function activityUseMerchantItem(data, player, key) {
+  const item=MERCHANT_ITEMS[key];
+  if(!item || collectionCount(player,key)<=0) return {ok:false,error:"You do not own that merchant item."};
+  if(item.kind==="egg") return {ok:false,error:`${item.name} remains sealed and cannot be used.`};
+  if(item.kind==="collectible" && !item.usable) return {ok:false,error:`${item.name} is a permanent collectible and is not consumed.`};
+
+  removeCollectionItem(player,key,1);
+  let result="The item was used.";
+
+  if(key==="hunters_compass"){player.merchantEffects.huntersCompass=true;result="The compass locks onto a powerful trail. Your next ordinary encounter will be Rare or better.";}
+  else if(key==="golden_lure"){player.merchantEffects.goldenLure=true;result="Golden light spills across the trail. Your next ordinary encounter will be Legendary.";}
+  else if(key==="fresh_tracks"){player.lastHunt=0;player.reminderState.huntDueAt=0;result="Fresh tracks cross your path. Your hunt cooldown has been cleared.";}
+  else if(key==="strange_map"){player.lastHunt=0;player.merchantEffects.huntersCompass=true;result="The map redraws itself. Your cooldown is cleared and your next ordinary encounter will be Rare or better.";}
+  else if(key==="mystery_sack"){
+    const roll=Math.random()*100;
+    if(roll<30){player.captureItems.berry+=2;result=`The sack contained 2 ${CAPTURE_ITEMS.berry.name}s.`;}
+    else if(roll<55){player.huntTokens+=5;player.lifetimeTokens+=5;result="The sack contained 5 Hunt Tokens.";}
+    else if(roll<75){player.bait.epic++;result="The sack contained Epic Bait.";}
+    else if(roll<92){player.captureItems.net++;result=`The sack contained ${CAPTURE_ITEMS.net.name}.`;}
+    else{player.captureItems.masterCharm++;result=`The sack contained ${CAPTURE_ITEMS.masterCharm.name}!`;}
+  }
+  else if(key==="sealed_bottle"){
+    const rewards=["berry","honey","net"];const rewardKey=rewards[Math.floor(Math.random()*rewards.length)];
+    player.captureItems[rewardKey]++;result=`The seal breaks in a flash. Inside was ${CAPTURE_ITEMS[rewardKey].name}.`;
+  }
+  else if(key==="merchants_dice"){
+    const roll=Math.floor(Math.random()*6)+1;
+    if(roll===1) result="The weighted die rolls off the table. Nothing happens.";
+    if(roll===2){player.captureItems.berry++;result=`Roll 2: ${CAPTURE_ITEMS.berry.name}.`;}
+    if(roll===3){player.huntTokens+=3;player.lifetimeTokens+=3;result="Roll 3: 3 Hunt Tokens.";}
+    if(roll===4){player.captureItems.net++;result=`Roll 4: ${CAPTURE_ITEMS.net.name}.`;}
+    if(roll===5){player.huntTokens+=8;player.lifetimeTokens+=8;result="Roll 5: 8 Hunt Tokens!";}
+    if(roll===6){addCollectionItem(player,"mystery_relic");result="Roll 6: Mystery Relic!";}
+  }
+  else if(key==="do_not_open"){
+    const roll=Math.random()*100;
+    if(roll<25){player.huntTokens+=20;player.lifetimeTokens+=20;result="The chains snap. Inside: 20 Hunt Tokens.";}
+    else if(roll<50){player.captureItems.masterCharm++;result=`The darkness releases ${CAPTURE_ITEMS.masterCharm.name}.`;}
+    else if(roll<75){player.points+=25;result="Something marks your shadow. +25 Hunter Points.";}
+    else{addCollectionItem(player,"unidentified_object");result="The box was empty. A moment later, an Unidentified Object appeared behind you.";}
+  }
+  else if(key==="rusted_key"){const tokens=5+Math.floor(Math.random()*6);player.huntTokens+=tokens;player.lifetimeTokens+=tokens;result=`The rusted key opens a hidden hunter cache. Inside: ${tokens} Hunt Tokens.`;}
+  else if(key==="monster_whistle"){player.lastHunt=0;player.reminderState.huntDueAt=0;player.merchantEffects.huntersCompass=true;result="The whistle clears your hunt cooldown, and your next ordinary encounter will be Rare or better.";}
+  else if(key==="mystery_relic"){const relicKey=RELIC_KEYS[Math.floor(Math.random()*RELIC_KEYS.length)];player.relics[relicKey]=(player.relics[relicKey]||0)+1;const relicMonster=ultraRareMonsters.find(monster=>monster.relicKey===relicKey);result=`The relic transforms into ${relicMonster?.relicName||relicKey}.`;}
+  else if(key==="impossible_key"){player.lastHunt=0;player.reminderState.huntDueAt=0;player.merchantEffects.goldenLure=true;result="The key opens an impossible path. Your hunt cooldown is cleared, and your next ordinary encounter is guaranteed Legendary.";}
+  else if(key==="torn_page"){player.bait.rare++;player.huntTokens+=3;player.lifetimeTokens+=3;result="The page reveals a supply route: 1 Rare Bait and 3 Hunt Tokens.";}
+  else if(key==="watchers_eye"){player.captureItems.masterCharm++;result=`The eye reveals a perfect weakness. You receive ${CAPTURE_ITEMS.masterCharm.name}.`;}
+  else if(key==="broken_compass"){if(Math.random()<0.25){player.merchantEffects.goldenLure=true;result="The broken compass points toward something enormous. Your next ordinary encounter is guaranteed Legendary!";}else{player.merchantEffects.huntersCompass=true;result="The compass finds a trail. Your next ordinary encounter will be Rare or better.";}}
+  else if(key==="fractured_compass"){player.lastHunt=0;player.reminderState.huntDueAt=0;player.merchantEffects.huntersCompass=true;result="Your hunt cooldown is cleared, and your next ordinary encounter will be Rare or better.";}
+  else if(key==="reality_anchor"){player.lastHunt=0;player.reminderState.huntDueAt=0;player.captureItems.masterCharm++;result=`Reality locks into place. Your hunt cooldown is cleared, and you receive ${CAPTURE_ITEMS.masterCharm.name}.`;}
+  else if(key==="unmarked_relic"){const relicKey=RELIC_KEYS[Math.floor(Math.random()*RELIC_KEYS.length)];player.relics[relicKey]=(player.relics[relicKey]||0)+1;player.huntTokens+=5;player.lifetimeTokens+=5;const relicMonster=ultraRareMonsters.find(monster=>monster.relicKey===relicKey);result=`The relic fractures, revealing ${relicMonster?.relicName||relicKey} and 5 Hunt Tokens.`;}
+  else if(key==="voidglass_shard"){player.merchantEffects.goldenLure=true;player.huntTokens+=5;player.lifetimeTokens+=5;result="Your next ordinary encounter is guaranteed Legendary, and you gain 5 Hunt Tokens.";}
+  else if(key==="unidentified_object"){
+    const roll=Math.floor(Math.random()*4);
+    if(roll===0){player.points+=25;result="The object becomes a crown-shaped shadow. +25 Hunter Points.";}
+    else if(roll===1){player.huntTokens+=20;player.lifetimeTokens+=20;result="The object collapses into impossible currency. +20 Hunt Tokens.";}
+    else if(roll===2){player.captureItems.masterCharm++;result=`The object becomes ${CAPTURE_ITEMS.masterCharm.name}.`;}
+    else{player.merchantEffects.goldenLure=true;result="The object shows you impossible prey. Your next ordinary encounter is guaranteed Legendary.";}
+  }
+
+  saveData(data);
+  return {ok:true,item:{key,name:item.name,icon:item.icon||"🎒"},result};
+}
+
+async function activityMerchantPurchase(user, itemKey) {
+  const data=loadData();
+  ensureBigGameMerchantData(data);
+  const player=getPlayer(data,user.id);
+  if (isSeasonLocked(data)) return {ok:false,error:"The season is currently locked."};
+  if (!data.merchant?.active || Date.now() >= Number(data.merchant.departureAt||0)) return {ok:false,error:"No merchant is currently accepting purchases."};
+  if (merchantPurchaseLocks.has(user.id)) return {ok:false,error:"Your previous merchant transaction is still processing."};
+
+  const offer=(data.merchant.inventory||[]).find(x=>x.key===String(itemKey||""));
+  if (!offer) return {ok:false,error:"That item is no longer in the merchant's current inventory."};
+  if (offer.stock!==null && Number(offer.stock||0)<=0) return {ok:false,error:"SOLD OUT — another hunter got there first."};
+
+  merchantPurchaseLocks.add(user.id);
+  try {
+    if (offer.barter) {
+      const missing=Object.entries(offer.barter).filter(([key,amount])=>collectionCount(player,key)<amount);
+      if (missing.length) return {ok:false,error:`Required barter: ${merchantBarterText(offer.barter)}.`};
+      for (const [key,amount] of Object.entries(offer.barter)) removeCollectionItem(player,key,amount);
+    } else {
+      const price=Number(offer.price||0);
+      if (Number(player.huntTokens||0)<price) return {ok:false,error:`You need ${price} Hunt Tokens, but only have ${player.huntTokens}.`};
+      player.huntTokens-=price;
+      player.tokensSpent=Number(player.tokensSpent||0)+price;
+    }
+    if (offer.stock!==null) offer.stock--;
+    offer.sold=Number(offer.sold||0)+1;
+    grantPurchasedItem(player,offer.key);
+    player.merchantPurchases=Array.isArray(player.merchantPurchases)?player.merchantPurchases:[];
+    player.merchantPurchases.push({key:offer.key,price:offer.price,barter:offer.barter,merchant:data.merchant.type,at:Date.now()});
+    const item=MERCHANT_ITEMS[offer.key];
+    saveData(data);
+
+    const channel=await getTextChannel(MONSTER_CHANNEL_ID).catch(()=>null);
+    if(channel?.isTextBased()){
+      await channel.send({
+        content:`${item?.icon||"🎒"} **ACTIVITY PURCHASE**\n<@${user.id}> purchased **${item?.name||offer.key}** from **${MERCHANT_TYPE_DEFINITIONS[data.merchant.type]?.name||"the merchant"}**!`,
+        allowedMentions:{users:[user.id]}
+      }).catch(()=>{});
+    }
+
+    return {
+      ok:true,
+      purchased:{key:offer.key,name:item?.name||offer.key,icon:item?.icon||"🎒"},
+      merchant:activityMerchantPayload(data,user.id),
+      hunter:activityPlayerPayload(data,user).hunter,
+      inventory:activityFullInventoryPayload(player)
+    };
+  } finally {
+    merchantPurchaseLocks.delete(user.id);
+  }
+}
+
+// ==================== H.1 DISCORD ACTIVITY AUTH + LIVE GAME BRIDGE ====================
+const activityTokenCache = new Map();
+
+function readRequestJson(req, limit = 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", chunk => {
+      body += chunk;
+      if (body.length > limit) {
+        reject(new Error("Request too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => {
+      try { resolve(body ? JSON.parse(body) : {}); }
+      catch { reject(new Error("Invalid JSON")); }
+    });
+    req.on("error", reject);
+  });
+}
+
+async function exchangeDiscordActivityCode(code) {
+  const clientId = process.env.DISCORD_CLIENT_ID || client.user?.id;
+  const clientSecret = process.env.DISCORD_CLIENT_SECRET;
+  if (!clientId) throw new Error("DISCORD_CLIENT_ID is not configured.");
+  if (!clientSecret) throw new Error("DISCORD_CLIENT_SECRET is not configured.");
+
+  const response = await fetch("https://discord.com/api/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "authorization_code",
+      code: String(code || "")
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.access_token) {
+    throw new Error(payload.error_description || payload.error || `Discord token exchange failed (${response.status})`);
+  }
+  return payload;
+}
+
+async function activityDiscordUser(req) {
+  const header = String(req.headers.authorization || "");
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  if (!token) return null;
+
+  const cached = activityTokenCache.get(token);
+  if (cached && cached.expiresAt > Date.now()) return cached.user;
+
+  const response = await fetch("https://discord.com/api/users/@me", {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) return null;
+
+  const user = await response.json();
+  activityTokenCache.set(token, { user, expiresAt: Date.now() + 5 * 60 * 1000 });
+  return user;
+}
+
+function ensureActivityProfile(player, user) {
+  if (!player.activityProfile || typeof player.activityProfile !== "object") {
+    player.activityProfile = {
+      hunterLevel: 1,
+      hunterTitle: "Novice Hunter",
+      appearance: {
+        body: "male",
+        skin: "medium",
+        hair: "short",
+        hairColor: "brown",
+        eyes: "blue",
+        outfit: "hunter",
+        weapon: "bow"
+      }
+    };
+  }
+  player.activityProfile.hunterLevel = h3HunterLevel(player);
+  player.discordUsername = user.username;
+  player.discordDisplayName = user.global_name || user.username;
+  return player.activityProfile;
+}
+
+function activityOwnedPetPayload(player) {
+  const inheritedLimit=h3InheritedSlotLimit(player);
+  return (player.pets||[]).map(owned=>{
+    const def=getOwnedPetDefinition(owned); if(!def) return null;
+    const levelInfo=getCompanionLevelInfo(owned), bond=getPetBondLevel(owned);
+    const abilities=getPetAbilityEntries(owned).map(entry=>({
+      key:entry.ability,name:abilityDisplayName(entry.ability),icon:h3AbilityDef(entry.ability).icon,
+      rank:entry.level,rankRoman:h3RankRoman(entry.level),xp:entry.xp||0,xpNeeded:entry.xpNeeded||0,
+      effect:formatAbilityEffect(entry),description:h3AbilityDef(entry.ability).description,capText:h3AbilityDef(entry.ability).capText,
+      tier:h3AbilityDef(entry.ability).tier,inheritable:Boolean(h3AbilityDef(entry.ability).inheritable),natural:Boolean(entry.natural),
+      sourcePetKey:entry.sourcePetKey||null,sourceName:entry.sourceName||null
+    }));
+    return {id:owned.id,key:def.key,name:def.name,nickname:owned.nickname||null,icon:def.icon,habitat:def.habitat,rarity:def.rarity,
+      ability:abilities[0]?.name||abilityDisplayName(def.ability),abilityEffect:abilities[0]?.effect||def.description,abilities,description:def.description,
+      level:levelInfo.level,bond,xp:levelInfo.level>=MAX_COMPANION_LEVEL?100:Math.min(100,Math.round((levelInfo.xpIntoLevel/Math.max(1,levelInfo.xpNeeded))*100)),
+      xpCurrent:levelInfo.xpIntoLevel,xpNeeded:levelInfo.xpNeeded,image:def.image||null,equipped:String(player.equippedPetId||"")===String(owned.id),
+      inheritedSlotsUsed:(owned.inheritedAbilities||[]).length,inheritedSlotsMax:inheritedLimit,totalAbilitySlots:1+inheritedLimit
+    };
+  }).filter(Boolean);
+}
+
+function activityPetDexPayload(player, beyond = false) {
+  const discovered = new Set(player.discoveredPetKeys || []);
+  const specialHabitats = new Set(["The Mirror Scar","The Black Bloom","The Chrono Tear","The Upside-Down Sea","The Dreaming Gate"]);
+  return pets
+    .filter(def => beyond ? specialHabitats.has(def.habitat) : !specialHabitats.has(def.habitat))
+    .map(def => ({
+      key: def.key,
+      name: def.name,
+      icon: def.icon,
+      habitat: def.habitat,
+      rarity: def.rarity,
+      ability: def.signatureName || abilityDisplayName(def.ability),
+      abilityEffect: def.signatureAbility
+        ? def.description
+        : formatAbilityEffect({ ability:def.ability, baseBonus:def.baseBonus, level:1 }),
+      description: def.description,
+      image: def.image || null,
+      discovered: discovered.has(def.key),
+      secret: Boolean(def.secret)
+    }));
+}
+
+function activityInventoryPayload(player) {
+  return [
+    { key:"rare_bait", name:"Rare Bait", icon:"🔵", count:Number(player.bait?.rare || 0), category:"Lure", description:"Improves Rare odds on your next normal hunt." },
+    { key:"epic_bait", name:"Epic Bait", icon:"🟣", count:Number(player.bait?.epic || 0), category:"Lure", description:"Improves Epic odds on your next normal hunt." },
+    { key:"legendary_bait", name:"Legendary Bait", icon:"🟠", count:Number(player.bait?.legendary || 0), category:"Lure", description:"Improves Legendary odds on your next normal hunt." },
+    { key:"berry", name:"Hunter Berry", icon:"🍓", count:Number(player.captureItems?.berry || 0), category:"Capture", description:"+10% to one capture attempt." },
+    { key:"honey", name:"Sticky Honey", icon:"🍯", count:Number(player.captureItems?.honey || 0), category:"Capture", description:"+20% to one capture attempt." },
+    { key:"net", name:"Enchanted Net", icon:"🕸️", count:Number(player.captureItems?.net || 0), category:"Capture", description:"+30% to one capture attempt." },
+    { key:"masterCharm", name:"Master Charm", icon:"🌟", count:Number(player.captureItems?.masterCharm || 0), category:"Capture", description:"Guarantees one capture attempt." }
+  ];
+}
+
+function activityEggPayload(player) {
+  return (player.eggs || []).map((egg, index) => {
+    const distortion = egg.distortionKey ? DISTORTION_EGGS[egg.distortionKey] : null;
+    return {
+      id: egg.id || `egg-${index + 1}`,
+      key: egg.distortionKey || String(egg.rarity || "Common").toLowerCase(),
+      name: distortion?.name || `${egg.rarity || "Common"} Egg`,
+      rarity: egg.rarity || (distortion ? "Distortion" : "Common"),
+      icon: distortion?.icon || EGG_TYPES[egg.rarity]?.icon || "🥚",
+      image: distortion?.image || EGG_TYPES[egg.rarity]?.image || null
+    };
+  });
+}
+
+function activityFetchPayload(player) {
+  const now = Date.now();
+  const state = player.fetchState || null;
+  const fetchPet = state?.petId
+    ? (player.pets || []).find(p => String(p.id) === String(state.petId))
+    : getEquippedPet(player);
+  const definition = getOwnedPetDefinition(fetchPet);
+  const cooldownReadyAt = Number(player.lastFetch || 0) + FETCH_COOLDOWN;
+  const active = Boolean(state && !state.completed && Number(state.readyAt || 0) > now);
+  const returning = Boolean(state && !state.completed && Number(state.readyAt || 0) <= now);
+  return {
+    active,
+    returning,
+    completed:Boolean(state?.completed),
+    startedAt:Number(state?.startedAt || 0),
+    readyAt:Number(state?.readyAt || 0),
+    completedAt:Number(state?.completedAt || 0),
+    cooldownReadyAt,
+    cooldownMs:FETCH_COOLDOWN,
+    durationMs:FETCH_DURATION,
+    ready:!active && !returning && now >= cooldownReadyAt,
+    pet:fetchPet && definition ? {
+      id:fetchPet.id,
+      key:definition.key,
+      name:getOwnedPetName(fetchPet),
+      image:definition.image || null,
+      icon:definition.icon || "🐾"
+    } : null,
+    result:state?.result || null,
+    revealResult:Boolean(state?.result && state?.completed && !state?.activityResultSeen)
+  };
+}
+
+async function activityAcknowledgeFetchResult(user) {
+  const data=loadData();
+  const player=getPlayer(data,user.id);
+  if (player.fetchState?.completed && player.fetchState?.result) {
+    player.fetchState.activityResultSeen=true;
+    saveData(data);
+  }
+  return {ok:true};
+}
+
+async function activityStartFetch(user) {
+  const data = loadData();
+  const player = getPlayer(data,user.id);
+  ensureActivityProfile(player,user);
+
+  const ownedPet = getEquippedPet(player);
+  const definition = getOwnedPetDefinition(ownedPet);
+  if (!ownedPet || !definition) return {ok:false,error:"Equip a companion before sending one to Fetch."};
+
+  const now=Date.now();
+  if (player.fetchState && !player.fetchState.completed) {
+    return {ok:false,code:"fetching",error:`${getOwnedPetName(ownedPet)} is already fetching.`,fetch:activityFetchPayload(player)};
+  }
+
+  const left = FETCH_COOLDOWN - (now - Number(player.lastFetch || 0));
+  if (left > 0) {
+    return {ok:false,code:"cooldown",error:"Your companion is still resting after Fetch.",timeLeft:left,fetch:activityFetchPayload(player)};
+  }
+
+  player.lastFetch=now;
+  player.fetchState={
+    petId:ownedPet.id,
+    startedAt:now,
+    readyAt:now+FETCH_DURATION,
+    completed:false,
+    completedAt:0,
+    result:null,
+    channelId:EGGS_PETS_CHANNEL_ID
+  };
+  player.reminderState = player.reminderState || {};
+  player.reminderState.channelId=EGGS_PETS_CHANNEL_ID;
+  player.reminderState.fetchDueAt=now+FETCH_COOLDOWN;
+  player.reminderState.fetchSent=false;
+  saveData(data);
+
+  return {
+    ok:true,
+    message:`${getOwnedPetName(ownedPet)} went Fetching!`,
+    flavor:fetchFlavor(definition,ownedPet.personality,false,ownedPet),
+    fetch:activityFetchPayload(player)
+  };
+}
+
+// ==================== H.9 HUNTER TRAINING ====================
+function h9TutorialState(player){
+  if(!player.tutorial||typeof player.tutorial!=="object") player.tutorial={enabled:true,completed:false,skipped:false,step:0,seenTips:{}};
+  if(typeof player.tutorial.enabled!=="boolean") player.tutorial.enabled=true;
+  if(!Number.isInteger(player.tutorial.step)||player.tutorial.step<0) player.tutorial.step=0;
+  if(!player.tutorial.seenTips||typeof player.tutorial.seenTips!=="object") player.tutorial.seenTips={};
+  return player.tutorial;
+}
+function h9TutorialPayload(player){const t=h9TutorialState(player);return {enabled:t.enabled,completed:!!t.completed,skipped:!!t.skipped,step:+t.step||0,seenTips:{...t.seenTips}};}
+
+function activityPlayerPayload(data, user) {
+  const player = getPlayer(data, user.id);
+  const profile = ensureActivityProfile(player, user);
+  const ownedPets = activityOwnedPetPayload(player);
+  const active = ownedPets.find(p => p.equipped) || ownedPets[0] || null;
+  const standardDex = activityPetDexPayload(player, false);
+  return {
+    hunter: {
+      name: user.global_name || user.username,
+      level: h3HunterLevel(player),
+      points: Number(player.points || 0),
+      tokens: Number(player.huntTokens || 0),
+      title: player.title || profile.hunterTitle || "Novice Hunter",
+      activePetKey: active?.key || null,
+      activePet: active ? { name: active.nickname || active.name, level: active.level, icon: active.icon, image: active.image } : null,
+      stats: {
+        pets: ownedPets.length,
+        petDex: `${standardDex.filter(p => p.discovered).length}/32`,
+        trophies: h7CurrentSeasonTrophyCount(data,user.id)
+      },
+      bait: { ...player.bait },
+      activeBait: player.activeBait || null,
+      captureItems: { ...player.captureItems },
+      huntReadyAt: Number(player.lastHunt || 0) + getPlayerHuntCooldown(player, data, user.id),
+      fetch: activityFetchPayload(player),
+      generatedHunterImage: player.generatedHunter?.imageUrl || null,
+      generatedHunter: h81PublicHunterRecord(player.generatedHunter),
+      tutorial:h9TutorialPayload(player)
+    },
+    phaseD: {
+      ownedPets,
+      petDex: standardDex,
+      beyondPets: activityPetDexPayload(player, true),
+      inventory: activityFullInventoryPayload(player),
+      trophies: h7SeasonBountyTrophies(data,user.id),
+      titles: h7SeasonTitlesPayload(player),
+      cosmetics: h7CosmeticsPayload(player,data,user.id),
+      petProgression:{hunterLevel:h3HunterLevel(player),inheritedSlots:h3InheritedSlotLimit(player),incubators:getIncubatorSlots(player),maxInherited:H3_MAX_INHERITED_ABILITIES}
+    },
+    eggs: activityEggInventoryPayload(player),
+    incubators: activityIncubatorPayload(player)
+  };
+}
+
+async function activityStartNormalHunt(user) {
+  const data = loadData();
+  if (isSeasonLocked(data)) {
+    return { ok:false, code:"season_ended", message:"The Monster Hunt season has ended. Hunts reopen when the new season begins." };
+  }
+  const player = getPlayer(data, user.id);
+  ensureActivityProfile(player, user);
+
+  const now = Date.now();
+  const huntCooldown = getPlayerHuntCooldown(player, data, user.id);
+  const timeLeft = huntCooldown - (now - Number(player.lastHunt || 0));
+  if (timeLeft > 0) return { ok:false, code:"cooldown", timeLeft, readyAt:Number(player.lastHunt || 0) + huntCooldown };
+
+  const usedBait = player.activeBait;
+  prepareSignatureForHunt(player);
+  const h3HuntEffects=h32PrepareHunt(player,data,user.id);
+  let monster = getRandomMonsterForPlayer(player, data, user.id);
+  const merchantEncounter = applyMerchantEncounterEffect(player, monster);
+  monster = merchantEncounter.monster;
+  const encounters = addEncounterKnowledge(player, monster);
+  const chanceInfo = calculateCaptureChance(player, monster, null, data, user.id);
+
+  player.currentMonster = monster;
+  player.activeBait = null;
+  const h3BaitSaveText=h32BaitSave(player,usedBait);
+  player.lastHunt = now;
+  player.reminderState.channelId = MONSTER_CHANNEL_ID;
+  player.reminderState.huntDueAt = now + huntCooldown;
+  player.reminderState.huntSent = false;
+  player.huntCount++;
+  if (usedBait) player.titleProgress.baitUsed = (player.titleProgress.baitUsed || 0) + 1;
+  updateQuestProgress(player, "hunt");
+  checkTitleUnlocks(player);
+  saveData(data);
+
+  const choices = buildCaptureChoices(player, monster).map(choice => ({
+    number: choice.number,
+    itemKey: choice.itemKey,
+    label: choice.label,
+    chance: choice.chance
+  }));
+
+  const channel = await getTextChannel(MONSTER_CHANNEL_ID);
+  if (channel?.isTextBased()) {
+    await channel.send(
+      buildMonsterEmbed(
+        monster,
+        `🎮 Activity Hunt — ${formatPlayerName(player, user.global_name || user.username)} encountered ${monster.name}!`,
+        `**Rarity:** ${monster.rarity}\n` +
+        `**Habitat:** ${monster.habitat || "Unknown"}\n` +
+        `**Current Catch Chance:** ${chanceInfo.total}%\n` +
+        `${usedBait ? `**Bait Used:** ${String(usedBait).toUpperCase()}\n` : ""}` +
+        `${h3BaitSaveText}${h3HuntEffects.messages?.length ? `\n🐾 **Pet Abilities:** ${h3HuntEffects.messages.join(" | ")}\n` : ""}` +
+        `\nThe hunter is choosing a capture method in the Discord Activity.`
+      )
+    ).catch(error => console.error("Activity encounter announcement failed:", error));
+  }
+
+  return {
+    ok:true,
+    monster:{ ...monster, imageUrl:monster.image ? `/assets/monsters/${monster.image}` : null },
+    chance:chanceInfo.total,
+    baseChance:Number(monster.chance || 0),
+    choices,
+    player:activityPlayerPayload(data, user).hunter
+  };
+}
+
+async function activityCapture(user, itemKey = null) {
+  const beforeData = loadData();
+  const beforePlayer = getPlayer(beforeData, user.id);
+  const monster = beforePlayer.currentMonster ? { ...beforePlayer.currentMonster } : null;
+  if (!monster) return { ok:false, message:"No active monster. Start a hunt first." };
+
+  const beforePet=getEquippedPet(beforePlayer);
+  const before = {
+    caught:(beforePlayer.caught || []).length,
+    points:Number(beforePlayer.points || 0),
+    tokens:Number(beforePlayer.huntTokens || 0),
+    eggs:(beforePlayer.eggs || []).length,
+    captureItems:{...(beforePlayer.captureItems||{})},
+    bait:{...(beforePlayer.bait||{})},
+    petXp:Number(beforePet?.companionXp||0),
+    petName:beforePet?getOwnedPetName(beforePet):null
+  };
+
+  const channel = await getTextChannel(MONSTER_CHANNEL_ID);
+  const sent = [];
+  const fakeMessage = {
+    author:{ id:user.id, username:user.username },
+    isActivity:true,
+    channel:{ send:async payload => { sent.push(payload); return { reply:async()=>null }; } },
+    reply:async payload => { sent.push(payload); return { reply:async()=>null }; }
+  };
+
+  await performCaptureAttempt(fakeMessage, user.id, itemKey || null);
+
+  const afterData = loadData();
+  const afterPlayer = getPlayer(afterData, user.id);
+  const afterPet=getEquippedPet(afterPlayer);
+  const after = {
+    caught:(afterPlayer.caught || []).length,
+    points:Number(afterPlayer.points || 0),
+    tokens:Number(afterPlayer.huntTokens || 0),
+    eggs:(afterPlayer.eggs || []).length,
+    captureItems:{...(afterPlayer.captureItems||{})},
+    bait:{...(afterPlayer.bait||{})},
+    petXp:Number(afterPet?.companionXp||0),
+    petName:afterPet?getOwnedPetName(afterPet):null
+  };
+
+  const itemRewards=[];
+  const itemDefs=[
+    ["captureItems","berry","🍓","Hunter Berry"],
+    ["captureItems","honey","🍯","Sticky Honey"],
+    ["captureItems","net","🕸️","Enchanted Net"],
+    ["captureItems","masterCharm","🌟","Master Charm"],
+    ["bait","rare","🔵","Rare Bait"],
+    ["bait","epic","🟣","Epic Bait"],
+    ["bait","legendary","🟠","Legendary Bait"]
+  ];
+  for(const [group,key,icon,label] of itemDefs){
+    const amount=Number(after[group]?.[key]||0)-Number(before[group]?.[key]||0);
+    if(amount>0) itemRewards.push({key,icon,label,amount});
+  }
+  const petXpGained=Math.max(0,after.petXp-before.petXp);
+
+  let description = "";
+  for (const payload of [...sent].reverse()) {
+    const embed = typeof payload === "object" ? payload?.embeds?.[0] : null;
+    const text = typeof payload === "string" ? payload : (embed?.data?.description || embed?.description || "");
+    if (text) { description = text; break; }
+  }
+  const roll = Number((description.match(/\*\*Roll:\*\*\s*(\d+)/i) || [])[1] || 0) || null;
+  const chance = Number((description.match(/\*\*(?:Final )?Capture Chance:\*\*\s*(\d+)%/i) || [])[1] || 0)
+    || calculateCaptureChance(beforePlayer, monster, itemKey || null, beforeData, user.id).total;
+
+  if (after.caught > before.caught) {
+    await h4PostSuccessfulActivityCatch(user, monster, {
+      points:after.points - before.points,
+      tokens:after.tokens - before.tokens,
+      eggs:after.eggs - before.eggs
+    });
+  }
+
+  return {
+    ok:true,
+    caught:after.caught > before.caught,
+    keptEncounter:Boolean(afterPlayer.currentMonster),
+    monster:{ ...monster, imageUrl:monster.image ? `/assets/monsters/${monster.image}` : null },
+    roll,
+    chance,
+    method:itemKey ? CAPTURE_ITEMS[itemKey].name : "Normal Throw",
+    rewards:{
+      points:after.points - before.points,
+      tokens:after.tokens - before.tokens,
+      eggs:after.eggs - before.eggs,
+      items:itemRewards,
+      petXp:petXpGained,
+      petName:after.petName || before.petName || null
+    },
+    player:activityPlayerPayload(afterData, user).hunter
+  };
+}
+
+// ==================== H.2A.2 DISCORD ACTIVITY WEB SERVER ====================
+const ACTIVITY_PUBLIC_DIR = path.join(__dirname, "public");
+const ACTIVITY_PORT = Number(process.env.PORT || 8080);
+
+const ACTIVITY_CONTENT_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml"
+};
+
+function activityJson(res, value, status = 200) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store"
+  });
+  res.end(JSON.stringify(value));
+}
+
+function activitySafeFilePath(urlPath) {
+  let clean = decodeURIComponent(String(urlPath || "/").split("?")[0]);
+  if (clean.startsWith("/.proxy/")) clean = clean.slice("/.proxy".length);
+  const requested = clean === "/" ? "/index.html" : clean;
+  const target = path.resolve(ACTIVITY_PUBLIC_DIR, "." + requested);
+  if (!target.startsWith(path.resolve(ACTIVITY_PUBLIC_DIR))) return null;
+  return target;
+}
+
+function sqliteStatusPayload() {
+  const row = db.prepare("SELECT updated_at, length(payload) AS bytes FROM game_state WHERE id = 1").get();
+  const state = loadData();
+  return {
+    phase: "H.2A.2",
+    storage: "sqlite-volume",
+    databaseFile: DATABASE_FILE,
+    volumeDetected: fs.existsSync("/data"),
+    players: Object.keys(state.players || {}).length,
+    bytes: Number(row?.bytes || 0),
+    updatedAt: Number(row?.updated_at || 0),
+    botReady: Boolean(client.user),
+    botUser: client.user ? { id: client.user.id, username: client.user.username } : null,
+    monsterChannelId: MONSTER_CHANNEL_ID,
+    eggsPetsChannelId: EGGS_PETS_CHANNEL_ID,
+    activityWritesEnabled: true
+  };
+}
+
+const activityServer = http.createServer(async (req, res) => {
+  try {
+    const rawRequestUrl = String(req.url || "/");
+    const normalizedRequestUrl = rawRequestUrl.startsWith("/.proxy/")
+      ? rawRequestUrl.slice("/.proxy".length)
+      : rawRequestUrl;
+    const requestUrl = new URL(normalizedRequestUrl || "/", "http://activity.local");
+
+    if (req.method === "GET" && requestUrl.pathname.startsWith("/generated-hunters/")) {
+      const requested=decodeURIComponent(requestUrl.pathname.slice("/generated-hunters/".length));
+      const safe=path.basename(requested);
+      if (!safe || safe !== requested || !safe.endsWith(".png")) {
+        res.writeHead(400,{"Content-Type":"text/plain"}); return res.end("Bad request");
+      }
+      const target=path.join(GENERATED_HUNTER_DIRECTORY,safe);
+      if (!fs.existsSync(target)) {
+        res.writeHead(404,{"Content-Type":"text/plain"}); return res.end("Not found");
+      }
+      res.writeHead(200,{
+        "Content-Type":"image/png",
+        "Cache-Control":"public, max-age=31536000, immutable"
+      });
+      return fs.createReadStream(target).pipe(res);
+    }
+
+    if (req.method === "GET" && requestUrl.pathname === "/api/activity/config") {
+      return activityJson(res, { clientId:process.env.DISCORD_CLIENT_ID || client.user?.id || null, phase:"H.1" });
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/api/activity/token") {
+      try {
+        const body = await readRequestJson(req);
+        const token = await exchangeDiscordActivityCode(body.code);
+        return activityJson(res, { access_token:token.access_token, expires_in:token.expires_in });
+      } catch (error) {
+        return activityJson(res, { error:error.message }, 400);
+      }
+    }
+
+    if (req.method === "GET" && requestUrl.pathname === "/api/phase-e-events") return activityJson(res, H1_PHASE_E_EVENTS);
+    if (req.method === "GET" && requestUrl.pathname === "/api/phase-f-hunting") return activityJson(res, H1_PHASE_F_HUNTING);
+    if (req.method === "GET" && requestUrl.pathname === "/api/phase-g-alignment") return activityJson(res, H1_PHASE_G_ALIGNMENT);
+
+    if (requestUrl.pathname.startsWith("/api/") && !requestUrl.pathname.startsWith("/api/h0/")) {
+      const user = await activityDiscordUser(req);
+      if (!user) return activityJson(res, { error:"Discord Activity authentication required." }, 401);
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/test-hunter") {
+        const data = loadData();
+        const payload = activityPlayerPayload(data, user);
+        saveData(data);
+        return activityJson(res, payload.hunter);
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/phase-d-data") {
+        const data = loadData();
+        const payload = activityPlayerPayload(data, user);
+        saveData(data);
+        return activityJson(res, payload.phaseD);
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/phase-g5-leaderboards") {
+        const data = loadData();
+        return activityJson(res, activityLeaderboardPayload(data, user.id));
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/phase-g9-social") {
+        const data = loadData();
+        const payload = activityPlayerPayload(data, user);
+        return activityJson(res, {
+          eggs:payload.eggs,
+          incubatorSlots:payload.incubators.slots,
+          incubations:payload.incubators.incubations,
+          recentHunts:activityRecentHuntsPayload(data)
+        });
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/me") {
+        const data = loadData();
+        const player = getPlayer(data, user.id);
+        ensureActivityProfile(player, user);
+        player.discordUsername = user.username || player.discordUsername || null;
+        player.discordDisplayName = user.global_name || user.username || player.discordDisplayName || null;
+        const payload = activityPlayerPayload(data, user);
+        saveData(data);
+        return activityJson(res, payload);
+      }
+
+      // H.2A.2: single live-state refresh used after Discord chat commands.
+      // This makes newly granted eggs/items visible without relying on stale DEV data.
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/sync") {
+        const data = loadData();
+        const player = getPlayer(data, user.id);
+        ensureActivityProfile(player, user);
+        player.discordUsername = user.username || player.discordUsername || null;
+        player.discordDisplayName = user.global_name || user.username || player.discordDisplayName || null;
+        const payload = activityPlayerPayload(data, user);
+        saveData(data);
+        return activityJson(res, {
+          ok:true,
+          hunter:payload.hunter,
+          phaseD:payload.phaseD,
+          eggs:payload.eggs,
+          incubators:payload.incubators,
+          recentHunts:activityRecentHuntsPayload(data),
+          activityWritesEnabled:true,
+          botReady:Boolean(client.user)
+        });
+      }
+
+      if(req.method==="POST"&&requestUrl.pathname==="/api/activity/tutorial"){
+        const body=await readRequestJson(req),data=loadData(),player=getPlayer(data,user.id),t=h9TutorialState(player);
+        if(body.action==="toggle"){t.enabled=!!body.enabled;if(!t.enabled)t.skipped=true;else if(!t.completed)t.skipped=false;}
+        else if(body.action==="progress")t.step=Math.max(0,Math.min(15,+body.step||0));
+        else if(body.action==="complete"){t.completed=true;t.skipped=false;t.step=15;}
+        else if(body.action==="skip"){t.skipped=true;t.completed=false;t.enabled=false;}
+        else if(body.action==="restart"){t.enabled=true;t.completed=false;t.skipped=false;t.step=0;}
+        else if(body.action==="reset-tips")t.seenTips={};
+        else if(body.action==="tip"){const k=String(body.key||"").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,64);if(k)t.seenTips[k]=true;}
+        else return activityJson(res,{ok:false,error:"Unknown tutorial action."},400);
+        saveData(data);return activityJson(res,{ok:true,tutorial:h9TutorialPayload(player)});
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/hunter-creator/options") {
+        const data=loadData();
+        return activityJson(res,{ok:true,...h8CreatorOptionsPayload(data,user.id)});
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter-creator/draft") {
+        const body=await readRequestJson(req);
+        const data=loadData();
+        const result=h8CreatorSaveDraft(data,user.id,body.selection||{});
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter-creator/preview") {
+        const body=await readRequestJson(req);
+        const data=loadData();
+        const result=h8CreatorPreview(data,user.id,body.selection||{});
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter-creator/generate") {
+        const body=await readRequestJson(req);
+        const result=await h81GenerateHunter(user,body.selection||{});
+        const status=result.ok?200:(result.code==="cooldown"?429:400);
+        return activityJson(res,result,status);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter-creator/approve") {
+        const result=h81ApproveHunter(user.id);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter-creator/discard") {
+        const result=h81DiscardCandidate(user.id);
+        return activityJson(res,result,200);
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/merchant") {
+        const data=loadData();
+        return activityJson(res,{ok:true,...activityMerchantPayload(data,user.id)});
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/inventory/use") {
+        const body=await readRequestJson(req);
+        const data=loadData();
+        const player=getPlayer(data,user.id);
+        const result=activityUseMerchantItem(data,player,String(body.itemKey||""));
+        if(!result.ok) return activityJson(res,result,400);
+        const refreshed=activityPlayerPayload(data,user);
+        return activityJson(res,{
+          ...result,
+          hunter:refreshed.hunter,
+          inventory:refreshed.phaseD.inventory
+        });
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/merchant/buy") {
+        const body=await readRequestJson(req);
+        const result=await activityMerchantPurchase(user,body.itemKey);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/bait") {
+        const body = await readRequestJson(req);
+        const type = String(body.type || "none").toLowerCase();
+        const data = loadData();
+        const player = getPlayer(data, user.id);
+
+        if (type === "none") {
+          player.activeBait = null;
+        } else {
+          if (!["rare","epic","legendary"].includes(type)) return activityJson(res, { error:"Invalid bait type." }, 400);
+          if (Number(player.bait?.[type] || 0) <= 0) return activityJson(res, { error:`You do not have any ${type} bait.` }, 400);
+          player.bait[type]--;
+          player.activeBait = type;
+        }
+        saveData(data);
+        return activityJson(res, { ok:true, activeBait:player.activeBait, bait:{...player.bait} });
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/live-events") {
+        const data=loadData();
+        return activityJson(res,activityLiveEventsPayload(data,user.id));
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/notifications") {
+        const data=loadData();
+        const result=await h4NotificationPrefsPayload(data,user.id);
+        return activityJson(res,{ok:true,...result});
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/fetch") {
+        const data=loadData();
+        const player=getPlayer(data,user.id);
+        return activityJson(res,{ok:true,fetch:activityFetchPayload(player)});
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/fetch/start") {
+        const result=await activityStartFetch(user);
+        return activityJson(res,result,result.ok?200:(result.code==="cooldown"?429:400));
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/fetch/ack") {
+        const result=await activityAcknowledgeFetchResult(user);
+        return activityJson(res,result,200);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/title/equip") {
+        const body=await readRequestJson(req);
+        const result=await activityEquipTitle(user,body.title);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/notifications") {
+        const body=await readRequestJson(req);
+        const data=loadData();
+        const result=await h4UpdateNotificationPreference(data,user.id,String(body.key||""),Boolean(body.enabled));
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/egg/incubate") {
+        const body=await readRequestJson(req);
+        const result=await activityIncubateEgg(user,body.inventoryIndex);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/egg/hatch") {
+        const body=await readRequestJson(req);
+        const result=await activityHatchEgg(user,body.slot);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/combine/preview") {
+        const body=await readRequestJson(req); const result=activityPetCombinePreview(user,body); return activityJson(res,result,result.ok?200:400);
+      }
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/combine/xp") {
+        const body=await readRequestJson(req); const result=activityPetCombineXp(user,body); return activityJson(res,result,result.ok?200:400);
+      }
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/combine/inherit") {
+        const body=await readRequestJson(req); const result=activityPetCombineInherit(user,body); return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/equip") {
+        const body=await readRequestJson(req);
+        const result=activityEquipPet(user,body.petId);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/name") {
+        const body=await readRequestJson(req);
+        const result=activityRenamePet(user,body.petId,body.nickname);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if(req.method==="POST"&&requestUrl.pathname==="/api/activity/bounty/hunt"){const d=loadData(),ch=client.channels.cache.get(MONSTER_CHANNEL_ID),result=await performBountyHunt(d,user.id,ch);return activityJson(res,result,result.ok?200:(result.code==="cooldown"?429:400));}
+      if(req.method==="POST"&&requestUrl.pathname==="/api/activity/bounty/turnin"){const d=loadData(),ch=client.channels.cache.get(MONSTER_CHANNEL_ID),result=await turnInBounty(d,user.id,ch);return activityJson(res,result,result.ok?200:400);}
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunt/start") {
+        const result = await activityStartNormalHunt(user);
+        return activityJson(res, result, result.ok ? 200 : (result.code === "cooldown" ? 429 : 400));
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunt/capture") {
+        try {
+          const body = await readRequestJson(req);
+          const result = await activityCapture(user, body.itemKey == null ? null : String(body.itemKey));
+          return activityJson(res, result, result.ok ? 200 : 400);
+        } catch (error) {
+          console.error("Activity capture failed:", error);
+          return activityJson(res, { ok:false, error:error?.message || "The capture attempt failed on the server." }, 500);
+        }
+      }
+    }
+
+    if (req.method === "GET" && req.url?.startsWith("/api/h0/status")) {
+      return activityJson(res, sqliteStatusPayload());
+    }
+
+    // Read-only aggregate preview for H.0. No player identity is exposed yet.
+    if (req.method === "GET" && req.url?.startsWith("/api/h0/game-summary")) {
+      const state = loadData();
+      const players = Object.values(state.players || {});
+      return activityJson(res, {
+        players: players.length,
+        totalSeasonCatches: players.reduce((sum, p) => sum + (Array.isArray(p.caught) ? p.caught.length : 0), 0),
+        totalPets: players.reduce((sum, p) => sum + (Array.isArray(p.pets) ? p.pets.length : 0), 0),
+        totalEggs: players.reduce((sum, p) => sum + (Array.isArray(p.eggs) ? p.eggs.length : 0), 0),
+        activeIncubations: players.reduce((sum, p) => sum + (Array.isArray(p.incubatingEggs) ? p.incubatingEggs.length : 0), 0),
+        bigGameActive: Boolean(state.bigGame?.active),
+        distortionActive: Boolean(state.activeDistortion || state.distortionState?.active)
+      });
+    }
+
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      return activityJson(res, { error: "H.0 Activity server is read-only." }, 405);
+    }
+
+    const filePath = activitySafeFilePath(req.url);
+    if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      return res.end("Not found");
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, {
+      "Content-Type": ACTIVITY_CONTENT_TYPES[ext] || "application/octet-stream",
+      "Cache-Control": ext === ".html" ? "no-store" : "public, max-age=300"
+    });
+
+    if (req.method === "HEAD") return res.end();
+    fs.createReadStream(filePath).pipe(res);
+  } catch (error) {
+    console.error("Activity HTTP server error:", error);
+    activityJson(res, { error: "Internal server error" }, 500);
+  }
+});
+
+activityServer.listen(ACTIVITY_PORT, "0.0.0.0", () => {
+  console.log(`Monster Hunt Activity H.2A.2 listening on port ${ACTIVITY_PORT}`);
+});
+
+// BOT_ENABLED=false lets you deploy/test the new Railway service without
+// logging the same Discord bot into two Railway services at once.
+if (String(process.env.BOT_ENABLED || "true").toLowerCase() !== "false") {
+  client.login(process.env.DISCORD_TOKEN);
+} else {
+  console.log("BOT_ENABLED=false — Activity/Volume service running without Discord bot login.");
+}
