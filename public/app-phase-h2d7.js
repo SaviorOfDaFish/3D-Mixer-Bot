@@ -164,12 +164,14 @@ const H102_DISTORTION_HABITATS = new Set([
   "The Mirror Scar","The Black Bloom","The Chrono Tear","The Upside-Down Sea","The Dreaming Gate"
 ]);
 const H102_DISTORTION_EGG_KEYS = new Set(["reflected","blightbloom","timelost","tidefall","dreambound"]);
+const H104_MERCHANT_EGG_KEYS = new Set(["common_mystery_egg","rare_mystery_egg","ancient_egg","merchants_egg","black_egg"]);
 
 function petArtPath(pet) {
   if (!pet) return null;
   if (pet.imageUrl) return pet.imageUrl;
   if (!pet.image) return null;
-  return `${H102_DISTORTION_HABITATS.has(String(pet.habitat||"")) ? "/assets/distortions" : "/assets/pets"}/${pet.image}`;
+  const folder=String(pet.habitat||"")==="Merchant Collection"?"/assets/pets/merchant":(H102_DISTORTION_HABITATS.has(String(pet.habitat||"")) ? "/assets/distortions" : "/assets/pets");
+  return `${folder}/${pet.image}`;
 }
 
 function eggArtPath(egg) {
@@ -177,7 +179,8 @@ function eggArtPath(egg) {
   if (egg.imageUrl) return egg.imageUrl;
   if (!egg.image) return null;
   const key=egg.eggKey || egg.key || egg.distortionKey || null;
-  return `${H102_DISTORTION_EGG_KEYS.has(String(key||"")) ? "/assets/distortions" : "/assets/eggs"}/${egg.image}`;
+  const folder=H102_DISTORTION_EGG_KEYS.has(String(key||""))?"/assets/distortions":(H104_MERCHANT_EGG_KEYS.has(String(key||""))?"/assets/merchant-items":"/assets/eggs");
+  return `${folder}/${egg.image}`;
 }
 
 function assetImage(src, fallback, className="asset-icon") {
