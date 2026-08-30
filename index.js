@@ -4101,6 +4101,7 @@ function findImageFile(filename) {
     path.join(__dirname, "assets", "images"),
     path.join(__dirname, "assets", "images", "merchant"),
     path.join(__dirname, "public"),
+    path.join(__dirname, "public", "assets", "distortions"),
     path.join(__dirname, "public", "images"),
     path.join(__dirname, "src"),
     path.join(__dirname, "src", "images")
@@ -7569,7 +7570,7 @@ async function startLiveDistortion(data, event, forcedKey = null) {
 
   const channel = client.channels.cache.get(MONSTER_CHANNEL_ID);
   if (!channel?.isTextBased()) return true;
-  const openText = `@everyone\n\n${definition.icon} **DISTORTION DETECTED — ${definition.name.toUpperCase()}**\n\nReality has warped across the hunting grounds. Exclusive creatures and a unique Distortion Egg are now obtainable.\n\n⏱️ Event duration: **3 hours**\n⚡ Hunt cooldown: **30 minutes**\n🔄 Everyone can hunt **RIGHT NOW.**\n🥚 **${DISTORTION_EGGS[definition.eggKey]?.name || "Distortion Egg"}** can be discovered from successful Distortion catches.\n🎁 Normal hunt rewards, Companion XP, Hunt Tokens, pet abilities, and comeback bonuses continue to function.\n\n⚠️ Ten minutes before collapse, every hunter will automatically receive **one final hunt**.`;
+  const openText = `@everyone\n\n${definition.icon} **DISTORTION DETECTED — ${definition.name.toUpperCase()}**\n\nReality has warped across the hunting grounds. Exclusive creatures and a unique Distortion Egg are now obtainable.\n\n⏱️ Event duration: **3 hours**\n⚡ Hunt cooldown: **30 minutes**\n🔄 Everyone can hunt **RIGHT NOW.**\n🥚 **${DISTORTION_EGGS[definition.eggKey]?.name || "Distortion Egg"}** can be discovered from successful Distortion catches.\n🎁 Distortion Hunt rewards, Companion XP, Hunt Tokens, pet abilities, and comeback bonuses continue to function.\n\n⚠️ Ten minutes before collapse, every hunter will automatically receive **one final hunt**.`;
   await sendWorldEvent(channel,openText,definition.openingImage,true);
   data.activeDistortion.publicAnnounced = true;
   saveData(data);
@@ -7643,12 +7644,13 @@ async function processDistortionSystem() {
     saveData(data);
     const channel = client.channels.cache.get(MONSTER_CHANNEL_ID);
     if (channel?.isTextBased()) {
+      const activeDefinition = DISTORTIONS[data.activeDistortion.key];
       await sendWorldEvent(channel, `@everyone
 
 ⚠️ **DISTORTION COLLAPSE DETECTED**
 The breach will close in **10 minutes!**
-🔄 Everyone has been given **one final hunt**.
-Use \`!hunt\` NOW.`, null, true);
+🔄 Everyone has been given **one final Distortion Hunt**.
+Use \`!hunt\` NOW.`, activeDefinition?.closingImage || activeDefinition?.backgroundImage || null, true);
     }
   }
 
@@ -7672,24 +7674,26 @@ Use \`!hunt\` NOW.`, null, true);
       event.warned = true;
       saveData(data);
       const channel = client.channels.cache.get(MONSTER_CHANNEL_ID);
+      const warningDefinition = DISTORTIONS[event.scheduledKey];
       if (channel?.isTextBased()) await sendWorldEvent(channel,`⚠️ **Something is wrong...**
 
 The air around the hunting grounds has begun to change.
 Reality instability is increasing.
 
-**BREACH IMMINENT: 5 MINUTES**`,`distortion_warning.png`,false);
+**BREACH IMMINENT: 5 MINUTES**`,warningDefinition?.backgroundImage || warningDefinition?.openingImage || "distortion_warning.png",false);
     }
 
     if (!event.criticalWarned && now >= event.startAt - 60*1000 && now < event.startAt) {
       event.criticalWarned = true;
       saveData(data);
       const channel = client.channels.cache.get(MONSTER_CHANNEL_ID);
+      const criticalDefinition = DISTORTIONS[event.scheduledKey];
       if (channel?.isTextBased()) await sendWorldEvent(channel,`🚨 **REALITY INSTABILITY: CRITICAL**
 
 The fractures are spreading.
 The hunting grounds are seconds from a planar breach.
 
-**BREACH IMMINENT: 1 MINUTE**`,`distortion_critical.png`,false);
+**BREACH IMMINENT: 1 MINUTE**`,criticalDefinition?.openingImage || criticalDefinition?.backgroundImage || "distortion_critical.png",false);
     }
 
     if (!event.started && now >= event.startAt && now <= event.startAt + DISTORTION_START_GRACE_MS) {

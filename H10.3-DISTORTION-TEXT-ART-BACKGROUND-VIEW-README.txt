@@ -1,0 +1,11 @@
+Monster Hunt H10.3
+
+Changes:
+- Distortion lifecycle Discord messages now attach Distortion artwork from public/assets/distortions/.
+- Added public/assets/distortions to the backend image-file resolver.
+- 5-minute warning uses the scheduled Distortion background image.
+- 1-minute warning uses the scheduled Distortion opening image.
+- Opening announcement uses opening art; 10-minute final-hunt alert uses closing/background art; closing announcement uses closing art.
+- During an active Distortion, Activity labels the standard hunt path as “Distortion Hunt”; it automatically returns to “Normal Hunt” after the Distortion ends.
+- Added a fixed top-left Hide Menus / Show Menus toggle so players can view the full active background. Preference is saved locally.
+- Cache bumped to v1970.
