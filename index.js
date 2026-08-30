@@ -507,12 +507,24 @@ function activityMonsterImageUrl(monster) {
 
 function activityPetImageUrl(definition) {
   if (!definition?.image) return null;
-  return `${isDistortionHabitatName(definition.habitat) ? "/assets/distortions" : "/assets/pets"}/${definition.image}`;
+  const folder = definition.habitat === "Merchant Collection" ? "/assets/pets/merchant" : (isDistortionHabitatName(definition.habitat) ? "/assets/distortions" : "/assets/pets");
+  return `${folder}/${definition.image}`;
 }
+
+const MERCHANT_EGGS = {
+  common_mystery_egg:{name:"Common Mystery Egg",icon:"🥚",image:"common_mystery_egg.png",hatchingImage:null,incubationMs:45*60*1000,rarity:"Common",pets:["packrat","wagon_wisp","trinket_mimic","roadling"]},
+  rare_mystery_egg:{name:"Rare Mystery Egg",icon:"🔵🥚",image:"rare_mystery_egg.png",hatchingImage:null,incubationMs:90*60*1000,rarity:"Rare",pets:["coinback","silktrick","gilded_gargoyle","velvet_jack"]},
+  ancient_egg:{name:"Ancient Egg",icon:"🗿🥚",image:"ancient_egg.png",hatchingImage:null,incubationMs:3*60*60*1000,rarity:"Epic",pets:["relic_hound","scribe","sundered_sentinel","the_little_ancient"]},
+  merchants_egg:{name:"Merchant's Egg",icon:"🧳🥚",image:"merchants_egg.png",hatchingImage:null,incubationMs:4*60*60*1000,rarity:"Epic",pets:["ledger_imp","caravan_guardian","golden_jackal","the_broker"]},
+  black_egg:{name:"Black Egg",icon:"⚫🥚",image:"black_egg.png",hatchingImage:null,incubationMs:6*60*60*1000,rarity:"Legendary",pets:["nullling","hollow_crown","void_antler","the_unclaimed"]}
+};
+function merchantEggDefinition(key){ return key ? MERCHANT_EGGS[key] || null : null; }
+function chooseMerchantPet(eggKey){ const egg=merchantEggDefinition(eggKey); if(!egg) return null; const weighted=egg.pets.map((key,i)=>({key,weight:[45,30,18,7][i]||10})); let roll=Math.random()*weighted.reduce((a,b)=>a+b.weight,0); for(const row of weighted){ roll-=row.weight; if(roll<=0) return getPetDefinition(row.key); } return getPetDefinition(weighted[0].key); }
 
 function activityEggImageUrl(eggKey, image) {
   if (!image) return null;
-  return `${eggKey && DISTORTION_EGGS[eggKey] ? "/assets/distortions" : "/assets/eggs"}/${image}`;
+  const folder = eggKey && DISTORTION_EGGS[eggKey] ? "/assets/distortions" : (eggKey && MERCHANT_EGGS[eggKey] ? "/assets/merchant-items" : "/assets/eggs");
+  return `${folder}/${image}`;
 }
 
 const MAX_INCUBATORS = 5;
@@ -567,7 +579,7 @@ const pets = [
   { key:"gleamlet", name:"Gleamlet", icon:"🪞", habitat:"The Mirror Scar", rarity:"Common", ability:"capture", baseBonus:1, description:"A tiny reflective familiar born from splinters of the Mirror Scar.", image:"gleamlet.png" },
   { key:"shardpup", name:"Shardpup", icon:"💎", habitat:"The Mirror Scar", rarity:"Rare", ability:"rareTracker", baseBonus:1, description:"A bright crystal-coated pup that follows impossible reflections.", image:"shardpup.png" },
   { key:"echo_sprite", name:"Echo Sprite", icon:"✨", habitat:"The Mirror Scar", rarity:"Epic", ability:"itemFinder", baseBonus:3, description:"A playful double-image spirit that retrieves things from the wrong side of mirrors.", image:"echo_sprite.png" },
-  { key:"mirrormane", name:"Mirrormane", icon:"🦁", habitat:"The Mirror Scar", rarity:"Legendary", ability:"shiny", baseBonus:2, description:"A regal mirrored cub whose mane fractures light into impossible colors.", image:"mirrormane.png" },
+  { key:"mirrormane", name:"Mirrormane", icon:"🦁", habitat:"The Mirror Scar", rarity:"Legendary", ability:"mirrorImage", baseBonus:2, description:"A regal mirrored cub whose mane fractures light into impossible colors.", image:"mirrormane.png" },
 
   { key:"buddle", name:"Buddle", icon:"🌱", habitat:"The Black Bloom", rarity:"Common", ability:"eggFinder", baseBonus:1, description:"A cheerful little Black Bloom bud that releases violet pollen when excited.", image:"buddle.png" },
   { key:"thorntail", name:"Thorntail", icon:"🌿", habitat:"The Black Bloom", rarity:"Rare", ability:"itemFinder", baseBonus:2, description:"A clever woodland companion with a living vine tail and flowering tip.", image:"thorntail.png" },
@@ -587,7 +599,29 @@ const pets = [
   { key:"drowser", name:"Drowser", icon:"💤", habitat:"The Dreaming Gate", rarity:"Common", ability:"luckyHunter", baseBonus:1, description:"A sleepy dream companion whose shadow always seems a moment behind.", image:"drowser.png" },
   { key:"veilfox", name:"Veilfox", icon:"🦊", habitat:"The Dreaming Gate", rarity:"Rare", ability:"eggFinder", baseBonus:2, description:"An elegant three-tailed dream hunter that slips through tiny impossible doorways.", image:"veilfox.png" },
   { key:"pale_somnambulist", name:"Pale Somnambulist", icon:"👁️", habitat:"The Dreaming Gate", rarity:"Epic", ability:"shiny", baseBonus:1, description:"A silent floating dream entity watched over by a separate waking eye.", image:"pale_somnambulist.png" },
-  { key:"oneirarch", name:"Oneirarch", icon:"🌙", habitat:"The Dreaming Gate", rarity:"Legendary", ability:"persistence", baseBonus:1, description:"An ancient dream guardian that seems to understand intent before commands are spoken.", image:"oneirarch.png" },
+  { key:"oneirarch", name:"Oneirarch", icon:"🌙", habitat:"The Dreaming Gate", rarity:"Legendary", ability:"dreamwalk", baseBonus:1, description:"An ancient dream guardian that seems to understand intent before commands are spoken.", image:"oneirarch.png" },
+
+  // ===== MERCHANT EGG COMPANIONS =====
+  { key:"packrat", name:"Packrat", icon:"🐀", habitat:"Merchant Collection", rarity:"Common", ability:"contrabandFinder", baseBonus:1, description:"A mischievous wagon scavenger that hoards keys, coins, beads and anything else it can carry.", image:"packrat.png" },
+  { key:"wagon_wisp", name:"Wagon Wisp", icon:"🕯️", habitat:"Merchant Collection", rarity:"Common", ability:"treasureNose", baseBonus:1, description:"A warm caravan spirit surrounded by tiny keys, coins and bells collected from endless roads.", image:"wagon_wisp.png" },
+  { key:"trinket_mimic", name:"Trinket Mimic", icon:"📦", habitat:"Merchant Collection", rarity:"Rare", ability:"appraiser", baseBonus:1, description:"A harmless little treasure-box mimic that loves pretending to be merchandise.", image:"trinket_mimic.png" },
+  { key:"roadling", name:"Roadling", icon:"🧭", habitat:"Merchant Collection", rarity:"Rare", ability:"foresight", baseBonus:1, description:"A tireless pathfinder whose glowing markings seem to map roads before they exist.", image:"roadling.png" },
+  { key:"coinback", name:"Coinback", icon:"🪙", habitat:"Merchant Collection", rarity:"Rare", ability:"tokenFinder", baseBonus:1, description:"A sturdy plated companion with coin-like bronze scales and a fierce instinct for valuables.", image:"coinback.png" },
+  { key:"silktrick", name:"Silktrick", icon:"🕸️", habitat:"Merchant Collection", rarity:"Rare", ability:"mirrorImage", baseBonus:1, description:"An elegant six-legged trickster that spins enchanted silk and reflected copies of useful objects.", image:"silktrick.png" },
+  { key:"gilded_gargoyle", name:"Gilded Gargoyle", icon:"🗿", habitat:"Merchant Collection", rarity:"Epic", ability:"trapMaster", baseBonus:1, description:"A vigilant stone guardian veined with gold and built to protect precious cargo.", image:"gilded_gargoyle.png" },
+  { key:"velvet_jack", name:"Velvet Jack", icon:"🎩", habitat:"Merchant Collection", rarity:"Epic", ability:"merchantInstinct", baseBonus:1, description:"A theatrical burgundy-black wanderer with an uncanny talent for finding favorable deals.", image:"velvet_jack.png" },
+  { key:"relic_hound", name:"Relic Hound", icon:"🏺", habitat:"Merchant Collection", rarity:"Epic", ability:"ancientMemory", baseBonus:1, description:"A stone-and-bronze hunting beast that remembers trails from civilizations long gone.", image:"relic_hound.png" },
+  { key:"scribe", name:"Scribe", icon:"📜", habitat:"Merchant Collection", rarity:"Epic", ability:"ancientMemory", baseBonus:1, description:"A floating ancient construct that silently records every discovery in glowing runes.", image:"scribe.png" },
+  { key:"sundered_sentinel", name:"Sundered Sentinel", icon:"🛡️", habitat:"Merchant Collection", rarity:"Legendary", ability:"temporalRewind", baseBonus:1, description:"A broken guardian held together by golden magic that can force a failed moment to happen again.", image:"sundered_sentinel.png" },
+  { key:"the_little_ancient", name:"The Little Ancient", icon:"✨", habitat:"Merchant Collection", rarity:"Legendary", ability:"omen", baseBonus:1, description:"A gentle extinct creature whose impossible age lets it sense powerful things before they arrive.", image:"the_little_ancient.png" },
+  { key:"ledger_imp", name:"Ledger Imp", icon:"📒", habitat:"Merchant Collection", rarity:"Epic", ability:"merchantInstinct", baseBonus:1, description:"A sharp-eyed little accountant that knows what everything should cost—and argues accordingly.", image:"ledger_imp.png" },
+  { key:"caravan_guardian", name:"Caravan Guardian", icon:"🔔", habitat:"Merchant Collection", rarity:"Epic", ability:"capture", baseBonus:1, description:"A massive disciplined caravan protector with bronze horns and natural black-metal armor.", image:"caravan_guardian.png" },
+  { key:"golden_jackal", name:"Golden Jackal", icon:"🌟", habitat:"Merchant Collection", rarity:"Legendary", ability:"appraiser", baseBonus:1, description:"A regal black-and-gold supernatural hunter capable of recognizing extraordinary value instantly.", image:"golden_jackal.png" },
+  { key:"the_broker", name:"The Broker", icon:"🎭", habitat:"Merchant Collection", rarity:"Legendary", ability:"contrabandFinder", baseBonus:1, description:"A masked four-armed entity that produces objects nobody remembers asking it to obtain.", image:"the_broker.png" },
+  { key:"nullling", name:"Nullling", icon:"⚫", habitat:"Merchant Collection", rarity:"Epic", ability:"dreamwalk", baseBonus:1, description:"A near-lightless creature whose shadow moves before it does and whose paths slip between dreams.", image:"nullling.png" },
+  { key:"hollow_crown", name:"Hollow Crown", icon:"👑", habitat:"Merchant Collection", rarity:"Epic", ability:"omen", baseBonus:1, description:"A floating black mask and broken crown that watches the hunt from impossible angles.", image:"hollow_crown.png" },
+  { key:"void_antler", name:"Void Antler", icon:"🦌", habitat:"Merchant Collection", rarity:"Legendary", ability:"undertow", baseBonus:1, description:"A majestic star-filled antlered entity whose presence can pull an encounter off its destined course.", image:"void_antler.png" },
+  { key:"the_unclaimed", name:"The Unclaimed", icon:"◼️", habitat:"Merchant Collection", rarity:"Legendary", ability:"foresight", baseBonus:1, description:"An unidentified six-legged entity that appears to recognize paths, places and futures it should not know.", image:"the_unclaimed.png" },
 
   // Legacy Unmade companions are intentionally not obtainable this season.
 ];
@@ -600,19 +634,19 @@ const H3_MAX_INHERITED_ABILITIES = 5;
 const H3_ABILITY_XP_TO_NEXT = { 1:100, 2:150, 3:250, 4:400, 5:0 };
 const H3_ABILITY_ROMAN = ["0","I","II","III","IV","V"];
 const H3_GLOBAL_CAPS = {
-  capture:20, points:20, eggFinder:20, itemFinder:20, shiny:5,
+  capture:20, points:20, eggFinder:20, itemFinder:20, shiny:20,
   cooldownMinutes:60, companionTrainer:50, incubator:30,
-  baitSaver:30, trapMaster:30, rareTracker:15, tokenBonus:5,
+  baitSaver:30, trapMaster:30, rareTracker:15, tokenBonus:50,
   rewardDouble:15, persistence:15
 };
 const H3_ABILITY_DEFS = {
   capture:{name:"Capture",icon:"🎯",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:"%",description:"Increases normal capture chance.",capText:"Pet capture bonuses can never exceed +20% total."},
   cooldown:{name:"Swift Hunter",icon:"⏱️",tier:"Rare",inheritable:true,values:[0,5,10,15,20,25],unit:" min",description:"Reduces the normal hunt cooldown.",capText:"Pet effects can never push a normal hunt below 1 hour."},
   points:{name:"Hunter's Spirit",icon:"⭐",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:" points",description:"Awards bonus Hunter Points after successful catches.",capText:"Pet-derived Hunter Point bonuses cap at +20 per catch."},
-  tokenFinder:{name:"Token Finder",icon:"🪙",tier:"Common",inheritable:true,values:[0,10,15,20,25,30],unit:"% proc",description:"Chance to find bonus Hunt Tokens after a successful catch.",capText:"No pet combination can award more than +5 bonus Hunt Tokens from one catch."},
+  tokenFinder:{name:"Token Finder",icon:"🪙",tier:"Common",inheritable:true,values:[0,10,15,20,25,30],unit:"% proc",description:"Chance to find bonus Hunt Tokens after a successful catch.",capText:"Pet-derived bonus Hunt Token payout can scale up to +50 from one successful catch."},
   eggFinder:{name:"Egg Finder",icon:"🥚",tier:"Common",inheritable:true,values:[0,2,4,6,8,10],unit:"%",description:"Improves egg discovery chance.",capText:"Pet-derived Egg Find caps at +20%."},
   itemFinder:{name:"Treasure Finder",icon:"🎒",tier:"Common",inheritable:true,values:[0,2,4,6,8,10],unit:"%",description:"Improves companion item-find chance.",capText:"Pet-derived Item Find caps at +20%."},
-  shiny:{name:"Shiny Hunter",icon:"✨",tier:"Legendary",inheritable:true,values:[0,.5,1,1.5,2,2.5],unit:"%",description:"Improves the chance that an eligible monster is Shiny.",capText:"Pet-derived Shiny bonus caps at +5 percentage points."},
+  shiny:{name:"Shiny Hunter",icon:"✨",tier:"Legendary",inheritable:true,values:[0,2,5,9,14,20],unit:"%",description:"Improves the chance that an eligible monster is Shiny.",capText:"Pet-derived Shiny bonus caps at +20 percentage points."},
   rareTracker:{name:"Rare Tracker",icon:"🌟",tier:"Epic",inheritable:true,values:[0,3,5,8,11,15],unit:"%",description:"Shifts eligible encounter weighting toward Rare+ monsters.",capText:"Rare Tracker weighting caps at +15%."},
   companionTrainer:{name:"Companion Trainer",icon:"🧬",tier:"Common",inheritable:true,values:[0,10,20,30,40,50],unit:"% XP",description:"Increases Companion XP earned by the equipped pet.",capText:"Companion XP bonuses cap at +50%."},
   incubator:{name:"Incubator",icon:"🪺",tier:"Rare",inheritable:true,values:[0,5,10,15,20,25],unit:"% faster",description:"Reduces egg incubation duration while this pet is equipped.",capText:"Pet incubation reduction caps at 30%."},
@@ -621,7 +655,7 @@ const H3_ABILITY_DEFS = {
   trapMaster:{name:"Trap Master",icon:"🪤",tier:"Rare",inheritable:true,values:[0,8,14,20,26,30],unit:"%",description:"Chance to preserve an eligible capture item after a failed capture.",capText:"Capture-item saving caps at 30%."},
   bloodhound:{name:"Bloodhound",icon:"🐾",tier:"Common",inheritable:true,values:[0,3,5,7,9,10],unit:"%",description:"After prey escapes, improves the next eligible attempt against that species.",capText:"Still obeys the +20% companion capture ceiling."},
   trailSniffer:{name:"Trail Sniffer",icon:"👣",tier:"Common",inheritable:true,values:[0,5,6,7,8,10],unit:"%",description:"Successful hunting builds toward a boosted Rare+ encounter.",capText:"Temporary encounter boosts still respect rarity safety caps."},
-  tokenHoarder:{name:"Token Hoarder",icon:"💰",tier:"Common",inheritable:true,values:[0,10,9,8,7,6],unit:" catches",description:"A predictable streak counter that awards bonus Hunt Tokens after enough successful catches.",capText:"Bonus-token payout still obeys the +5 per-catch ceiling."},
+  tokenHoarder:{name:"Token Hoarder",icon:"💰",tier:"Common",inheritable:true,values:[0,10,9,8,7,6],unit:" catches",description:"A predictable streak counter that awards bonus Hunt Tokens after enough successful catches.",capText:"Bonus-token payout still obeys the +50 per-catch ceiling."},
   treasureNose:{name:"Treasure Nose",icon:"🎁",tier:"Rare",inheritable:true,values:[0,15,13,11,9,8],unit:" catches",description:"After enough successful catches, guarantees an eligible item drop.",capText:"The counter resets after triggering."},
   hotStreak:{name:"Hot Streak",icon:"🔥",tier:"Rare",inheritable:true,values:[0,3,4,5,6,7],unit:"% max",description:"Consecutive catches build a temporary capture streak; failure resets it.",capText:"Still obeys the +20% companion capture ceiling."},
   secondChance:{name:"Second Chance",icon:"🛡️",tier:"Rare",inheritable:true,values:[0,12,10,8,7,6],unit:" failures",description:"After enough eligible failed captures, guarantees a capture item is preserved.",capText:"Only one save can trigger per failed attempt."},
@@ -631,6 +665,17 @@ const H3_ABILITY_DEFS = {
   packHunter:{name:"Pack Hunter",icon:"🤝",tier:"Rare",inheritable:true,values:[0,2,3,4,5,6],unit:"%",description:"Gains a temporary capture bonus when another hunter has caught prey recently.",capText:"Nearby community activity does not stack repeatedly."},
   persistence:{name:"Persistence",icon:"👻",tier:"Legendary",inheritable:true,values:[0,4,7,10,13,15],unit:"%",description:"Chance for escaped prey to linger for one immediate second capture attempt.",capText:"Maximum one Persistence retry per encounter."},
   nestGuardian:{name:"Nest Guardian",icon:"🥚",tier:"Legendary",inheritable:true,values:[0,2,4,6,8,10],unit:"%",description:"Chance for an eligible discovered egg to upgrade by one rarity tier.",capText:"Legendary eggs cannot upgrade further."},
+  temporalRewind:{name:"Temporal Rewind",icon:"⏳",tier:"Legendary",inheritable:true,values:[0,5,7,10,13,15],unit:"%",description:"After a failed capture, may freeze the moment and reroll the capture without consuming the capture item twice.",capText:"Maximum one Temporal Rewind per encounter."},
+  mirrorImage:{name:"Mirror Image",icon:"🪞",tier:"Epic",inheritable:true,values:[0,4,7,10,13,16],unit:"%",description:"After a failed item-assisted capture, may create a reflected copy of the item and grant one immediate retry.",capText:"Maximum one Mirror Image retry per encounter."},
+  blackBloom:{name:"Black Bloom",icon:"🌑",tier:"Epic",inheritable:true,values:[0,6,5,5,4,3],unit:" catches",description:"Successful catches plant shadow seeds. When enough bloom, the companion produces a guaranteed bonus egg or useful item.",capText:"Bloom progress resets after the bonus reward triggers."},
+  undertow:{name:"Undertow",icon:"🌊",tier:"Epic",inheritable:true,values:[0,8,12,16,20,25],unit:"%",description:"When a Common encounter appears, may drag it away and pull a completely new encounter from the hunting pool.",capText:"Can replace an encounter only once per hunt."},
+  dreamwalk:{name:"Dreamwalk",icon:"🌙",tier:"Legendary",inheritable:true,values:[0,10,14,18,22,25],unit:"%",description:"Once per day, may reject a Common or Rare encounter and dream into a completely new encounter.",capText:"Can activate at most once per day."},
+  merchantInstinct:{name:"Merchant's Instinct",icon:"🗝️",tier:"Epic",inheritable:true,values:[0,3,5,7,10,12],unit:"%",description:"Reduces Hunt Token prices when buying non-barter goods from traveling merchants.",capText:"Merchant discount caps at 12%."},
+  contrabandFinder:{name:"Contraband Finder",icon:"💼",tier:"Epic",inheritable:true,values:[0,3,5,7,10,12],unit:"%",description:"Fetch has a chance to return with an extra usable item from the merchant reward pool.",capText:"At most one Contraband bonus is added to a Fetch return."},
+  ancientMemory:{name:"Ancient Memory",icon:"🏺",tier:"Legendary",inheritable:true,values:[0,6,9,12,16,20],unit:"%",description:"When you encounter a species already captured before, may redirect the trail toward a species you have never caught.",capText:"Attempts one redirect per hunt and never guarantees a specific rarity."},
+  appraiser:{name:"Appraiser",icon:"💎",tier:"Epic",inheritable:true,values:[0,5,8,11,14,18],unit:"%",description:"Successful catches can upgrade a bonus supply reward into a more valuable hunting item.",capText:"At most one Appraiser upgrade per successful catch."},
+  omen:{name:"Omen",icon:"⚫",tier:"Legendary",inheritable:true,values:[0,4,7,10,13,16],unit:"%",description:"Before a hunt, may sense something unusual and sharply increase Rare+ encounter weighting for that hunt.",capText:"Omen activates at most once per hunt."},
+  foresight:{name:"Foresight",icon:"👁️",tier:"Legendary",inheritable:true,values:[0,5,8,12,16,20],unit:"%",description:"May glimpse two possible encounters and automatically follow the trail with the higher rarity.",capText:"Only one extra future is generated per hunt."},
   cosmicFortune:{name:"Cosmic Fortune",icon:"🌌",tier:"Special",inheritable:false,values:[0,1,2,3,4,5],unit:"",description:"Astræl's signature all-rounder: small Capture, Egg, Item and Shiny bonuses.",capText:"Exclusive to Astræl; each component obeys its own global cap."},
   mixedResults:{name:"Mixed Results",icon:"🎲",tier:"Special",inheritable:false,values:[0,1,2,3,4,5],unit:"",description:"Mixlet rolls one temporary hunting bonus each hunt. Rank V can rarely activate two different bonuses.",capText:"Exclusive to Mixlet and can never be inherited."}
 };
@@ -679,6 +724,17 @@ function h3AbilityEffectText(key, rank) {
     tokenHoarder:`bonus Hunt Tokens after every ${value} successful catches`,
     treasureNose:`guaranteed eligible item drop after ${value} successful catches`,
     secondChance:`guaranteed eligible item save after ${value} failed captures`,
+    temporalRewind:`${value}% chance after failure to rewind and retry without paying for the capture item twice`,
+    mirrorImage:`${value}% chance after an item-assisted failure to create a reflected retry`,
+    blackBloom:`guaranteed Black Bloom reward after every ${value} successful catches`,
+    undertow:`${value}% chance to replace a Common encounter with a new encounter`,
+    dreamwalk:`${value}% chance once per day to replace a Common or Rare encounter`,
+    merchantInstinct:`${value}% Hunt Token discount at traveling merchants`,
+    contrabandFinder:`${value}% chance for Fetch to return with a bonus merchant item`,
+    ancientMemory:`${value}% chance to redirect a previously captured species toward an uncaught species`,
+    appraiser:`${value}% chance after a catch to upgrade the bonus supply haul`,
+    omen:`${value}% chance before a hunt to sense unusually powerful prey`,
+    foresight:`${value}% chance to glimpse a second encounter and follow the rarer trail`,
     cosmicFortune:`+${value}% Capture, Egg Find and Item Find, plus +${(value/10).toFixed(1)}% Shiny`,
     mixedResults:`Rank ${h3RankRoman(rank)} random hunt bonus${rank>=5?' with a small two-bonus Jackpot chance':''}`
   };
@@ -943,22 +999,22 @@ const MERCHANT_ITEMS = {
   common_mystery_egg: {
     name: "Common Mystery Egg", icon: "🥚", image: "common_mystery_egg.png", price: 12, stock: 5, kind: "egg",
     description: "A friendly-looking unknown egg.",
-    effectDescription: "🥚 SEALED EGG: Stored in your Merchant Collection. Its contents are not currently ready to hatch."
+    effectDescription: "🥚 HATCHABLE MERCHANT EGG: Purchased eggs go directly to your Egg Inventory and hatch into Merchant-exclusive companions."
   },
   rare_mystery_egg: {
     name: "Rare Mystery Egg", icon: "🔵🥚", image: "rare_mystery_egg.png", price: 25, stock: 3, kind: "egg",
     description: "A valuable egg covered in magical markings.",
-    effectDescription: "🥚 SEALED EGG: Stored in your Merchant Collection. Its contents are not currently ready to hatch."
+    effectDescription: "🥚 HATCHABLE MERCHANT EGG: Purchased eggs go directly to your Egg Inventory and hatch into Merchant-exclusive companions."
   },
   ancient_egg: {
     name: "Ancient Egg", icon: "🗿🥚", image: "ancient_egg.png", price: 40, stock: 2, kind: "egg",
     description: "It feels impossibly old.",
-    effectDescription: "🥚 SEALED EGG: Stored in your Merchant Collection. Its contents are not currently ready to hatch."
+    effectDescription: "🥚 HATCHABLE MERCHANT EGG: Purchased eggs go directly to your Egg Inventory and hatch into Merchant-exclusive companions."
   },
   merchants_egg: {
     name: "Merchant's Egg", icon: "🧳🥚", image: "merchants_egg.png", price: 50, stock: 1, kind: "egg",
     description: "Only a Traveling Merchant could have found this.",
-    effectDescription: "🥚 SEALED EGG: Stored in your Merchant Collection. Its contents are not currently ready to hatch."
+    effectDescription: "🥚 HATCHABLE MERCHANT EGG: Purchased eggs go directly to your Egg Inventory and hatch into Merchant-exclusive companions."
   },
   monster_trophy: {
     name: "Monster Trophy", icon: "🏆", image: "monster_trophy.png", price: 22, stock: 3, kind: "collectible",
@@ -978,7 +1034,7 @@ const MERCHANT_ITEMS = {
   black_egg: {
     name: "Black Egg", icon: "⚫🥚", image: "black_egg.png", price: 100, stock: 1, kind: "egg",
     description: "Its surface seems to absorb the surrounding light.",
-    effectDescription: "🥚 UNKNOWN SEALED EGG: Stored in your Merchant Collection. Whatever is inside is not currently ready to hatch."
+    effectDescription: "⚫ HATCHABLE BLACK EGG: Purchased eggs go directly to your Egg Inventory. Contains exceptionally rare Merchant-exclusive companions."
   },
   impossible_key: {
     name: "Impossible Key", icon: "🗝️", image: "impossible_key.png", price: 75, stock: 1, kind: "collectible", usable: true,
@@ -2702,6 +2758,7 @@ function h32Runtime(player) {
   if (!Number.isFinite(r.tokenProgress)) r.tokenProgress=0;
   if (!Number.isFinite(r.treasureProgress)) r.treasureProgress=0;
   if (!Number.isFinite(r.failureProgress)) r.failureProgress=0;
+  if (!Number.isFinite(r.blackBloomProgress)) r.blackBloomProgress=0;
   return r;
 }
 function h32AbilityEntry(player,key){ return getPetAbilityEntries(getEquippedPet(player)).find(e=>e.ability===key)||null; }
@@ -2719,6 +2776,8 @@ function h32PrepareHunt(player,data,userId){
   if(firstRank && r.firstLightDate!==today){ effects.rare+=h3AbilityValue('firstLight',firstRank); r.firstLightDate=today; effects.messages.push(`🌕 First Light activated: +${h3AbilityValue('firstLight',firstRank)}% Rare+ weighting.`); }
   const packRank=h32AbilityRank(player,'packHunter');
   if(packRank && h32RecentPackCatch(data,userId)){ effects.capture+=h3AbilityValue('packHunter',packRank); effects.messages.push(`🤝 Pack Hunter activated: another hunter caught prey recently.`); }
+  const omenRank=h32AbilityRank(player,'omen');
+  if(omenRank && Math.random()*100<h3AbilityValue('omen',omenRank)){ effects.rare+=20+omenRank*4; effects.messages.push(`⚫ Omen activated: your companion senses unusually powerful prey.`); }
   const eventRank=h32AbilityRank(player,'eventborn');
   if(eventRank && (getActiveEvent() || isBigGameActive(data) || getDistortionForPlayer(data,userId))){ const v=h3AbilityValue('eventborn',eventRank); effects.capture+=v; effects.item+=Math.max(1,Math.floor(v/2)); effects.messages.push(`⚡ Eventborn activated during the live event.`); }
   const cosmicRank=h32AbilityRank(player,'cosmicFortune');
@@ -2732,6 +2791,23 @@ function h32PrepareHunt(player,data,userId){
   }
   r.currentHunt=effects;
   return effects;
+}
+function h32RarityScore(rarity){ return ({Common:1,Rare:2,Epic:3,Legendary:4,Mythic:5,Ultra:5,Secret:6})[rarity]||0; }
+function h32MaybeReplaceEncounter(player,monster,data,userId){
+  let chosen=monster; const r=h32Runtime(player); const messages=h32Current(player).messages||[];
+  const rollFresh=()=>getRandomMonsterForPlayer(player,data,userId);
+  const ancientRank=h32AbilityRank(player,'ancientMemory');
+  if(ancientRank && (player.caught||[]).some(c=>cleanMonsterName(c.name||c.monster||'')===cleanMonsterName(chosen.name)) && Math.random()*100<h3AbilityValue('ancientMemory',ancientRank)){
+    const known=new Set((player.caught||[]).map(c=>cleanMonsterName(c.name||c.monster||'')));
+    for(let i=0;i<6;i++){ const candidate=rollFresh(); if(candidate && !known.has(cleanMonsterName(candidate.name))){ chosen=candidate; messages.push(`🏺 Ancient Memory redirected you toward a species you have never captured.`); break; } }
+  }
+  const undertowRank=h32AbilityRank(player,'undertow');
+  if(undertowRank && chosen?.rarity==='Common' && Math.random()*100<h3AbilityValue('undertow',undertowRank)){ const candidate=rollFresh(); if(candidate){ chosen=candidate; messages.push(`🌊 Undertow swept away the Common trail and pulled in a new encounter.`); } }
+  const dreamRank=h32AbilityRank(player,'dreamwalk'), today=h32DateKey();
+  if(dreamRank && r.dreamwalkDate!==today && ['Common','Rare'].includes(chosen?.rarity) && Math.random()*100<h3AbilityValue('dreamwalk',dreamRank)){ const candidate=rollFresh(); if(candidate){ chosen=candidate; r.dreamwalkDate=today; messages.push(`🌙 Dreamwalk shifted the hunt into a different possible encounter.`); } }
+  const foresightRank=h32AbilityRank(player,'foresight');
+  if(foresightRank && Math.random()*100<h3AbilityValue('foresight',foresightRank)){ const candidate=rollFresh(); if(candidate){ const before=chosen; chosen=h32RarityScore(candidate.rarity)>h32RarityScore(chosen.rarity)?candidate:chosen; messages.push(`👁️ Foresight revealed two futures; your companion followed the ${chosen===candidate?'stronger alternate':'stronger original'} trail.`); } }
+  return chosen;
 }
 function h32Current(player){ return h32Runtime(player).currentHunt || {capture:0,rare:0,egg:0,item:0,shiny:0,messages:[]}; }
 function h32ClearCurrent(player){ delete h32Runtime(player).currentHunt; }
@@ -2748,11 +2824,13 @@ function h32MaybeUpgradeEgg(player,rarity){ const rank=h32AbilityRank(player,'ne
 function h32SuccessEffects(player,data,userId,monster){
   const r=h32Runtime(player), messages=[]; r.successStreak++;
   if(h32AbilityRank(player,'trailSniffer')) r.trailProgress++;
-  const tokenRank=h32AbilityRank(player,'tokenFinder'); if(tokenRank && Math.random()*100<h3AbilityValue('tokenFinder',tokenRank)){ const amt=Math.min(H3_GLOBAL_CAPS.tokenBonus,tokenRank>=4?(1+Math.floor(Math.random()*2)):1); player.huntTokens+=amt; player.lifetimeTokens=(player.lifetimeTokens||0)+amt; messages.push(`🪙 Token Finder discovered +${amt} Hunt Token${amt===1?'':'s'}.`); }
-  const hoardRank=h32AbilityRank(player,'tokenHoarder'); if(hoardRank){ r.tokenProgress++; const needed=h3AbilityValue('tokenHoarder',hoardRank); if(r.tokenProgress>=needed){ r.tokenProgress=0; const amt=Math.min(H3_GLOBAL_CAPS.tokenBonus,hoardRank>=3?3:2); player.huntTokens+=amt; player.lifetimeTokens=(player.lifetimeTokens||0)+amt; messages.push(`💰 Token Hoarder triggered: +${amt} Hunt Tokens.`); } }
+  const tokenRank=h32AbilityRank(player,'tokenFinder'); if(tokenRank && Math.random()*100<h3AbilityValue('tokenFinder',tokenRank)){ const ranges={1:[2,8],2:[5,15],3:[10,25],4:[18,38],5:[25,50]}; const [lo,hi]=ranges[tokenRank]||[1,5]; const amt=Math.min(H3_GLOBAL_CAPS.tokenBonus,lo+Math.floor(Math.random()*(hi-lo+1))); player.huntTokens+=amt; player.lifetimeTokens=(player.lifetimeTokens||0)+amt; messages.push(`🪙 Token Finder discovered +${amt} Hunt Token${amt===1?'':'s'}.`); }
+  const hoardRank=h32AbilityRank(player,'tokenHoarder'); if(hoardRank){ r.tokenProgress++; const needed=h3AbilityValue('tokenHoarder',hoardRank); if(r.tokenProgress>=needed){ r.tokenProgress=0; const amt=Math.min(H3_GLOBAL_CAPS.tokenBonus,[0,5,8,12,18,25][hoardRank]||5); player.huntTokens+=amt; player.lifetimeTokens=(player.lifetimeTokens||0)+amt; messages.push(`💰 Token Hoarder triggered: +${amt} Hunt Tokens.`); } }
   const itemChance=Math.min(H3_GLOBAL_CAPS.itemFinder,getPetBonus(player,'itemFinder')+Number(h32Current(player).item||0));
   if(itemChance>0 && Math.random()*100<itemChance){ const roll=Math.random()*100; if(roll<55){player.captureItems.berry++;messages.push(`🎒 Treasure Finder discovered a Hunter Berry.`);}else if(roll<80){player.captureItems.honey++;messages.push(`🎒 Treasure Finder discovered Sticky Honey.`);}else if(roll<94){player.bait.rare++;messages.push(`🎒 Treasure Finder discovered Rare Bait.`);}else{player.captureItems.net++;messages.push(`🎒 Treasure Finder discovered an Enchanted Net.`);} }
   const noseRank=h32AbilityRank(player,'treasureNose'); if(noseRank){ r.treasureProgress++; const needed=h3AbilityValue('treasureNose',noseRank); if(r.treasureProgress>=needed){ r.treasureProgress=0; player.captureItems.berry++; messages.push(`🎁 Treasure Nose guaranteed a Hunter Berry.`); } }
+  const bloomRank=h32AbilityRank(player,'blackBloom'); if(bloomRank){ r.blackBloomProgress++; const needed=h3AbilityValue('blackBloom',bloomRank); if(r.blackBloomProgress>=needed){ r.blackBloomProgress=0; if(Math.random()<0.5){ const rarity=rollEggRarity(player,data)||'Common'; player.eggs.push({rarity,foundAt:Date.now(),source:'Black Bloom'}); player.titleProgress.eggsFound=(player.titleProgress.eggsFound||0)+1; messages.push(`🌑 Black Bloom blossomed into a bonus ${rarity} Egg.`); } else { player.captureItems.net++; messages.push(`🌑 Black Bloom blossomed into an Enchanted Net.`); } } }
+  const appraiserRank=h32AbilityRank(player,'appraiser'); if(appraiserRank && Math.random()*100<h3AbilityValue('appraiser',appraiserRank)){ const roll=Math.random()*100; if(roll<45){player.captureItems.honey++;messages.push(`💎 Appraiser upgraded your haul into Sticky Honey.`);}else if(roll<80){player.captureItems.net++;messages.push(`💎 Appraiser upgraded your haul into an Enchanted Net.`);}else if(roll<95){player.bait.epic++;messages.push(`💎 Appraiser upgraded your haul into Epic Bait.`);}else{player.captureItems.masterCharm++;messages.push(`💎 Appraiser found an exceptionally valuable Master Charm!`);} }
   const luckyRank=h32AbilityRank(player,'luckyHunter'); if(luckyRank && Math.random()*100<h3AbilityValue('luckyHunter',luckyRank)){ const extra=Math.max(1,Number(monster.points||0)); player.points+=extra; addWeeklyProgress(data,player,extra); messages.push(`🎲 Lucky Hunter doubled ${extra} base Hunter Points.`); }
   h32ClearCurrent(player); return messages;
 }
@@ -2765,8 +2843,13 @@ function h32FailureEffects(player,itemKey,monster){
     const secondRank=h32AbilityRank(player,'secondChance'); if(secondRank){ r.failureProgress++; const needed=h3AbilityValue('secondChance',secondRank); if(r.failureProgress>=needed){ r.failureProgress=0; save=true; } }
     if(save){ player.captureItems[itemKey]=(player.captureItems[itemKey]||0)+1; messages.push(`🪤 Your companion preserved the ${CAPTURE_ITEMS[itemKey].name}.`); }
   }
-  const persistRank=h32AbilityRank(player,'persistence'); let persist=false;
-  if(persistRank && !monster.persistenceRetried && Math.random()*100<h3AbilityValue('persistence',persistRank)){ persist=true; monster.persistenceRetried=true; messages.push(`👻 Persistence! The monster remains for one immediate second attempt.`); }
+  let persist=false;
+  const rewindRank=h32AbilityRank(player,'temporalRewind');
+  if(rewindRank && !monster.temporalRewound && Math.random()*100<h3AbilityValue('temporalRewind',rewindRank)){ persist=true; monster.temporalRewound=true; if(itemKey) player.captureItems[itemKey]=(player.captureItems[itemKey]||0)+1; messages.push(`⏳ TIME FREEZES... Temporal Rewind restores the moment and grants another capture attempt${itemKey?' without consuming the item twice':''}.`); }
+  const mirrorRank=h32AbilityRank(player,'mirrorImage');
+  if(!persist && mirrorRank && itemKey && !monster.mirrorRetried && Math.random()*100<h3AbilityValue('mirrorImage',mirrorRank)){ persist=true; monster.mirrorRetried=true; player.captureItems[itemKey]=(player.captureItems[itemKey]||0)+1; messages.push(`🪞 Mirror Image creates a reflected copy of the ${CAPTURE_ITEMS[itemKey].name} and grants an immediate retry.`); }
+  const persistRank=h32AbilityRank(player,'persistence');
+  if(!persist && persistRank && !monster.persistenceRetried && Math.random()*100<h3AbilityValue('persistence',persistRank)){ persist=true; monster.persistenceRetried=true; messages.push(`👻 Persistence! The monster remains for one immediate second attempt.`); }
   h32ClearCurrent(player); return {messages,persist};
 }
 function h32BaitSave(player,usedBait){ if(!usedBait) return ''; const rank=h32AbilityRank(player,'baitSaver'); if(rank && Math.random()*100<h3AbilityValue('baitSaver',rank)){ player.bait[usedBait]=(player.bait[usedBait]||0)+1; return `\n🧲 **Bait Saver:** Your ${usedBait} bait was preserved!`; } return ''; }
@@ -3642,6 +3725,11 @@ function rollFetchRewards(data, player, ownedPet, definition) {
     }
   }
 
+  const contrabandRank=h32AbilityRank(player,'contrabandFinder');
+  if(contrabandRank && Math.random()*100<h3AbilityValue('contrabandFinder',contrabandRank)){
+    const pool=['mystery_sack','sealed_bottle','merchants_dice','rusted_key']; const key=pool[Math.floor(Math.random()*pool.length)]; addCollectionItem(player,key,1); rewards.push(`💼 **Contraband Finder:** ${MERCHANT_ITEMS[key]?.name||key}`);
+  }
+
   return { rewards, relicDiscovery: null };
 }
 
@@ -4102,6 +4190,11 @@ function findImageFile(filename) {
     path.join(__dirname, "assets", "images", "merchant"),
     path.join(__dirname, "public"),
     path.join(__dirname, "public", "assets", "distortions"),
+    path.join(__dirname, "public", "assets", "pets"),
+    path.join(__dirname, "public", "assets", "pets", "merchant"),
+    path.join(__dirname, "public", "assets", "merchant-items"),
+    path.join(__dirname, "public", "assets", "eggs"),
+    path.join(__dirname, "public", "assets", "monsters"),
     path.join(__dirname, "public", "images"),
     path.join(__dirname, "src"),
     path.join(__dirname, "src", "images")
@@ -7215,7 +7308,9 @@ function merchantInventoryEmbeds(data, userId = null) {
     for (const offer of pageOffers) {
       const item = MERCHANT_ITEMS[offer.key];
       if (!item) continue;
-      const price = offer.barter ? merchantBarterText(offer.barter) : `${offer.price} 🪙`;
+      const discountedPrice = player ? h10MerchantPrice(player,offer) : Number(offer.price||0);
+      const discount = player ? h10MerchantDiscount(player) : 0;
+      const price = offer.barter ? merchantBarterText(offer.barter) : `${discountedPrice} 🪙${discount>0?` (${discount}% off)`:``}`;
       const stock = offer.stock === null ? "Unlimited" : offer.stock > 0 ? `${offer.stock} left` : "SOLD OUT";
       embed.addFields({
         name: `${item.icon} ${item.name} — ${price}`,
@@ -7240,6 +7335,9 @@ function merchantInventoryEmbeds(data, userId = null) {
 
   return embeds;
 }
+
+function h10MerchantDiscount(player){ const rank=h32AbilityRank(player,'merchantInstinct'); return rank?h3AbilityValue('merchantInstinct',rank):0; }
+function h10MerchantPrice(player,offer){ const base=Number(offer?.price||0); const discount=h10MerchantDiscount(player); return offer?.barter?base:Math.max(1,Math.ceil(base*(1-discount/100))); }
 
 function resolveMerchantOffer(data, query) {
   const wanted = String(query || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -7268,6 +7366,7 @@ function grantPurchasedItem(player, key) {
   const item = MERCHANT_ITEMS[key];
   if (item.grant?.captureItem) player.captureItems[item.grant.captureItem] += item.grant.amount;
   else if (item.grant?.bait) player.bait[item.grant.bait] += item.grant.amount;
+  else if (item.kind === "egg" && MERCHANT_EGGS[key]) { player.eggs.push({id:`merchant-egg-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,rarity:MERCHANT_EGGS[key].rarity,eggKey:key,foundAt:Date.now(),source:"Merchant"}); player.titleProgress.eggsFound=(player.titleProgress.eggsFound||0)+1; }
   else addCollectionItem(player, key, 1);
 }
 
@@ -8457,9 +8556,10 @@ client.on("messageCreate", async (message) => {
         if (missing.length) return message.reply(`The Pale Collector refuses your offer. Required: **${merchantBarterText(offer.barter)}**.`);
         for (const [key, amount] of Object.entries(offer.barter)) removeCollectionItem(player, key, amount);
       } else {
-        if (player.huntTokens < offer.price) return message.reply(`You need **${offer.price} Hunt Tokens**, but only have **${player.huntTokens}**.`);
-        player.huntTokens -= offer.price;
-        player.tokensSpent += offer.price;
+        const finalPrice=h10MerchantPrice(player,offer);
+        if (player.huntTokens < finalPrice) return message.reply(`You need **${finalPrice} Hunt Tokens**, but only have **${player.huntTokens}**.`);
+        player.huntTokens -= finalPrice;
+        player.tokensSpent += finalPrice;
       }
       if (offer.stock !== null) offer.stock--;
       offer.sold = Number(offer.sold || 0) + 1;
@@ -8467,7 +8567,9 @@ client.on("messageCreate", async (message) => {
       player.merchantPurchases.push({ key: offer.key, price: offer.price, barter: offer.barter, merchant: data.merchant.type, at: Date.now() });
       const item = MERCHANT_ITEMS[offer.key];
       saveData(data);
-      const costText = offer.barter ? merchantBarterText(offer.barter) : `${offer.price} Hunt Tokens`;
+      const finalPriceForText=offer.barter?Number(offer.price||0):h10MerchantPrice(player,offer);
+      const discountText=!offer.barter&&h10MerchantDiscount(player)>0?` (${h10MerchantDiscount(player)}% Merchant's Instinct discount)`:``;
+      const costText = offer.barter ? merchantBarterText(offer.barter) : `${finalPriceForText} Hunt Tokens${discountText}`;
       return sendRoleImageAnnouncement(message.channel,
         `${item.icon} **PURCHASE COMPLETE**\n\n${formatPlayerMention(data, message.author.id)} purchased **${item.name}**!\n` +
         `Cost: **${costText}**\nRemaining Token Balance: **${player.huntTokens} 🪙**\n\n` +
@@ -8506,7 +8608,7 @@ client.on("messageCreate", async (message) => {
     );
     if (!key || collectionCount(player, key) <= 0) return message.reply("You do not own that merchant item. Use `!inventory` or `!items` to view everything you own.");
     const item = MERCHANT_ITEMS[key];
-    if (item.kind === "egg") return message.reply(`${item.icon} **${item.name}** remains sealed. Whatever is inside is not ready to hatch.`);
+    if (item.kind === "egg") return message.reply(`${item.icon} **${item.name}** is hatchable. Merchant eggs are placed in your Egg Inventory automatically; use \`!eggs\` and \`!incubate\`.`);
     if (item.kind === "collectible" && !item.usable) {
       return sendRoleImageAnnouncement(
         message.channel,
@@ -8796,6 +8898,7 @@ client.on("messageCreate", async (message) => {
     if (!target || !key) return message.reply("Usage: `!giveitem @user rusted key` or `!removeitem @user rusted key`.");
     const targetPlayer = getPlayer(data, target.id);
     if (command.startsWith("!giveitem ")) grantPurchasedItem(targetPlayer, key);
+    else if (MERCHANT_ITEMS[key]?.kind === "egg" && MERCHANT_EGGS[key]) { const eggIndex=(targetPlayer.eggs||[]).findIndex(e=>e.eggKey===key); if(eggIndex<0) return message.reply("That player does not own that Merchant Egg."); targetPlayer.eggs.splice(eggIndex,1); }
     else if (!removeCollectionItem(targetPlayer, key, 1)) return message.reply("That player does not own that collectible.");
     saveData(data);
     return message.reply(`✅ ${command.startsWith("!giveitem ") ? "Gave" : "Removed"} **${MERCHANT_ITEMS[key].name}** ${command.startsWith("!giveitem ") ? "to" : "from"} ${formatPlayerMention(data, target.id)}.`);
@@ -9994,6 +10097,7 @@ ${captureChoicesText(choices)}
     const signatureHuntText = prepareSignatureForHunt(player);
     const h3HuntEffects = h32PrepareHunt(player,data,message.author.id);
     let monster = getRandomMonsterForPlayer(player, data, message.author.id);
+    monster = h32MaybeReplaceEncounter(player, monster, data, message.author.id);
     const merchantEncounter = applyMerchantEncounterEffect(player, monster);
     monster = merchantEncounter.monster;
     const encounters = addEncounterKnowledge(player, monster);
@@ -10174,7 +10278,8 @@ ${captureChoicesText(choices)}
 
     const [egg] = player.eggs.splice(eggIndex, 1);
     const distortionEgg = egg.eggKey ? DISTORTION_EGGS[egg.eggKey] : null;
-    const duration = distortionEgg?.incubationMs || EGG_TYPES[egg.rarity]?.incubationMs || EGG_TYPES.Common.incubationMs;
+    const merchantEgg = egg.eggKey ? MERCHANT_EGGS[egg.eggKey] : null;
+    const duration = distortionEgg?.incubationMs || merchantEgg?.incubationMs || EGG_TYPES[egg.rarity]?.incubationMs || EGG_TYPES.Common.incubationMs;
     const incubation = {
       id: egg.id,
       rarity: egg.rarity,
@@ -10191,7 +10296,7 @@ ${captureChoicesText(choices)}
     const slotNumber = player.incubatingEggs.length;
 
     return message.reply(
-      `${distortionEgg ? distortionEgg.icon : (EGG_TYPES[egg.rarity]?.icon || "🥚")} Your **${distortionEgg?.name || `${egg.rarity} Egg`}** is now incubating!\n` +
+      `${distortionEgg ? distortionEgg.icon : (merchantEgg?.icon || EGG_TYPES[egg.rarity]?.icon || "🥚")} Your **${distortionEgg?.name || merchantEgg?.name || `${egg.rarity} Egg`}** is now incubating!\n` +
       `**Incubator Slot ${slotNumber} of ${slots}**\n` +
       `It will be ready <t:${Math.floor(incubation.readyAt / 1000)}:R>.`
     );
@@ -10224,8 +10329,9 @@ ${captureChoicesText(choices)}
     }
 
     const distortionEgg = incubation.eggKey ? DISTORTION_EGGS[incubation.eggKey] : null;
+    const merchantEgg = incubation.eggKey ? MERCHANT_EGGS[incubation.eggKey] : null;
     const rarity = incubation.rarity;
-    const definition = distortionEgg ? chooseDistortionPet(incubation.eggKey) : choosePetFromEgg(rarity);
+    const definition = distortionEgg ? chooseDistortionPet(incubation.eggKey) : (merchantEgg ? chooseMerchantPet(incubation.eggKey) : choosePetFromEgg(rarity));
 
     if (!definition) {
       return message.reply("That egg could not find a matching pet. Please contact an admin.");
@@ -10233,7 +10339,7 @@ ${captureChoicesText(choices)}
 
     // Final safety gate: even if the master pet registry is expanded later,
     // a normal egg is never allowed to resolve into a Distortion or secret pet.
-    if (!distortionEgg && !isNormalEggPet(definition)) {
+    if (!distortionEgg && !merchantEgg && !isNormalEggPet(definition)) {
       console.error(
         `[EGG POOL SAFETY] Blocked normal ${rarity} Egg from hatching restricted pet ${definition.key} (${definition.habitat}).`
       );
@@ -10267,7 +10373,7 @@ ${captureChoicesText(choices)}
     };
 
     const previousPoints = player.points;
-    const hatchPoints = HATCH_POINT_REWARDS[distortionEgg ? definition.rarity : rarity] || 0;
+    const hatchPoints = HATCH_POINT_REWARDS[(distortionEgg || merchantEgg) ? definition.rarity : rarity] || 0;
     const dexBonus = alreadyDiscoveredSpecies ? 0 : NEW_PET_SPECIES_BONUS;
 
     player.pets.push(ownedPet);
@@ -10329,7 +10435,7 @@ ${captureChoicesText(choices)}
     await announceTitleUnlocks(message, automaticTitleUnlocks);
 
     const hatchMessage = await message.reply(
-      `${distortionEgg?.icon || EGG_TYPES[rarity]?.icon || "🥚"} **The ${distortionEgg?.name || `${rarity} Egg`} begins to shake...**`
+      `${distortionEgg?.icon || EGG_TYPES[rarity]?.icon || "🥚"} **The ${distortionEgg?.name || merchantEgg?.name || `${rarity} Egg`} begins to shake...**`
     );
 
     await wait(1000);
@@ -10342,7 +10448,7 @@ ${captureChoicesText(choices)}
       hatchingEmbed.setImage(`attachment://${path.basename(hatchingPath)}`);
       await hatchMessage.edit({ content: "", embeds: [hatchingEmbed], files: [new AttachmentBuilder(hatchingPath)] });
     } else {
-      await hatchMessage.edit(`✨ **Cracks spread across the ${distortionEgg?.name || `${rarity} Egg`}...**\nSomething inside is trying to break free!`);
+      await hatchMessage.edit(`✨ **Cracks spread across the ${distortionEgg?.name || merchantEgg?.name || `${rarity} Egg`}...**\nSomething inside is trying to break free!`);
     }
 
     await wait(1500);
@@ -12614,18 +12720,19 @@ function activityEggInventoryPayload(player) {
   return (player.eggs || []).map((egg, index) => {
     const eggKey = egg.eggKey || egg.distortionKey || null;
     const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
+    const merchantEgg = eggKey ? MERCHANT_EGGS[eggKey] : null;
     const rarity = egg.rarity || "Common";
     return {
       id: egg.id || `egg-${index + 1}`,
       inventoryIndex: index,
       eggKey,
       rarity,
-      name: distortion?.name || `${rarity} Egg`,
-      icon: distortion?.icon || EGG_TYPES[rarity]?.icon || "🥚",
-      image: distortion?.image || EGG_TYPES[rarity]?.image || null,
-      imageUrl: activityEggImageUrl(eggKey, distortion?.image || EGG_TYPES[rarity]?.image || null),
-      hatchingImageUrl: distortion?.hatchingImage ? activityEggImageUrl(eggKey, distortion.hatchingImage) : null,
-      incubationMs: Number(distortion?.incubationMs || EGG_TYPES[rarity]?.incubationMs || EGG_TYPES.Common.incubationMs)
+      name: distortion?.name || merchantEgg?.name || `${rarity} Egg`,
+      icon: distortion?.icon || merchantEgg?.icon || EGG_TYPES[rarity]?.icon || "🥚",
+      image: distortion?.image || merchantEgg?.image || EGG_TYPES[rarity]?.image || null,
+      imageUrl: activityEggImageUrl(eggKey, distortion?.image || merchantEgg?.image || EGG_TYPES[rarity]?.image || null),
+      hatchingImageUrl: (distortion?.hatchingImage || merchantEgg?.hatchingImage) ? activityEggImageUrl(eggKey, distortion?.hatchingImage || merchantEgg?.hatchingImage) : null,
+      incubationMs: Number(distortion?.incubationMs || merchantEgg?.incubationMs || EGG_TYPES[rarity]?.incubationMs || EGG_TYPES.Common.incubationMs)
     };
   });
 }
@@ -12635,17 +12742,18 @@ function activityIncubatorPayload(player) {
   const incubations = (player.incubatingEggs || []).map((egg, index) => {
     const eggKey = egg.eggKey || egg.distortionKey || null;
     const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
+    const merchantEgg = eggKey ? MERCHANT_EGGS[eggKey] : null;
     const rarity = egg.rarity || "Common";
     return {
       slot:index + 1,
       id:egg.id || `incubation-${index + 1}`,
       eggKey,
       rarity,
-      name:distortion?.name || `${rarity} Egg`,
-      icon:distortion?.icon || EGG_TYPES[rarity]?.icon || "🥚",
-      image:distortion?.image || EGG_TYPES[rarity]?.image || null,
-      imageUrl:activityEggImageUrl(eggKey, distortion?.image || EGG_TYPES[rarity]?.image || null),
-      hatchingImageUrl:distortion?.hatchingImage ? activityEggImageUrl(eggKey, distortion.hatchingImage) : null,
+      name:distortion?.name || merchantEgg?.name || `${rarity} Egg`,
+      icon:distortion?.icon || merchantEgg?.icon || EGG_TYPES[rarity]?.icon || "🥚",
+      image:distortion?.image || merchantEgg?.image || EGG_TYPES[rarity]?.image || null,
+      imageUrl:activityEggImageUrl(eggKey, distortion?.image || merchantEgg?.image || EGG_TYPES[rarity]?.image || null),
+      hatchingImageUrl:(distortion?.hatchingImage || merchantEgg?.hatchingImage) ? activityEggImageUrl(eggKey, distortion?.hatchingImage || merchantEgg?.hatchingImage) : null,
       startedAt:Number(egg.startedAt || 0),
       readyAt:Number(egg.readyAt || 0),
       ready:Date.now() >= Number(egg.readyAt || 0)
@@ -13004,7 +13112,8 @@ async function activityIncubateEgg(user, inventoryIndex) {
   const [egg] = player.eggs.splice(index,1);
   const eggKey = egg.eggKey || egg.distortionKey || null;
   const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
-  const baseDuration = Number(distortion?.incubationMs || EGG_TYPES[egg.rarity]?.incubationMs || EGG_TYPES.Common.incubationMs);
+  const merchantEgg = eggKey ? MERCHANT_EGGS[eggKey] : null;
+  const baseDuration = Number(distortion?.incubationMs || merchantEgg?.incubationMs || EGG_TYPES[egg.rarity]?.incubationMs || EGG_TYPES.Common.incubationMs);
   const incubationReduction = Math.min(H3_GLOBAL_CAPS.incubator, getPetBonus(player,"incubator"));
   const duration = Math.max(60 * 1000, Math.round(baseDuration * (1 - incubationReduction / 100)));
   const incubationStartedAt = Date.now();
@@ -13055,11 +13164,13 @@ async function activityHatchEgg(user, slotNumber) {
   if (Date.now() < Number(incubation.readyAt || 0)) return {ok:false,error:"That egg is not ready to hatch yet.",readyAt:incubation.readyAt};
 
   const distortionEgg = incubation.eggKey ? DISTORTION_EGGS[incubation.eggKey] : null;
+  const merchantEgg = incubation.eggKey ? MERCHANT_EGGS[incubation.eggKey] : null;
   const rarity = incubation.rarity;
-  const definition = distortionEgg ? chooseDistortionPet(incubation.eggKey) : choosePetFromEgg(rarity);
+  const definition = distortionEgg ? chooseDistortionPet(incubation.eggKey) : (merchantEgg ? chooseMerchantPet(incubation.eggKey) : choosePetFromEgg(rarity));
   if (!definition) return {ok:false,error:"That egg could not find a matching pet."};
-  if (!distortionEgg && !isNormalEggPet(definition)) return {ok:false,error:"Egg pool safety blocked an invalid companion."};
+  if (!distortionEgg && !merchantEgg && !isNormalEggPet(definition)) return {ok:false,error:"Egg pool safety blocked an invalid companion."};
   if (distortionEgg && !distortionEgg.pets.some(choice => choice.key === definition.key)) return {ok:false,error:"Distortion Egg pool safety blocked an invalid companion."};
+  if (merchantEgg && !merchantEgg.pets.includes(definition.key)) return {ok:false,error:"Merchant Egg pool safety blocked an invalid companion."};
 
   const already = player.discoveredPetKeys.includes(definition.key);
   const owned = {
@@ -13077,7 +13188,7 @@ async function activityHatchEgg(user, slotNumber) {
   };
 
   const previousPoints = player.points;
-  const hatchPoints = HATCH_POINT_REWARDS[distortionEgg ? definition.rarity : rarity] || 0;
+  const hatchPoints = HATCH_POINT_REWARDS[(distortionEgg || merchantEgg) ? definition.rarity : rarity] || 0;
   const dexBonus = already ? 0 : NEW_PET_SPECIES_BONUS;
   player.pets.push(owned);
   if (!already) player.discoveredPetKeys.push(definition.key);
@@ -13245,7 +13356,7 @@ function activityMerchantPayload(data, userId) {
 function activityUseMerchantItem(data, player, key) {
   const item=MERCHANT_ITEMS[key];
   if(!item || collectionCount(player,key)<=0) return {ok:false,error:"You do not own that merchant item."};
-  if(item.kind==="egg") return {ok:false,error:`${item.name} remains sealed and cannot be used.`};
+  if(item.kind==="egg") return {ok:false,error:`${item.name} is hatchable from the Eggs screen; merchant eggs are placed in Egg Inventory automatically.`};
   if(item.kind==="collectible" && !item.usable) return {ok:false,error:`${item.name} is a permanent collectible and is not consumed.`};
 
   removeCollectionItem(player,key,1);
@@ -13325,7 +13436,7 @@ async function activityMerchantPurchase(user, itemKey) {
       if (missing.length) return {ok:false,error:`Required barter: ${merchantBarterText(offer.barter)}.`};
       for (const [key,amount] of Object.entries(offer.barter)) removeCollectionItem(player,key,amount);
     } else {
-      const price=Number(offer.price||0);
+      const price=h10MerchantPrice(player,offer);
       if (Number(player.huntTokens||0)<price) return {ok:false,error:`You need ${price} Hunt Tokens, but only have ${player.huntTokens}.`};
       player.huntTokens-=price;
       player.tokensSpent=Number(player.tokensSpent||0)+price;
@@ -13466,7 +13577,7 @@ function activityOwnedPetPayload(player) {
 
 function activityPetDexPayload(player, beyond = false) {
   const discovered = new Set(player.discoveredPetKeys || []);
-  const specialHabitats = new Set(["The Mirror Scar","The Black Bloom","The Chrono Tear","The Upside-Down Sea","The Dreaming Gate"]);
+  const specialHabitats = new Set(["The Mirror Scar","The Black Bloom","The Chrono Tear","The Upside-Down Sea","The Dreaming Gate","Merchant Collection"]);
   return pets
     .filter(def => beyond ? specialHabitats.has(def.habitat) : !specialHabitats.has(def.habitat))
     .map(def => ({
@@ -13503,16 +13614,17 @@ function activityEggPayload(player) {
   return (player.eggs || []).map((egg, index) => {
     const eggKey = egg.eggKey || egg.distortionKey || null;
     const distortion = eggKey ? DISTORTION_EGGS[eggKey] : null;
+    const merchantEgg = eggKey ? MERCHANT_EGGS[eggKey] : null;
     return {
       id: egg.id || `egg-${index + 1}`,
       key: eggKey || String(egg.rarity || "Common").toLowerCase(),
       eggKey,
-      name: distortion?.name || `${egg.rarity || "Common"} Egg`,
+      name: distortion?.name || merchantEgg?.name || `${egg.rarity || "Common"} Egg`,
       rarity: egg.rarity || (distortion ? "Distortion" : "Common"),
-      icon: distortion?.icon || EGG_TYPES[egg.rarity]?.icon || "🥚",
-      image: distortion?.image || EGG_TYPES[egg.rarity]?.image || null,
-      imageUrl: activityEggImageUrl(eggKey, distortion?.image || EGG_TYPES[egg.rarity]?.image || null),
-      hatchingImageUrl: distortion?.hatchingImage ? activityEggImageUrl(eggKey, distortion.hatchingImage) : null
+      icon: distortion?.icon || merchantEgg?.icon || EGG_TYPES[egg.rarity]?.icon || "🥚",
+      image: distortion?.image || merchantEgg?.image || EGG_TYPES[egg.rarity]?.image || null,
+      imageUrl: activityEggImageUrl(eggKey, distortion?.image || merchantEgg?.image || EGG_TYPES[egg.rarity]?.image || null),
+      hatchingImageUrl: (distortion?.hatchingImage || merchantEgg?.hatchingImage) ? activityEggImageUrl(eggKey, distortion?.hatchingImage || merchantEgg?.hatchingImage) : null
     };
   });
 }
@@ -13675,6 +13787,7 @@ async function activityStartNormalHunt(user) {
   prepareSignatureForHunt(player);
   const h3HuntEffects=h32PrepareHunt(player,data,user.id);
   let monster = getRandomMonsterForPlayer(player, data, user.id);
+  monster = h32MaybeReplaceEncounter(player, monster, data, user.id);
   const merchantEncounter = applyMerchantEncounterEffect(player, monster);
   monster = merchantEncounter.monster;
   const encounters = addEncounterKnowledge(player, monster);

@@ -1,0 +1,145 @@
+MONSTER HUNT H10.4 — MERCHANT PETS + ABILITY EXPANSION
+======================================================
+
+BASE
+----
+Built from H10.3 Distortion Text + Art + Background View.
+Cache bumped from v1970 to v1980.
+
+WHAT CHANGED
+------------
+1. Token Finder bonus payout ceiling increased from +5 to +50 Hunt Tokens per successful catch.
+   Rank V proc payout can roll from +25 to +50 tokens.
+2. Shiny Hunter pet-derived cap increased from +5 percentage points to +20 percentage points.
+   Rank I-V values: +2%, +5%, +9%, +14%, +20%.
+3. Added 11 new abilities:
+   Temporal Rewind, Mirror Image, Black Bloom, Undertow, Dreamwalk,
+   Merchant's Instinct, Contraband Finder, Ancient Memory, Appraiser,
+   Omen, Foresight.
+4. All five Merchant Eggs are now REAL hatchable eggs rather than sealed collection-only items.
+5. Added 20 Merchant-exclusive companions in a separate Merchant Collection PetDex group.
+6. Merchant-exclusive companions do NOT count toward the standard 32 habitat PetDex completion.
+7. Distortion Legendary companions now use several matching signature-style abilities:
+   Mirrormane -> Mirror Image
+   Bloomheart -> Black Bloom
+   Chronarch -> Temporal Rewind
+   Tideborn Seraph -> Undertow
+   Oneirarch -> Dreamwalk
+8. Merchant's Instinct now discounts Hunt Token merchant purchases.
+9. Contraband Finder is wired into Fetch.
+10. Ancient Memory, Undertow, Dreamwalk and Foresight can redirect encounter generation.
+11. Temporal Rewind / Mirror Image are wired into failed capture retries.
+12. Appraiser and Black Bloom are wired into successful catch rewards.
+13. Omen is wired into hunt preparation / rarity weighting.
+
+EXACT PET IMAGE LOCATION
+------------------------
+Create this folder in GitHub if it does not already exist:
+
+public/assets/pets/merchant/
+
+Put ALL 20 NEW MERCHANT PET PNG FILES in that folder using these exact filenames:
+
+packrat.png
+wagon_wisp.png
+trinket_mimic.png
+roadling.png
+coinback.png
+silktrick.png
+gilded_gargoyle.png
+velvet_jack.png
+relic_hound.png
+scribe.png
+sundered_sentinel.png
+the_little_ancient.png
+ledger_imp.png
+caravan_guardian.png
+golden_jackal.png
+the_broker.png
+nullling.png
+hollow_crown.png
+void_antler.png
+the_unclaimed.png
+
+IMPORTANT: filenames are lowercase and use underscores exactly as shown.
+
+EXISTING MERCHANT EGG IMAGE LOCATION
+------------------------------------
+The code expects your EXISTING merchant egg artwork here:
+
+public/assets/merchant-items/
+
+with these exact filenames:
+common_mystery_egg.png
+rare_mystery_egg.png
+ancient_egg.png
+merchants_egg.png
+black_egg.png
+
+You said the egg images already exist, so DO NOT recreate them. Only make sure the filenames and folder match.
+
+HATCH POOLS
+-----------
+Common Mystery Egg:
+- Packrat
+- Wagon Wisp
+- Trinket Mimic
+- Roadling
+
+Rare Mystery Egg:
+- Coinback
+- Silktrick
+- Gilded Gargoyle
+- Velvet Jack
+
+Ancient Egg:
+- Relic Hound
+- Scribe
+- Sundered Sentinel
+- The Little Ancient
+
+Merchant's Egg:
+- Ledger Imp
+- Caravan Guardian
+- Golden Jackal
+- The Broker
+
+Black Egg:
+- Nullling
+- Hollow Crown
+- Void Antler
+- The Unclaimed
+
+HATCH WEIGHTS
+-------------
+Within each merchant egg, the four listed slots currently use:
+1st pet: 45%
+2nd pet: 30%
+3rd pet: 18%
+4th pet: 7%
+
+This means The Unclaimed is the 7% jackpot result from a Black Egg.
+
+TESTING WITHOUT WAITING FOR A MERCHANT
+--------------------------------------
+Existing admin command now works with Merchant Eggs because !giveitem uses the live purchase grant function.
+Examples:
+
+!giveitem @user Common Mystery Egg
+!giveitem @user Rare Mystery Egg
+!giveitem @user Ancient Egg
+!giveitem @user Merchant's Egg
+!giveitem @user Black Egg
+
+Then use:
+!eggs
+!incubate <egg number>
+!hatch <slot number>
+
+The Activity Eggs/Incubator UI also supports these eggs.
+
+DEPLOYMENT
+----------
+MERGE this ZIP into the current GitHub repository. Do not delete your existing
+public/assets folders. This H10.4 ZIP is code-focused and intentionally does not
+contain your existing artwork.
