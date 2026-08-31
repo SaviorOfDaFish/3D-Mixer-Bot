@@ -529,13 +529,27 @@ function activityEggImageUrl(eggKey, image) {
 
 const MAX_INCUBATORS = 5;
 const HUNTER_POINTS_PER_LEVEL = 100;
+// H10.6.2 — Hatch rewards are intentionally modest so Hunting remains
+// the primary source of competitive Hunter Points.
 const HATCH_POINT_REWARDS = {
-  Common: 2,
-  Rare: 5,
-  Epic: 10,
-  Legendary: 20
+  Common: 1,
+  Rare: 2,
+  Epic: 4,
+  Legendary: 7,
+  Special: 10,
+  Mythic: 10
 };
-const NEW_PET_SPECIES_BONUS = 5;
+
+// Discovering a new PetDex species is its own permanent accomplishment;
+// it no longer adds extra Hunter Points on top of the hatch reward.
+const NEW_PET_SPECIES_BONUS = 0;
+
+function getHatchPointReward(definition, eggRarity) {
+  // The Unclaimed is the Black Egg jackpot and receives the special hatch cap.
+  if (definition?.key === "the_unclaimed") return 10;
+  const rarity = definition?.rarity || eggRarity || "Common";
+  return HATCH_POINT_REWARDS[rarity] || 0;
+}
 
 const PET_PERSONALITIES = ["Cheerful", "Curious", "Loyal", "Mischievous", "Sleepy", "Brave"];
 
@@ -10464,7 +10478,7 @@ ${captureChoicesText(choices)}
     };
 
     const previousPoints = player.points;
-    const hatchPoints = HATCH_POINT_REWARDS[(distortionEgg || merchantEgg) ? definition.rarity : rarity] || 0;
+    const hatchPoints = getHatchPointReward(definition, rarity);
     const dexBonus = alreadyDiscoveredSpecies ? 0 : NEW_PET_SPECIES_BONUS;
 
     player.pets.push(ownedPet);
@@ -13283,7 +13297,7 @@ async function activityHatchEgg(user, slotNumber) {
   };
 
   const previousPoints = player.points;
-  const hatchPoints = HATCH_POINT_REWARDS[(distortionEgg || merchantEgg) ? definition.rarity : rarity] || 0;
+  const hatchPoints = getHatchPointReward(definition, rarity);
   const dexBonus = already ? 0 : NEW_PET_SPECIES_BONUS;
   player.pets.push(owned);
   if (!already) player.discoveredPetKeys.push(definition.key);
