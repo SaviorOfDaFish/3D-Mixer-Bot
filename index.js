@@ -9443,9 +9443,15 @@ client.on("messageCreate", async (message) => {
       return message.reply("Choose two different valid pet numbers from `!pets`.");
     }
 
-    if (String(player.equippedPetId) === String(sacrifice.id)) {
+    const authoritativeEquipped = getEquippedPet(player);
+    if (authoritativeEquipped && String(authoritativeEquipped.id) === String(sacrifice.id)) {
       return message.reply(
         "You cannot sacrifice your currently equipped pet. Equip another pet first."
+      );
+    }
+    if (player.fetchState && !player.fetchState.completed && String(player.fetchState.petId) === String(sacrifice.id)) {
+      return message.reply(
+        "That companion is currently Fetching and cannot be sacrificed until it returns."
       );
     }
 
@@ -9533,9 +9539,15 @@ client.on("messageCreate", async (message) => {
       );
     }
 
-    if (String(freshPlayer.equippedPetId) === String(freshSacrifice.id)) {
+    const freshEquipped = getEquippedPet(freshPlayer);
+    if (freshEquipped && String(freshEquipped.id) === String(freshSacrifice.id)) {
       return message.reply(
         "That pet became your equipped companion before confirmation, so it was NOT sacrificed."
+      );
+    }
+    if (freshPlayer.fetchState && !freshPlayer.fetchState.completed && String(freshPlayer.fetchState.petId) === String(freshSacrifice.id)) {
+      return message.reply(
+        "That companion started Fetching before confirmation, so it was NOT sacrificed."
       );
     }
 
@@ -9628,6 +9640,15 @@ client.on("messageCreate", async (message) => {
       String(freshPlayer.pendingHatchChoice.petId) === String(freshSacrifice.id)
     ) {
       freshPlayer.pendingHatchChoice = null;
+    }
+
+    // H10.6.9 — Re-resolve the active companion after a text-command combine.
+    // If an old completed Fetch record pointed at the sacrificed pet, move its
+    // display reference to the surviving active pet so the Fetch UI cannot appear
+    // companion-less afterward. Active Fetch pets are blocked from sacrifice above.
+    const repairedActivePet = getEquippedPet(freshPlayer);
+    if (freshPlayer.fetchState?.completed && String(freshPlayer.fetchState.petId) === String(freshSacrifice.id)) {
+      freshPlayer.fetchState.petId = repairedActivePet?.id || null;
     }
 
     saveData(fresh);
@@ -13567,11 +13588,38 @@ function activityRenamePet(user, petId, nickname) {
 function h3DonorAbilityEntries(ownedPet){
   return getPetAbilityEntries(ownedPet).map(entry=>({key:entry.ability,name:abilityDisplayName(entry.ability),rank:entry.level,rankRoman:h3RankRoman(entry.level),tier:h3AbilityDef(entry.ability).tier,inheritable:Boolean(h3AbilityDef(entry.ability).inheritable),natural:Boolean(entry.natural),effect:formatAbilityEffect(entry)}));
 }
+// H10.6.8 — Combining must use the same authoritative equipped-pet resolver as Fetch.
+// Older records can have a stale/null equippedPetId even while the Activity visually
+// resolves an active pet. Resolve it first so the active companion can NEVER be
+// sacrificed accidentally and Fetch cannot be orphaned after a combination.
 function h3CombineValidate(player,targetId,donorId){
+  const equipped = getEquippedPet(player);
   const target=activityPetById(player,targetId), donor=activityPetById(player,donorId);
   if(!target||!donor||target===donor) return {ok:false,error:"Choose two different pets you own."};
-  if(String(player.equippedPetId)===String(donor.id)) return {ok:false,error:"Your active pet cannot be sacrificed. Equip another companion first."};
+  if(equipped && String(equipped.id)===String(donor.id)) {
+    return {ok:false,error:"Your active pet cannot be sacrificed. Equip another companion first."};
+  }
+  if(player.fetchState && !player.fetchState.completed && String(player.fetchState.petId)===String(donor.id)) {
+    return {ok:false,error:"That companion is currently Fetching and cannot be sacrificed until it returns."};
+  }
   return {ok:true,target,donor,targetDef:getOwnedPetDefinition(target),donorDef:getOwnedPetDefinition(donor)};
+}
+
+function h1068RepairEquippedPetAfterCombine(player, target, removedPetId=null){
+  if(!player || !Array.isArray(player.pets)) return null;
+  let current = getEquippedPet(player);
+  if(!current){
+    const survivingTarget = target ? player.pets.find(p=>String(p.id)===String(target.id)) : null;
+    const fallback = survivingTarget || player.pets.find(p=>getOwnedPetDefinition(p)) || null;
+    player.equippedPetId = fallback ? fallback.id : null;
+    current = fallback;
+  }
+  // Historical completed Fetch records may point at a pet that has since been
+  // combined away. Keep the reward history, but point the UI at the current pet.
+  if(removedPetId && player.fetchState?.completed && String(player.fetchState.petId)===String(removedPetId)) {
+    player.fetchState.petId = current?.id || null;
+  }
+  return current;
 }
 function activityPetCombinePreview(user,body={}){
   const data=loadData(), player=getPlayer(data,user.id); ensureActivityProfile(player,user);
@@ -13596,8 +13644,9 @@ function activityPetCombineXp(user,body={}){
   const distribution=distributePetXpAcrossAbilities(target,amount);
   player.pets=player.pets.filter(p=>String(p.id)!==String(donor.id));
   if(player.pendingHatchChoice&&String(player.pendingHatchChoice.petId)===String(donor.id)) player.pendingHatchChoice=null;
+  const equippedAfterCombine = h1068RepairEquippedPetAfterCombine(player,target,donor.id);
   saveData(data);
-  return {ok:true,mode:"xp",message:`${getOwnedPetName(donor)} was sacrificed. ${amount} Ability XP was spread across ${distribution.abilityCount} non-maxed abilities.`,distribution,pets:activityOwnedPetPayload(player)};
+  return {ok:true,mode:"xp",equippedPetId:equippedAfterCombine?.id||null,message:`${getOwnedPetName(donor)} was sacrificed. ${amount} Ability XP was spread across ${distribution.abilityCount} non-maxed abilities.`,distribution,pets:activityOwnedPetPayload(player)};
 }
 function activityPetCombineInherit(user,body={}){
   const data=loadData(), player=getPlayer(data,user.id); ensureActivityProfile(player,user);
@@ -13606,8 +13655,10 @@ function activityPetCombineInherit(user,body={}){
   const donorAbility=h3DonorAbilityEntries(donor).find(a=>a.key===abilityKey); if(!donorAbility) return {ok:false,error:"That donor does not know the selected ability."};
   if(getKnownPetAbility(target,abilityKey)){
     const amount=PET_ABILITY_COMBINE_XP[donorDef?.rarity]||25, distribution=distributePetXpAcrossAbilities(target,amount);
-    player.pets=player.pets.filter(p=>String(p.id)!==String(donor.id)); saveData(data);
-    return {ok:true,mode:"training",success:true,chance:100,message:`Duplicate ${abilityDisplayName(abilityKey)} converted into ${amount} Ability XP and was evenly spread across the target pet.`,distribution,pets:activityOwnedPetPayload(player)};
+    player.pets=player.pets.filter(p=>String(p.id)!==String(donor.id));
+    const equippedAfterCombine = h1068RepairEquippedPetAfterCombine(player,target,donor.id);
+    saveData(data);
+    return {ok:true,mode:"training",equippedPetId:equippedAfterCombine?.id||null,success:true,chance:100,message:`Duplicate ${abilityDisplayName(abilityKey)} converted into ${amount} Ability XP and was evenly spread across the target pet.`,distribution,pets:activityOwnedPetPayload(player)};
   }
   const def=h3AbilityDef(abilityKey); if(!def.inheritable||def.tier==="Special") return {ok:false,error:"That special ability cannot be inherited."};
   const slotsMax=h3InheritedSlotLimit(player), slotsUsed=(target.inheritedAbilities||[]).length;
@@ -13616,8 +13667,9 @@ function activityPetCombineInherit(user,body={}){
   if(success){ target.inheritedAbilities.push({ability:abilityKey,baseBonus:1,rank:donorAbility.rank,xp:0,sourcePetKey:donor.key,sourceName:getOwnedPetName(donor),sourceRarity:donorDef?.rarity||"Common",inheritedAt:Date.now()}); }
   player.pets=player.pets.filter(p=>String(p.id)!==String(donor.id));
   if(player.pendingHatchChoice&&String(player.pendingHatchChoice.petId)===String(donor.id)) player.pendingHatchChoice=null;
+  const equippedAfterCombine = h1068RepairEquippedPetAfterCombine(player,target,donor.id);
   saveData(data);
-  return {ok:true,mode:"inherit",success,chance:chance.total,ability:{...donorAbility,sourceName:getOwnedPetName(donor)},message:success?`${getOwnedPetName(target)} inherited ${abilityDisplayName(abilityKey)} at Rank ${h3RankRoman(donorAbility.rank)}!`:`Inheritance failed. ${getOwnedPetName(donor)} was still sacrificed.`,pets:activityOwnedPetPayload(player)};
+  return {ok:true,mode:"inherit",equippedPetId:equippedAfterCombine?.id||null,success,chance:chance.total,ability:{...donorAbility,sourceName:getOwnedPetName(donor)},message:success?`${getOwnedPetName(target)} inherited ${abilityDisplayName(abilityKey)} at Rank ${h3RankRoman(donorAbility.rank)}!`:`Inheritance failed. ${getOwnedPetName(donor)} was still sacrificed.`,pets:activityOwnedPetPayload(player)};
 }
 
 function activityMerchantPayload(data, userId) {
@@ -13938,9 +13990,14 @@ function activityEggPayload(player) {
 function activityFetchPayload(player) {
   const now = Date.now();
   const state = player.fetchState || null;
-  const fetchPet = state?.petId
+  // H10.6.9 — A completed/legacy Fetch can still reference a pet that was later
+  // combined away. Never let that stale historical petId hide the player's real
+  // equipped companion. Only use fetchState.petId when that pet still exists;
+  // otherwise fall back to the authoritative equipped companion.
+  const statePet = state?.petId
     ? (player.pets || []).find(p => String(p.id) === String(state.petId))
-    : getEquippedPet(player);
+    : null;
+  const fetchPet = statePet || getEquippedPet(player);
   const definition = getOwnedPetDefinition(fetchPet);
   const cooldownReadyAt = Number(player.lastFetch || 0) + FETCH_COOLDOWN;
   const active = Boolean(state && !state.completed && Number(state.readyAt || 0) > now);
