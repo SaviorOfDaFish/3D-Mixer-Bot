@@ -4215,6 +4215,22 @@ function findImageFile(filename) {
       console.error(`Could not search image folder ${folder}:`, error.message);
     }
   }
+  // H10.5: final recursive asset fallback. This makes Discord monster art resilient
+  // if artwork is organized into subfolders under public/assets.
+  const assetRoot = path.join(__dirname, "public", "assets");
+  const stack = fs.existsSync(assetRoot) ? [assetRoot] : [];
+  while (stack.length) {
+    const folder = stack.pop();
+    try {
+      for (const entry of fs.readdirSync(folder, { withFileTypes:true })) {
+        const full = path.join(folder, entry.name);
+        if (entry.isDirectory()) stack.push(full);
+        else if (entry.isFile() && entry.name.toLowerCase() === wanted) return full;
+      }
+    } catch (error) {
+      console.error(`Could not recursively search image folder ${folder}:`, error.message);
+    }
+  }
   return null;
 }
 
@@ -6478,6 +6494,19 @@ async function h4SendPlayerDm(userId, content) {
 
 function h4RoleMention(roleId) {
   return roleId ? `<@&${roleId}>` : "";
+}
+
+async function h4PostPublicEncounter(user, monster, details = {}) {
+  h4RefreshChannelRouting();
+  const channel = await getMonsterHuntChannel();
+  if (!channel?.isTextBased()) return null;
+  const playerName = details.playerName || user.global_name || user.username || "A hunter";
+  const chanceText = Number.isFinite(Number(details.chance)) ? `\n**Current Catch Chance:** ${Number(details.chance)}%` : "";
+  return channel.send(buildMonsterEmbed(
+    monster,
+    `🐾 MONSTER ENCOUNTER — ${playerName} found ${monster?.name || "Unknown Monster"}!`,
+    `**Rarity:** ${monster?.rarity || "Unknown"}\n**Habitat:** ${monster?.habitat || "Unknown"}${chanceText}\n\nThe hunter is choosing a capture method.`
+  )).catch(error => { console.error("H10.5 public encounter feed failed:", error); return null; });
 }
 
 async function h4PostSuccessfulActivityCatch(user, monster, rewards = {}) {
@@ -12939,6 +12968,10 @@ async function performBountyHunt(data,id,ch=null){
    chance:choice.chance
  }));
 
+ // H10.5: Activity Bounty encounters also appear in the public Hunt channel with art.
+ const bountyUser={id,username:player.discordUsername||"Hunter",global_name:player.discordDisplayName||player.discordUsername||"Hunter"};
+ await h4PostPublicEncounter(bountyUser,monster,{playerName:formatPlayerName(player,bountyUser.global_name),chance:chanceInfo.total});
+
  return{
    ok:true,
    result:"encounter",
@@ -13726,6 +13759,36 @@ function h9TutorialState(player){
 }
 function h9TutorialPayload(player){const t=h9TutorialState(player);return {enabled:t.enabled,completed:!!t.completed,skipped:!!t.skipped,step:+t.step||0,seenTips:{...t.seenTips}};}
 
+function activityMonsterDexPayload(player) {
+  const distortionMonsters = Object.values(DISTORTIONS).flatMap(def =>
+    (def.monsters || []).map(monster => ({ ...monster, source:def.name, category:"Distortion" }))
+  );
+  const standardMonsters = monsters.map(monster => ({ ...monster, source:monster.habitat || "Hunting Grounds", category:"Habitat" }));
+  const specialMonsters = [
+    { ...MIXER_MONSTER, source:MIXER_MONSTER.habitat || "Special Encounter", category:"Special" }
+  ];
+  const definitions = [...standardMonsters, ...distortionMonsters, ...specialMonsters];
+  const caughtNames = new Set((player.lifetimeCaught || []).map(m => cleanMonsterName(m.name || "").toLowerCase()));
+  const seenNames = new Set(Object.keys(player.monsterKnowledge || {}).map(name => cleanMonsterName(name).toLowerCase()));
+  return definitions.map((monster, index) => {
+    const normalized=cleanMonsterName(monster.name || "").toLowerCase();
+    const discovered=caughtNames.has(normalized);
+    return {
+      key:monster.key || normalized.replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"") || `monster_${index}`,
+      name:monster.name,
+      rarity:monster.rarity || "Unknown",
+      habitat:monster.habitat || "Unknown",
+      source:monster.source || monster.habitat || "Unknown",
+      category:monster.category || "Habitat",
+      image:monster.image || null,
+      imageUrl:activityMonsterImageUrl(monster),
+      discovered,
+      encountered:discovered || seenNames.has(normalized),
+      catches:(player.lifetimeCaught || []).filter(m => cleanMonsterName(m.name || "").toLowerCase()===normalized).length
+    };
+  });
+}
+
 function activityPlayerPayload(data, user) {
   const player = getPlayer(data, user.id);
   const profile = ensureActivityProfile(player, user);
@@ -13758,6 +13821,7 @@ function activityPlayerPayload(data, user) {
     phaseD: {
       ownedPets,
       petDex: standardDex,
+      monsterDex: activityMonsterDexPayload(player),
       beyondPets: activityPetDexPayload(player, true),
       inventory: activityFullInventoryPayload(player),
       trophies: h7SeasonBountyTrophies(data,user.id),
@@ -13813,21 +13877,10 @@ async function activityStartNormalHunt(user) {
     chance: choice.chance
   }));
 
-  const channel = await getTextChannel(MONSTER_CHANNEL_ID);
-  if (channel?.isTextBased()) {
-    await channel.send(
-      buildMonsterEmbed(
-        monster,
-        `🎮 Activity Hunt — ${formatPlayerName(player, user.global_name || user.username)} encountered ${monster.name}!`,
-        `**Rarity:** ${monster.rarity}\n` +
-        `**Habitat:** ${monster.habitat || "Unknown"}\n` +
-        `**Current Catch Chance:** ${chanceInfo.total}%\n` +
-        `${usedBait ? `**Bait Used:** ${String(usedBait).toUpperCase()}\n` : ""}` +
-        `${h3BaitSaveText}${h3HuntEffects.messages?.length ? `\n🐾 **Pet Abilities:** ${h3HuntEffects.messages.join(" | ")}\n` : ""}` +
-        `\nThe hunter is choosing a capture method in the Discord Activity.`
-      )
-    ).catch(error => console.error("Activity encounter announcement failed:", error));
-  }
+  await h4PostPublicEncounter(user, monster, {
+    playerName:formatPlayerName(player, user.global_name || user.username),
+    chance:chanceInfo.total
+  });
 
   return {
     ok:true,

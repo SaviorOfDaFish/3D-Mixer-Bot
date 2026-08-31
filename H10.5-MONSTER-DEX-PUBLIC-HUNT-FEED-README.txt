@@ -1,0 +1,23 @@
+MONSTER HUNT H10.5 — PUBLIC MONSTER ART + MONSTER DEX
+
+Built on H10.4.
+
+CHANGES
+- Activity encounters always route to the Monster Hunt channel using a monster-art embed.
+- Activity successful captures continue to post publicly with monster art and rewards.
+- Activity Bounty encounters now also post publicly with monster art.
+- Discord text !hunt / !catch continue to show monster-art embeds in the Hunt channel.
+- Image lookup now has a recursive fallback under public/assets, so nested monster-art folders still resolve.
+- New Activity Monster Dex modeled after PetDex.
+- Monster Dex shows monster artwork, rarity, source/habitat, and lifetime capture count.
+- Undiscovered monsters stay hidden.
+- Includes current 40 habitat monsters, current Distortion monsters, and Mixer Monster special entry.
+- Monster Dex discoveries are derived from permanent lifetimeCaught history, so season resets preserve them.
+
+ART LOCATION
+Normal monsters: public/assets/monsters/<filename>.png
+Distortion monsters: public/assets/distortions/<filename>.png
+No new art folder is required for H10.5.
+
+DEPLOYMENT
+Merge code into the existing repo. Do not delete public/assets or existing artwork.
