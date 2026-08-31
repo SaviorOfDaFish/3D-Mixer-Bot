@@ -128,6 +128,7 @@
           <button class="tile" data-nav="inventory"><span>🎒</span><b>Inventory</b><small>Supplies & relics</small></button>
           <button class="tile" data-nav="petdex"><span>📖</span><b>PetDex</b><small id="petdexCount">—</small></button>
           <button class="tile" data-nav="monsterdex"><span>🐲</span><b>Monster Dex</b><small id="monsterdexCount">— discovered</small></button>
+          <button class="tile" data-nav="players"><span>👥</span><b>Players</b><small>Meet the hunters</small></button>
           <button class="tile" data-nav="collection"><span>🏆</span><b>Collection</b><small id="trophyCount">— trophies</small></button>
         </section>
 
@@ -218,6 +219,16 @@
         <p class="muted intro-copy">Every monster you capture is permanently recorded here with its artwork, rarity, and where it came from. Undiscovered monsters remain hidden.</p>
         <div class="filter-row" id="monsterDexFilters"></div>
         <div id="monsterDexHabitats"></div>
+      </section>
+
+      <section class="screen" data-screen="players">
+        <div class="screen-header">
+          <div><p class="eyebrow">HUNTER COMMUNITY</p><h2>Players</h2></div>
+          <button class="primary h106-share-btn" id="h106ShareHunter">📣 Share My Hunter</button>
+        </div>
+        <p class="muted intro-copy">Meet the hunters playing Monster Hunt. Generated character art appears here after a player equips their Hunter.</p>
+        <div class="h106-share-status" id="h106ShareStatus"></div>
+        <div class="h106-player-grid" id="h106PlayerGrid"><p class="muted">Loading hunters…</p></div>
       </section>
 
       <section class="screen" data-screen="tutorial">
@@ -785,6 +796,7 @@
 
           <div class="h8-field-grid">
             <div class="h8-field"><label for="h8Body">Body</label><select id="h8Body"></select></div>
+            <div class="h8-field"><label for="h8SkinTone">Skin Tone</label><select id="h8SkinTone"></select></div>
             <div class="h8-field"><label for="h8Personality">Personality</label><select id="h8Personality"></select></div>
           </div>
 

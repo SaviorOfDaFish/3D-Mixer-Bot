@@ -353,6 +353,7 @@ function navTo(screen) {
   if (screen === "eggs") refreshH2AEggData();
   if (screen === "inventory") refreshH2BInventory();
   if (screen === "monsterdex") refreshMonsterDex();
+  if (screen === "players") h106RefreshPlayers();
   if (screen === "merchant") refreshH2BMerchant();
   if (screen === "events") refreshH2CLiveEvents(true);
   if (screen === "notifications") refreshH4NotificationPrefs();
@@ -2772,6 +2773,7 @@ let h8CreatorSelection=null;
 const H8_SELECT_IDS={
   archetype:"h8Archetype",
   body:"h8Body",
+  skinTone:"h8SkinTone",
   hair:"h8Hair",
   hairColor:"h8HairColor",
   eyes:"h8Eyes",
@@ -2821,7 +2823,7 @@ function h8RenderCreatorPreview(){
   document.getElementById("h8PreviewBody").textContent=body?.label||"";
   document.getElementById("h8PreviewName").textContent=`${personality?.label||"Custom"} ${archetype?.label||"Hunter"}`;
 
-  const chipCategories=["hair","hairColor","eyes","outfit","headgear","eyewear","cloak","weapon","offhand"];
+  const chipCategories=["skinTone","hair","hairColor","eyes","outfit","headgear","eyewear","cloak","weapon","offhand"];
   const standardChips=chipCategories.map(category=>{
     const option=h8CurrentOption(category);
     return `<span>${escapeHtml(option?.label||"—")}</span>`;
@@ -2951,7 +2953,7 @@ async function h8CreateHunterPreview(){
 function h8ResetCreator(){
   if(!h8CreatorData) return;
   h8CreatorSelection={
-    archetype:"hunter",body:"male",hair:"messy",hairColor:"dark_brown",
+    archetype:"hunter",body:"male",skinTone:"medium",hair:"messy",hairColor:"dark_brown",
     eyes:"blue",outfit:"hunter_armor",headgear:"none",weapon:"hunter_bow",personality:"friendly",
     eyewear:"none",gloves:"leather",neckFace:"none",cloak:"blue",backItem:"quiver",
     beltItem:"tool_pouch",offhand:"none",extras:[]
@@ -3092,7 +3094,7 @@ async function h81UseHunter(){
     h8CreatorData.activeHunter=payload.hunter;
     h8CreatorData.candidate=null;
     document.getElementById("h81CandidateActions")?.classList.add("hidden");
-    message.textContent="✅ Your new Hunter is equipped on Home and Hunt!";
+    message.innerHTML="✅ Your new Hunter is equipped! Open <b>Players</b> from Home to share your character with Discord.";
     btn.textContent="✅ Equipped!";
     setTimeout(()=>h8CloseCreator(),700);
   }catch(error){
@@ -3504,3 +3506,35 @@ setTimeout(h93LoadAuthoritativeTutorialState,2300);
     try{ localStorage.setItem("monsterHuntBackgroundViewOnly",next?"1":"0"); }catch{}
   });
 })();
+
+
+// ===== H10.6 PLAYERS GALLERY + CHARACTER SHARE =====
+async function h106ShareHunter(){
+  const btn=document.getElementById("h106ShareHunter");
+  const status=document.getElementById("h106ShareStatus");
+  if(btn){btn.disabled=true;btn.textContent="📣 Sharing…";}
+  if(status) status.textContent="Sending your equipped Hunter to Discord…";
+  try{
+    const response=await activityFetch("/api/activity/hunter/share",{method:"POST"});
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not share your Hunter.");
+    if(status) status.textContent=`✅ ${payload.message}`;
+  }catch(error){if(status)status.textContent=`❌ ${error.message}`;}
+  finally{if(btn){btn.disabled=false;btn.textContent="📣 Share My Hunter";}}
+}
+async function h106RefreshPlayers(){
+  const grid=document.getElementById("h106PlayerGrid"); if(!grid)return;
+  grid.innerHTML='<p class="muted">Loading hunters…</p>';
+  try{
+    const response=await activityFetch("/api/activity/players"); const payload=await response.json();
+    if(!response.ok||!payload.ok)throw new Error(payload.error||"Could not load players.");
+    const players=payload.players||[];
+    grid.innerHTML=players.length?players.map(p=>`<article class="h106-player-card ${p.isYou?'is-you':''}">
+      <div class="h106-player-art"><img src="${escapeHtml(activityProxyUrl(p.imageUrl))}" alt="${escapeHtml(p.name)}'s Hunter"></div>
+      <div class="h106-player-copy"><p class="eyebrow">${p.isYou?'YOU':'MONSTER HUNTER'}</p><h3>${escapeHtml(p.name)}</h3>
+      <p><b>Level ${Number(p.level||1)}</b> • ${escapeHtml(p.title||'Novice Hunter')}</p>
+      <small>${escapeHtml([p.labels?.archetype,p.labels?.outfit,p.labels?.weapon].filter(Boolean).join(' • ')||'Custom Hunter')}</small></div>
+    </article>`).join(''):'<div class="panel"><h3>No Hunters Shared Yet</h3><p class="muted">Create and equip an AI Hunter to appear in the Players gallery.</p></div>';
+  }catch(error){grid.innerHTML=`<p class="muted">❌ ${escapeHtml(error.message)}</p>`;}
+}
+document.getElementById("h106ShareHunter")?.addEventListener("click",h106ShareHunter);

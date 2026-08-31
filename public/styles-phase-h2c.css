@@ -3837,3 +3837,13 @@ body.background-view-only.h10-distortion-active{min-height:100vh;background-imag
 .monster-dex-question{font-size:3.5rem;font-weight:900;color:#64748b}
 .monster-dex-body{padding:11px}.monster-dex-body h3{margin:7px 0 3px;font-size:.94rem}.monster-dex-body p{margin:0;color:#a5b4fc;font-size:.72rem}.monster-dex-body small{display:block;margin-top:5px;color:#94a3b8;font-size:.68rem}
 @media(max-width:620px){.monster-dex-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.monster-dex-portrait{height:118px}.monster-dex-body{padding:9px}}
+
+/* ===== H10.6 Players Gallery ===== */
+.h106-player-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:18px}
+.h106-player-card{overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:18px;background:rgba(7,13,25,.82);box-shadow:0 12px 30px rgba(0,0,0,.22)}
+.h106-player-card.is-you{outline:2px solid rgba(255,205,82,.55)}
+.h106-player-art{height:280px;display:flex;align-items:flex-end;justify-content:center;background:radial-gradient(circle at 50% 35%,rgba(77,118,170,.25),rgba(7,13,25,.3));overflow:hidden}
+.h106-player-art img{width:100%;height:100%;object-fit:contain;object-position:center bottom}
+.h106-player-copy{padding:14px}.h106-player-copy h3{margin:2px 0 7px}.h106-player-copy p{margin:0 0 6px}.h106-player-copy small{opacity:.72}
+.h106-share-status{min-height:24px;margin-top:8px}.h106-share-btn{white-space:nowrap}
+@media(max-width:600px){.h106-player-grid{grid-template-columns:1fr 1fr;gap:10px}.h106-player-art{height:210px}.h106-player-copy{padding:10px}.h106-player-copy small{font-size:.72rem}.h106-share-btn{font-size:.8rem;padding:9px 10px}}
