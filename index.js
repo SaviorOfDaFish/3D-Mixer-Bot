@@ -1585,6 +1585,26 @@ const H8_HUNTER_CREATOR_OPTIONS = Object.freeze({
     {value:"male",label:"Male"},
     {value:"female",label:"Female"}
   ],
+  skinTone: [
+    {value:"very_fair",label:"Very Fair"},
+    {value:"fair",label:"Fair"},
+    {value:"light",label:"Light"},
+    {value:"light_medium",label:"Light-Medium"},
+    {value:"medium",label:"Medium"},
+    {value:"tan",label:"Tan"},
+    {value:"medium_deep",label:"Medium-Deep"},
+    {value:"deep",label:"Deep"},
+    {value:"very_deep",label:"Very Deep"},
+    {value:"ash_gray",label:"Fantasy — Ash Gray"},
+    {value:"crimson",label:"Fantasy — Crimson"},
+    {value:"emerald",label:"Fantasy — Emerald Green"},
+    {value:"azure",label:"Fantasy — Azure Blue"},
+    {value:"violet_skin",label:"Fantasy — Violet"},
+    {value:"obsidian",label:"Fantasy — Obsidian"},
+    {value:"moonlight",label:"Fantasy — Pale Moonlight"},
+    {value:"golden_skin",label:"Fantasy — Golden"},
+    {value:"copper_skin",label:"Fantasy — Copper"}
+  ],
   hair: [
     {value:"messy",label:"Messy"},
     {value:"short",label:"Short"},
@@ -1773,7 +1793,7 @@ function h8CreatorOptionsPayload(data,userId) {
     })),
     progress,
     draft:player.aiHunterCreatorDraft || {
-      archetype:"hunter",body:"male",hair:"messy",hairColor:"dark_brown",
+      archetype:"hunter",body:"male",skinTone:"medium",hair:"messy",hairColor:"dark_brown",
       eyes:"blue",outfit:"hunter_armor",headgear:"none",weapon:"hunter_bow",personality:"friendly",
       eyewear:"none",gloves:"leather",neckFace:"none",cloak:"blue",backItem:"quiver",
       beltItem:"tool_pouch",offhand:"none",extras:[]
@@ -1826,6 +1846,7 @@ function h8BuildHunterPrompt(selection) {
     "Create ONE complete player character for the fantasy RPG game Monster Hunt.",
     "ART DIRECTION: premium highly detailed polished chibi fantasy RPG/anime-cartoon game artwork matching a high-end collectible mobile RPG hero portrait; large expressive eyes; slightly oversized head; compact heroic body; dynamic but readable silhouette; clean dark ink-like outlines; rich detailed cel shading; soft highlights; ornate believable fantasy materials; layered belts, buckles, fabric folds, leather, metal and accessories; polished professional character-concept quality.",
     `CHARACTER: ${labels.body} ${labels.archetype}.`,
+    `SKIN TONE: ${labels.skinTone}. Keep the selected skin tone clearly and consistently visible on the face, neck, hands, and any other exposed skin.`,
     `PERSONALITY/EXPRESSION: ${labels.personality}; friendly heroic game-character energy.`,
     `HAIR: ${labels.hair}, ${labels.hairColor}.`,
     `EYES: ${labels.eyes}.`,
@@ -2036,6 +2057,44 @@ function h81DiscardCandidate(userId) {
   player.hunterGenerationCandidate=null;
   saveData(data);
   return {ok:true};
+}
+
+// ==================== H10.6 PLAYER GALLERY + CHARACTER SHARING ====================
+function h106PlayerGalleryPayload(data,currentUserId) {
+  return Object.entries(data.players||{}).map(([id,p])=>{
+    const art=p.generatedHunter;
+    if(!art?.imageUrl) return null;
+    return {
+      id,
+      name:p.discordDisplayName||p.discordUsername||"Monster Hunter",
+      title:p.title||"Novice Hunter",
+      level:h3HunterLevel(p),
+      imageUrl:art.imageUrl,
+      labels:art.labels||{},
+      isYou:String(id)===String(currentUserId)
+    };
+  }).filter(Boolean).sort((a,b)=>Number(b.level||0)-Number(a.level||0));
+}
+
+async function h106ShareHunterToDiscord(user) {
+  const data=loadData();
+  const player=getPlayer(data,user.id);
+  const art=player.generatedHunter;
+  if(!art?.filename) return {ok:false,error:"Create and equip your Hunter before sharing it."};
+  const filePath=path.join(GENERATED_HUNTER_DIRECTORY,path.basename(art.filename));
+  if(!fs.existsSync(filePath)) return {ok:false,error:"Your Hunter image file could not be found. Try generating it again."};
+  h4RefreshChannelRouting();
+  const channel=await getMonsterHuntChannel();
+  if(!channel?.isTextBased()) return {ok:false,error:"The Monster Hunt Discord channel is not available."};
+  const name=user.global_name||user.username||player.discordDisplayName||"A Hunter";
+  const labels=art.labels||{};
+  const details=[labels.archetype,labels.outfit,labels.weapon].filter(Boolean).join(" • ");
+  await channel.send({
+    content:`# 🧑‍🎨 ${name} shared their Monster Hunt Hunter!\n**Hunter Level:** ${h3HunterLevel(player)}${player.title?`\n**Title:** ${player.title}`:""}${details?`\n**Look:** ${details}`:""}\n\nMeet another hunter from the Monster Hunt community!`,
+    files:[{attachment:filePath,name:`${String(name).replace(/[^a-z0-9_-]/gi,"_")}_hunter.png`}],
+    allowedMentions:{parse:[]}
+  });
+  return {ok:true,message:"Your Hunter was shared to the Monster Hunt Discord channel!"};
 }
 
 function getTitleDefinition(titleName) {
@@ -14198,6 +14257,16 @@ const activityServer = http.createServer(async (req, res) => {
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter-creator/discard") {
         const result=h81DiscardCandidate(user.id);
         return activityJson(res,result,200);
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/players") {
+        const data=loadData();
+        return activityJson(res,{ok:true,players:h106PlayerGalleryPayload(data,user.id)});
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter/share") {
+        const result=await h106ShareHunterToDiscord(user);
+        return activityJson(res,result,result.ok?200:400);
       }
 
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/merchant") {

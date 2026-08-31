@@ -1,0 +1,13 @@
+MONSTER HUNT H10.6 — SKIN TONE + PLAYERS GALLERY
+
+Built on H10.5.
+
+NEW:
+- AI Hunter Creator Skin Tone dropdown with realistic and fantasy skin tones.
+- Selected skin tone is included explicitly in the AI image prompt and saved with the creator draft/generated Hunter.
+- New Players menu on Home showing equipped generated Hunters, player name, level, title, archetype/outfit/weapon.
+- Share My Hunter button posts the player's equipped generated Hunter PNG to the routed Monster Hunt Discord Hunt channel.
+- After equipping a generated Hunter, the creator tells the player they can share it from Players.
+
+DEPLOYMENT:
+Merge these code files into the existing repository. Do NOT delete public/assets or generated hunter storage.
