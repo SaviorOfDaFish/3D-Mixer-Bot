@@ -1,0 +1,14 @@
+MONSTER HUNT H10.6.2 — HATCH POINT REBALANCE
+
+Changes
+- Common hatch: +1 Hunter Point
+- Rare hatch: +2 Hunter Points
+- Epic hatch: +4 Hunter Points
+- Legendary hatch: +7 Hunter Points
+- Special/Mythic hatch ceiling: +10 Hunter Points
+- The Unclaimed Black Egg jackpot: +10 Hunter Points
+- New PetDex species discovery no longer adds a separate +5 Hunter Points.
+- Both Discord !hatch and Activity hatching use the same getHatchPointReward() helper.
+- Existing community point blessings still apply when active, by design.
+
+This patch is built on H10.6.1.

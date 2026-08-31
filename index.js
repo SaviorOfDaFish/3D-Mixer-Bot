@@ -2555,6 +2555,28 @@ function getPlayer(data, userId) {
   if (!Number.isFinite(player.bigGameWins)) player.bigGameWins = 0;
   if (!Array.isArray(player.bigGamePlacements)) player.bigGamePlacements = [];
   if (!player.merchantCollection || typeof player.merchantCollection !== "object") player.merchantCollection = {};
+
+  // H10.6.3 — Merchant eggs used to be stored as Merchant Collection items.
+  // Now that all five Merchant Eggs are hatchable, migrate any legacy copies into
+  // the real Egg Inventory so they appear in both the Activity Eggs screen and !eggs.
+  // Removing the old collection count makes this migration safe/idempotent.
+  for (const [merchantEggKey, merchantEggDef] of Object.entries(MERCHANT_EGGS)) {
+    const legacyCount = Math.max(0, Math.floor(Number(player.merchantCollection[merchantEggKey] || 0)));
+    if (!legacyCount) continue;
+
+    for (let copy = 0; copy < legacyCount; copy += 1) {
+      player.eggs.push({
+        id: `merchant-egg-migrated-${merchantEggKey}-${Date.now()}-${copy}-${Math.random().toString(36).slice(2, 7)}`,
+        rarity: merchantEggDef.rarity,
+        eggKey: merchantEggKey,
+        foundAt: Date.now(),
+        source: "Merchant"
+      });
+    }
+
+    delete player.merchantCollection[merchantEggKey];
+  }
+
   if (!Array.isArray(player.merchantPurchases)) player.merchantPurchases = [];
   if (!player.merchantEffects || typeof player.merchantEffects !== "object") player.merchantEffects = {};
   if (!Number.isFinite(player.merchantGambles)) player.merchantGambles = 0;

@@ -1,0 +1,7 @@
+Monster Hunt H10.6.3 — Merchant Egg Inventory Hotfix
+
+Fixes legacy Merchant Eggs that still existed in merchantCollection from builds before H10.4.
+On player load, any Common Mystery Egg, Rare Mystery Egg, Ancient Egg, Merchant's Egg, or Black Egg stored in merchantCollection is moved into player.eggs and removed from merchantCollection.
+This is idempotent: once migrated, the legacy count is deleted so the same egg is not copied again.
+New merchant purchases already go directly into player.eggs.
+Activity cache bumped to v2010.
