@@ -1556,6 +1556,42 @@ function h7CosmeticsPayload(player,data,userId) {
   });
 }
 
+// H10.6.4 — Persistent in-Activity cosmetic unlock notifications.
+// Existing eligible cosmetics are used as the player's baseline the first time this
+// system runs, so longtime players are not flooded with old unlock notifications.
+function h1064CollectCosmeticUnlocks(player,data,userId) {
+  const cosmetics = h7CosmeticsPayload(player,data,userId);
+  const eligibleKeys = cosmetics.filter(c => c.unlocked).map(c => c.key);
+
+  if (!Array.isArray(player.notifiedCosmeticUnlockKeys)) {
+    player.notifiedCosmeticUnlockKeys = [...eligibleKeys];
+    player.cosmeticUnlockNotificationsInitialized = true;
+    return [];
+  }
+
+  // If an older save happened to contain the array but never initialized this system,
+  // establish a quiet baseline once.
+  if (!player.cosmeticUnlockNotificationsInitialized) {
+    player.notifiedCosmeticUnlockKeys = [...new Set([...(player.notifiedCosmeticUnlockKeys||[]), ...eligibleKeys])];
+    player.cosmeticUnlockNotificationsInitialized = true;
+    return [];
+  }
+
+  const seen = new Set(player.notifiedCosmeticUnlockKeys);
+  const newlyUnlocked = cosmetics.filter(c => c.unlock && c.unlocked && !seen.has(c.key));
+  if (newlyUnlocked.length) {
+    for (const cosmetic of newlyUnlocked) seen.add(cosmetic.key);
+    player.notifiedCosmeticUnlockKeys = [...seen];
+  }
+
+  return newlyUnlocked.map(c => ({
+    key:c.key,
+    name:c.name,
+    slot:c.slot,
+    requirement:c.requirement
+  }));
+}
+
 async function activityEquipTitle(user,titleName) {
   const data=loadData();
   const player=getPlayer(data,user.id);
@@ -14216,6 +14252,18 @@ const activityServer = http.createServer(async (req, res) => {
         });
       }
 
+      // H10.6.4 — Activity-only unlock feed for cosmetics.
+      // The client polls this lightly while open, so unlocks earned through either
+      // Activity actions or Discord text commands can surface immediately in-game.
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/cosmetic-unlocks") {
+        const data = loadData();
+        const player = getPlayer(data, user.id);
+        ensureActivityProfile(player, user);
+        const unlocks = h1064CollectCosmeticUnlocks(player,data,user.id);
+        saveData(data);
+        return activityJson(res, {ok:true,unlocks,build:"H10.6.4"});
+      }
+
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/me") {
         const data = loadData();
         const player = getPlayer(data, user.id);
@@ -14224,7 +14272,7 @@ const activityServer = http.createServer(async (req, res) => {
         player.discordDisplayName = user.global_name || user.username || player.discordDisplayName || null;
         const payload = activityPlayerPayload(data, user);
         payload.playerGallery = h106PlayerGalleryPayload(data,user.id);
-        payload.build = "H10.6.1";
+        payload.build = "H10.6.4";
         saveData(data);
         return activityJson(res, payload);
       }
@@ -14247,7 +14295,7 @@ const activityServer = http.createServer(async (req, res) => {
           incubators:payload.incubators,
           recentHunts:activityRecentHuntsPayload(data),
           playerGallery:h106PlayerGalleryPayload(data,user.id),
-          build:"H10.6.1",
+          build:"H10.6.4",
           activityWritesEnabled:true,
           botReady:Boolean(client.user)
         });

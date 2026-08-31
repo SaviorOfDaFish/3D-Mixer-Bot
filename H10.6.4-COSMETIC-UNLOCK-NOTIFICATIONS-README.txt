@@ -1,0 +1,14 @@
+Monster Hunt H10.6.4 — Cosmetic Unlock Notifications
+
+Changes:
+- Players are notified inside the Discord Activity whenever they newly unlock a progression cosmetic.
+- Notification appears as a gold animated toast showing cosmetic name, slot, unlock requirement, and that it is available in Character Creation.
+- Unlocks are persistent: each cosmetic is notified only once per player.
+- First run establishes a quiet baseline so existing players are not spammed with every cosmetic they already qualified for before this patch.
+- The Activity polls every 5 seconds, so cosmetics earned through Activity gameplay OR Discord text commands can be surfaced while the Activity is open.
+- Collection refreshes after a new unlock.
+- Starter cosmetics do not generate unlock notifications.
+- Cache bumped to v2020.
+
+Important deployment note:
+Merge these files into the existing repo. Do not delete public/assets or any artwork.
