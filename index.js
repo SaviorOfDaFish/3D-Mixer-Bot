@@ -2061,10 +2061,12 @@ function h81DiscardCandidate(userId) {
 
 // ==================== H10.6 PLAYER GALLERY + CHARACTER SHARING ====================
 function h106PlayerGalleryPayload(data,currentUserId) {
-  return Object.entries(data.players||{}).map(([id,p])=>{
+  const rows=[];
+  for (const [id,raw] of Object.entries(data?.players||{})) {
+    const p=(raw && typeof raw === "object") ? raw : {};
     const art=p.generatedHunter;
-    if(!art?.imageUrl) return null;
-    return {
+    if(!art?.imageUrl) continue;
+    rows.push({
       id,
       name:p.discordDisplayName||p.discordUsername||"Monster Hunter",
       title:p.title||"Novice Hunter",
@@ -2072,8 +2074,9 @@ function h106PlayerGalleryPayload(data,currentUserId) {
       imageUrl:art.imageUrl,
       labels:art.labels||{},
       isYou:String(id)===String(currentUserId)
-    };
-  }).filter(Boolean).sort((a,b)=>Number(b.level||0)-Number(a.level||0));
+    });
+  }
+  return rows.sort((a,b)=>Number(b.level||0)-Number(a.level||0));
 }
 
 async function h106ShareHunterToDiscord(user) {
@@ -14184,6 +14187,8 @@ const activityServer = http.createServer(async (req, res) => {
         player.discordUsername = user.username || player.discordUsername || null;
         player.discordDisplayName = user.global_name || user.username || player.discordDisplayName || null;
         const payload = activityPlayerPayload(data, user);
+        payload.playerGallery = h106PlayerGalleryPayload(data,user.id);
+        payload.build = "H10.6.1";
         saveData(data);
         return activityJson(res, payload);
       }
@@ -14205,6 +14210,8 @@ const activityServer = http.createServer(async (req, res) => {
           eggs:payload.eggs,
           incubators:payload.incubators,
           recentHunts:activityRecentHuntsPayload(data),
+          playerGallery:h106PlayerGalleryPayload(data,user.id),
+          build:"H10.6.1",
           activityWritesEnabled:true,
           botReady:Boolean(client.user)
         });
@@ -14260,8 +14267,13 @@ const activityServer = http.createServer(async (req, res) => {
       }
 
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/players") {
-        const data=loadData();
-        return activityJson(res,{ok:true,players:h106PlayerGalleryPayload(data,user.id)});
+        try {
+          const data=loadData();
+          return activityJson(res,{ok:true,build:"H10.6.1",players:h106PlayerGalleryPayload(data,user.id)});
+        } catch (error) {
+          console.error("H10.6.1 player gallery failed:",error);
+          return activityJson(res,{ok:false,error:"Player gallery could not be loaded."},500);
+        }
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter/share") {

@@ -1,0 +1,11 @@
+MONSTER HUNT H10.6.1 — PLAYER GALLERY + SKIN TONE HOTFIX
+
+Fixes:
+- Player gallery no longer remains on Loading hunters forever. It uses an 8-second timeout, visible retry/error state, and server build marker.
+- Gallery API hardened against malformed player records.
+- /api/activity/me and /api/activity/sync now include playerGallery and build marker for diagnostics/fallback.
+- Skin Tone selector is guaranteed to populate, including a client fallback list if stale server option data is encountered.
+- Missing pre-H10.6 drafts default to Medium skin tone.
+- Cache bumped to v2000.
+
+IMPORTANT: Deploy/merge ALL files, especially root index.js AND public/index.html/public/app-phase-h2d7.js. If only public files are deployed, the Players API does not exist.
