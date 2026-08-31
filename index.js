@@ -2696,9 +2696,27 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// H10.6.7 — Keep the Activity's displayed active companion and the Fetch system
+// on the same authoritative equippedPetId. Older/reset player records can own pets
+// while equippedPetId is null or points at a pet that no longer exists. In that case,
+// repair the state by equipping the first valid owned companion.
 function getEquippedPet(player) {
-  if (!player || player.equippedPetId === null || player.equippedPetId === undefined) return null;
-  return player.pets.find(pet => String(pet.id) === String(player.equippedPetId)) || null;
+  if (!player) return null;
+  if (!Array.isArray(player.pets)) player.pets = [];
+
+  if (player.equippedPetId !== null && player.equippedPetId !== undefined) {
+    const equipped = player.pets.find(pet => String(pet.id) === String(player.equippedPetId));
+    if (equipped) return equipped;
+  }
+
+  const fallback = player.pets.find(pet => getOwnedPetDefinition(pet)) || null;
+  if (fallback) {
+    player.equippedPetId = fallback.id;
+    return fallback;
+  }
+
+  player.equippedPetId = null;
+  return null;
 }
 
 function getLegacyCompanionLevelInfo(totalXp) {
@@ -14047,8 +14065,13 @@ function activityMonsterDexPayload(player) {
 function activityPlayerPayload(data, user) {
   const player = getPlayer(data, user.id);
   const profile = ensureActivityProfile(player, user);
+  // Resolve/repair the equipped companion BEFORE building the Activity pet payload.
+  // This prevents the UI from pretending the first pet is active while Fetch sees none.
+  const authoritativeActivePet = getEquippedPet(player);
   const ownedPets = activityOwnedPetPayload(player);
-  const active = ownedPets.find(p => p.equipped) || ownedPets[0] || null;
+  const active = authoritativeActivePet
+    ? ownedPets.find(p => String(p.id) === String(authoritativeActivePet.id)) || null
+    : null;
   const standardDex = activityPetDexPayload(player, false);
   return {
     hunter: {
