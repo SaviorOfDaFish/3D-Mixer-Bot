@@ -4872,59 +4872,180 @@ function updateQuestProgress(player, type, monster = null) {
   });
 }
 
-function giveRandomDailyReward(player, data = null) {
+function giveRandomDailyReward(player) {
+  // H10.6.5 — Daily login rewards are free ITEMS, not Hunter Points.
+  // The goal is to reward checking in without making login claims a major
+  // source of competitive leaderboard points.
   const roll = Math.floor(Math.random() * 100) + 1;
 
-  if (roll <= 25) {
-    const points = applyCommunityPointBlessing(data || loadData(), 5);
-    player.points += points;
-    return `💰 +${points} Points`;
+  if (roll <= 28) {
+    player.captureItems.berry++;
+    return `🍓 ${CAPTURE_ITEMS.berry.name}`;
   }
 
-  if (roll <= 45) {
-    const points = applyCommunityPointBlessing(data || loadData(), 10);
-    player.points += points;
-    return `💰 +${points} Points`;
+  if (roll <= 50) {
+    player.captureItems.honey++;
+    return `🍯 ${CAPTURE_ITEMS.honey.name}`;
   }
 
-  if (roll <= 55) {
-    const points = applyCommunityPointBlessing(data || loadData(), 20);
-    player.points += points;
-    return `💰 +${points} Points`;
-  }
-
-  if (roll <= 68) {
+  if (roll <= 65) {
     player.bait.rare++;
     return "🪤 1 Rare Bait";
   }
 
-  if (roll <= 76) {
+  if (roll <= 77) {
+    player.captureItems.net++;
+    return `🕸️ ${CAPTURE_ITEMS.net.name}`;
+  }
+
+  if (roll <= 87) {
     player.bait.epic++;
     return "🪤 1 Epic Bait";
   }
 
-  if (roll <= 80) {
+  if (roll <= 94) {
     player.bait.legendary++;
-    return "🪤 1 Legendary Bait";
-  }
-
-  if (roll <= 90) {
-    player.captureItems.berry++;
-    return `${CAPTURE_ITEMS.berry.name}`;
-  }
-
-  if (roll <= 96) {
-    player.captureItems.honey++;
-    return `${CAPTURE_ITEMS.honey.name}`;
+    return "🌟 1 Legendary Bait";
   }
 
   if (roll <= 99) {
-    player.captureItems.net++;
-    return `${CAPTURE_ITEMS.net.name}`;
+    player.captureItems.masterCharm++;
+    return `✨ ${CAPTURE_ITEMS.masterCharm.name}`;
   }
 
+  // Tiny jackpot: one extra premium capture item in addition to the charm.
   player.captureItems.masterCharm++;
-  return `${CAPTURE_ITEMS.masterCharm.name}`;
+  player.captureItems.net++;
+  return `🎉 JACKPOT! ${CAPTURE_ITEMS.masterCharm.name} + ${CAPTURE_ITEMS.net.name}`;
+}
+
+
+// ==================== H10.6.6 ACTIVITY DAILY HUB ====================
+function h1066NextDailyResetAt(now = Date.now()) {
+  // Work in Mountain wall-clock time, then apply that local-clock delta to the
+  // actual instant. This keeps the Activity countdown aligned with the same
+  // 5:00 AM Mountain reset used by !daily and !claimdaily.
+  const realNow = new Date(now);
+  const mountainNow = new Date(realNow.toLocaleString("en-US", { timeZone: "America/Denver" }));
+  const mountainTarget = new Date(mountainNow.getTime());
+  mountainTarget.setHours(5, 0, 0, 0);
+  if (mountainNow.getHours() >= 5) mountainTarget.setDate(mountainTarget.getDate() + 1);
+  return now + (mountainTarget.getTime() - mountainNow.getTime());
+}
+
+function h1066DailyStatusPayload(player) {
+  resetDaily(player);
+  const quests = (player.dailyQuests || []).map(q => ({
+    id: q.id,
+    text: q.text,
+    progress: Math.max(0, Number(q.progress || 0)),
+    goal: Math.max(1, Number(q.goal || 1)),
+    reward: Math.max(0, Number(q.reward || 0)),
+    complete: Number(q.progress || 0) >= Number(q.goal || 1)
+  }));
+  const totalReward = quests.reduce((sum, q) => sum + q.reward, 0);
+  const completeCount = quests.filter(q => q.complete).length;
+  const allComplete = quests.length > 0 && completeCount === quests.length;
+  const reroll = getDailyRerollStatus(player);
+  return {
+    resetAt: h1066NextDailyResetAt(),
+    resetLabel: "5:00 AM Mountain Time",
+    login: {
+      claimed: hasClaimedDailyRewardToday(player),
+      canClaim: canClaimDaily() && !hasClaimedDailyRewardToday(player)
+    },
+    quests: {
+      entries: quests,
+      completeCount,
+      total: quests.length,
+      allComplete,
+      claimed: Boolean(player.dailyClaimed),
+      totalReward,
+      canClaim: canClaimDaily() && allComplete && !player.dailyClaimed,
+      reroll: {
+        available: Boolean(reroll.available) && !player.dailyClaimed && !allComplete,
+        costType: reroll.costType,
+        berryCost: reroll.costType === "berry" ? DAILY_SECOND_REROLL_BERRY_COST : 0,
+        berriesOwned: Number(player.captureItems?.berry || 0),
+        used: Math.max(0, Number(player.dailyRerollsUsed || 0)),
+        max: DAILY_MAX_REROLLS,
+        text: reroll.text.replace(/\*\*/g, "")
+      }
+    }
+  };
+}
+
+function h1066ActivityClaimLoginReward(user) {
+  const data = loadData();
+  const player = getPlayer(data, user.id);
+  resetDaily(player);
+  if (!canClaimDaily()) return { ok:false, error:"Daily rewards unlock at 5:00 AM Mountain Time." };
+  if (hasClaimedDailyRewardToday(player)) return { ok:false, code:"already_claimed", error:"You already claimed today's free Daily Login item." };
+  const reward = giveRandomDailyReward(player);
+  player.dailyReward = getResetDate();
+  saveData(data);
+  return {
+    ok:true,
+    reward,
+    daily:h1066DailyStatusPayload(player),
+    hunter:activityPlayerPayload(data,user).hunter,
+    inventory:activityPlayerPayload(data,user).phaseD.inventory
+  };
+}
+
+function h1066ActivityClaimQuestRewards(user) {
+  const data = loadData();
+  const player = getPlayer(data, user.id);
+  resetDaily(player);
+  if (!canClaimDaily()) return { ok:false, error:"Daily Quest rewards unlock at 5:00 AM Mountain Time." };
+  if (player.dailyClaimed) return { ok:false, code:"already_claimed", error:"You already claimed today's Daily Quest rewards." };
+  const complete = (player.dailyQuests || []).length > 0 && player.dailyQuests.every(q => q.progress >= q.goal);
+  if (!complete) return { ok:false, error:"Finish all three Daily Quests before claiming the rewards." };
+  const baseReward = player.dailyQuests.reduce((sum,q) => sum + Number(q.reward || 0), 0);
+  const reward = applyCommunityPointBlessing(data, baseReward);
+  player.points += reward;
+  addWeeklyProgress(data, player, reward);
+  player.dailyClaimed = true;
+  const bonusRewards = giveQuestBonusBait(player);
+  saveData(data);
+  return {
+    ok:true,
+    points:reward,
+    bonusRewards,
+    daily:h1066DailyStatusPayload(player),
+    hunter:activityPlayerPayload(data,user).hunter,
+    inventory:activityPlayerPayload(data,user).phaseD.inventory
+  };
+}
+
+function h1066ActivityRerollDaily(user) {
+  const data = loadData();
+  const player = getPlayer(data, user.id);
+  resetDaily(player);
+  if (player.dailyClaimed) return { ok:false, error:"Today's Daily Quest rewards have already been claimed." };
+  const unfinished=(player.dailyQuests||[]).filter(q=>q.progress<q.goal);
+  if (!unfinished.length) return { ok:false, error:"All of today's Daily Quests are already complete." };
+  const rerollStatus=getDailyRerollStatus(player);
+  if (!rerollStatus.available) return { ok:false, error:"You've used both Daily Quest rerolls for today." };
+  if (rerollStatus.costType === "berry") {
+    const berries=Number(player.captureItems?.berry||0);
+    if (berries < DAILY_SECOND_REROLL_BERRY_COST) return { ok:false, error:`Your second reroll costs ${DAILY_SECOND_REROLL_BERRY_COST} Hunter Berry, but you only have ${berries}.` };
+    player.captureItems.berry -= DAILY_SECOND_REROLL_BERRY_COST;
+  }
+  const result=rerollUnfinishedDailyQuests(player);
+  if (!result.changed) {
+    if (rerollStatus.costType === "berry") player.captureItems.berry += DAILY_SECOND_REROLL_BERRY_COST;
+    return { ok:false, error:"Replacement quests could not be generated. Nothing was charged." };
+  }
+  player.dailyRerollsUsed=Math.max(0,Number(player.dailyRerollsUsed||0))+1;
+  saveData(data);
+  return {
+    ok:true,
+    costType:rerollStatus.costType,
+    cost:rerollStatus.costType === "berry" ? DAILY_SECOND_REROLL_BERRY_COST : 0,
+    daily:h1066DailyStatusPayload(player),
+    inventory:activityPlayerPayload(data,user).phaseD.inventory
+  };
 }
 
 function unlockedAchievements(player) {
@@ -10918,7 +11039,7 @@ ${captureChoicesText(choices)}
 
     text += `\nReward: **+${totalReward} bonus points**`;
     text += `\nChance for bonus bait when claimed.`;
-    text += `\nClaim with \`!claimdaily\` when complete.`;
+    text += `\nClaim with \`!claimquests\` when complete.`;
     text += `\n\n🔄 **Daily Rerolls**`;
     text += `\n${rerollStatus.text}`;
     text += `\nUse \`!rerolldaily\` to replace unfinished challenges.`;
@@ -10940,7 +11061,7 @@ ${captureChoicesText(choices)}
     if (unfinished.length === 0) {
       return message.reply(
         "🎉 All of today's Daily Quests are already complete! " +
-        "Use `!claimdaily` to collect your reward."
+        "Use `!claimquests` to collect your reward."
       );
     }
 
@@ -11027,16 +11148,16 @@ ${captureChoicesText(choices)}
     return message.reply(text);
   }
 
-  if (command === "!claimdaily") {
+  if (command === "!claimquests" || command === "!claimquest" || command === "!claimdailyquests") {
   if (!canClaimDaily()) {
     return message.reply(
-      "🌙 Daily quest rewards can only be claimed between 5:00 AM and 11:59 PM MST."
+      "🌙 Daily Quest rewards reset at 5:00 AM Mountain Time. Come back after 5:00 AM!"
     );
   }
 
   if (player.dailyClaimed)
     return message.reply(
-      "You already claimed today's reward!"
+      "✅ You already claimed today's Daily Quest reward!"
     );
 
     const complete = player.dailyQuests.every(q => q.progress >= q.goal);
@@ -11059,7 +11180,7 @@ ${captureChoicesText(choices)}
     );
   }
 
-  if (command === "!dailyreward") {
+  if (command === "!claimdaily" || command === "!dailyreward") {
     if (!canClaimDaily()) {
       return message.reply(
         "🌙 Daily rewards reset every day at 5:00 AM Mountain Time. Come back after 5:00 AM!"
@@ -11068,17 +11189,17 @@ ${captureChoicesText(choices)}
 
     if (hasClaimedDailyRewardToday(player)) {
       return message.reply(
-        "🎁 You already claimed today's reward! It resets at 5:00 AM Mountain Time."
+        "🎁 You already claimed today's free Daily Login item! It resets at 5:00 AM Mountain Time."
       );
     }
 
-    const reward = giveRandomDailyReward(player, data);
+    const reward = giveRandomDailyReward(player);
 
     // Store the current 5:00 AM Mountain Time reset date instead of a rolling timestamp.
     player.dailyReward = getResetDate();
     saveData(data);
 
-    return message.reply(`🎁 **Daily Reward!**\n\nYou received:\n${reward}`);
+    return message.reply(`🎁 **DAILY LOGIN CLAIM!**\n\nYou received:\n${reward}\n\nCome back after **5:00 AM Mountain Time** tomorrow for another free item.`);
   }
 
   if (command === "!bait") {
@@ -11603,8 +11724,8 @@ ${captureChoicesText(choices)}
       `\`!ultrahunt\` — Join active Ultra event\n\`!relics\` — View Relics\n\`!world\` — View the current public World Status\n` +
       `\`!summon relic name\` — Summon an Ultra\n\n` +
       `🎯 **Daily & Events**\n` +
-      `\`!daily\` — Daily quests\n\`!claimdaily\` — Claim quest rewards\n` +
-      `\`!dailyreward\` — Login reward\n\`!events\` — Current event\n\n` +
+      `\`!daily\` — View Daily Quests\n\`!claimquests\` — Claim completed quest rewards\n` +
+      `\`!claimdaily\` — Claim your free daily login item\n\`!events\` — Current event\n\n` +
       `🤝 **Social & Notifications**\n` +
       `\`!trade @user your# their#\` — Trade monsters\n` +
       `\`!monsternotify on/off\` — Toggle reminders\n\n` +
@@ -11638,7 +11759,7 @@ ${captureChoicesText(choices)}
       `Successful hunts can uncover eggs. Incubate and hatch them to collect pets with passive abilities.\n` +
       `Use \`!pethelp\` for the complete companion guide.\n\n` +
       `🎯 **Daily Progress**\n` +
-      `Use \`!daily\`, \`!claimdaily\`, and \`!dailyreward\`.\n\n` +
+      `Use \`!daily\` to view quests, \`!claimquests\` after completing them, and \`!claimdaily\` for your free daily login item.\n\n` +
       `🪙 **Big Game Hunt**\n` +
       `Three times every week on different random days, a 2-hour Big Game Hunt begins between **3:30 PM and 8:00 PM Mountain Time** and the hunt cooldown becomes **30 minutes**. ` +
       `Successful catches award Hunt Tokens by rarity. The Top 3 earn **50 / 30 / 15 Hunter Points**, and everyone keeps their tokens.\n` +
@@ -14362,6 +14483,29 @@ const activityServer = http.createServer(async (req, res) => {
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter/share") {
         const result=await h106ShareHunterToDiscord(user);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/daily") {
+        const data=loadData();
+        const player=getPlayer(data,user.id);
+        resetDaily(player);
+        saveData(data);
+        return activityJson(res,{ok:true,daily:h1066DailyStatusPayload(player)});
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/daily/claim-login") {
+        const result=h1066ActivityClaimLoginReward(user);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/daily/claim-quests") {
+        const result=h1066ActivityClaimQuestRewards(user);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/daily/reroll") {
+        const result=h1066ActivityRerollDaily(user);
         return activityJson(res,result,result.ok?200:400);
       }
 

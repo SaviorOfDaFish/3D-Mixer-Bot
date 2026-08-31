@@ -1,0 +1,20 @@
+Monster Hunt H10.6.6 — Activity Daily Hub
+
+Adds a new Daily menu to the Discord Activity while preserving the H10.6.5 text commands.
+
+Activity features:
+- Home Daily tile with live status
+- Free Daily Login Reward claim button
+- Three Daily Quest cards with live progress bars
+- Claim Quest Rewards button
+- Reroll unfinished quests button (free first reroll, Hunter Berry second reroll)
+- Live countdown to the shared 5:00 AM America/Denver reset
+- Activity and !commands use the exact same persisted player fields
+
+Routes:
+GET /api/activity/daily
+POST /api/activity/daily/claim-login
+POST /api/activity/daily/claim-quests
+POST /api/activity/daily/reroll
+
+Cache bumped to v2030.

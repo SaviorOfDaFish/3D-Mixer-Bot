@@ -1,0 +1,31 @@
+MONSTER HUNT H10.6.5 — DAILY COMMAND RESTORE
+
+Commands:
+!daily
+  Shows the player's 3 Daily Quests, progress, total point reward, bonus-bait note,
+  and Daily Quest reroll status.
+
+!claimquests
+  Claims the Daily Quest reward after all 3 quests are complete.
+  Aliases: !claimquest, !claimdailyquests
+
+!claimdaily
+  Claims one FREE daily login item after the 5:00 AM America/Denver reset.
+  No quest completion is required. This is the command players use simply for
+  logging in/checking in each day.
+  Legacy alias retained: !dailyreward
+
+Daily login rewards are now ITEMS ONLY (no Hunter Points):
+- Hunter Berry: 28%
+- Sticky Honey: 22%
+- Rare Bait: 15%
+- Enchanted Net: 12%
+- Epic Bait: 10%
+- Legendary Bait: 7%
+- Master Charm: 5%
+- Jackpot Master Charm + Enchanted Net: 1%
+
+Daily Quests remain 3 random quests per reset and continue awarding their
+configured Hunter Point rewards plus the existing chance for bonus bait.
+
+Reset time remains 5:00 AM America/Denver.
