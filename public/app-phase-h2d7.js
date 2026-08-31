@@ -352,6 +352,7 @@ function navTo(screen) {
   document.getElementById("pageScroll").scrollTop = 0;
   if (screen === "eggs") refreshH2AEggData();
   if (screen === "inventory") refreshH2BInventory();
+  if (screen === "monsterdex") refreshMonsterDex();
   if (screen === "merchant") refreshH2BMerchant();
   if (screen === "events") refreshH2CLiveEvents(true);
   if (screen === "notifications") refreshH4NotificationPrefs();
@@ -706,6 +707,39 @@ document.getElementById("combineConfirmModal")?.addEventListener("click",e=>{if(
 document.getElementById("closeCombineResult")?.addEventListener("click",closeCombineResult);
 document.getElementById("combineResultDone")?.addEventListener("click",closeCombineResult);
 document.getElementById("combineResultModal")?.addEventListener("click",e=>{if(e.target.id==="combineResultModal") closeCombineResult();});
+
+let monsterDexFilter="All";
+function monsterDexArtPath(monster){ return monster?.imageUrl || (monster?.image ? `/assets/monsters/${monster.image}` : ""); }
+async function refreshMonsterDex(){
+  try{
+    const response=await activityFetch("/api/activity/sync");
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not sync Monster Dex.");
+    hunter=payload.hunter; gameData=payload.phaseD; renderMonsterDex();
+  }catch(error){ const host=document.getElementById("monsterDexHabitats"); if(host) host.innerHTML=`<div class="empty-state">❌ ${escapeHtml(error.message)}</div>`; }
+}
+function renderMonsterDex(){
+  if(!gameData) return;
+  const all=Array.isArray(gameData.monsterDex)?gameData.monsterDex:[];
+  const found=all.filter(m=>m.discovered).length;
+  const progress=document.getElementById("monsterDexProgress"); if(progress) progress.textContent=`${found}/${all.length}`;
+  const homeCount=document.getElementById("monsterdexCount"); if(homeCount) homeCount.textContent=`${found}/${all.length} discovered`;
+  const filters=["All",...new Set(all.map(m=>m.category||"Habitat"))];
+  const filterHost=document.getElementById("monsterDexFilters");
+  if(filterHost) filterHost.innerHTML=filters.map(f=>`<button class="filter-chip ${monsterDexFilter===f?"active":""}" data-monster-dex-filter="${escapeHtml(f)}">${escapeHtml(f)}</button>`).join("");
+  const visible=monsterDexFilter==="All"?all:all.filter(m=>(m.category||"Habitat")===monsterDexFilter);
+  const groups=[];
+  for(const m of visible){ const source=m.source||m.habitat||"Unknown"; let g=groups.find(x=>x.source===source); if(!g){g={source,monsters:[]};groups.push(g)} g.monsters.push(m); }
+  const host=document.getElementById("monsterDexHabitats"); if(!host) return;
+  host.innerHTML=groups.map(g=>{
+    const count=g.monsters.filter(m=>m.discovered).length;
+    return `<section class="habitat-section monster-dex-section"><div class="habitat-heading"><h3>🗺️ ${escapeHtml(g.source)}</h3><span class="level-pill">${count}/${g.monsters.length}</span></div><div class="monster-dex-grid">${g.monsters.map(m=>{
+      const discovered=!!m.discovered, art=monsterDexArtPath(m);
+      return `<article class="monster-dex-card ${discovered?"":"locked"}" data-rarity="${escapeHtml(m.rarity)}"><div class="monster-dex-portrait">${discovered&&art?`<img src="${art}" alt="${escapeHtml(m.name)} art">`:`<span class="monster-dex-question">?</span>`}</div><div class="monster-dex-body"><span class="rarity-pill">${discovered?escapeHtml(m.rarity):"???"}</span><h3>${discovered?escapeHtml(m.name):"Undiscovered"}</h3><p>${discovered?`📍 ${escapeHtml(m.source||m.habitat||"Unknown")}`:"Keep hunting to discover this monster."}</p>${discovered?`<small>Captured ${Number(m.catches||0)} time${Number(m.catches||0)===1?"":"s"}</small>`:""}</div></article>`;
+    }).join("")}</div></section>`;
+  }).join("") || `<div class="empty-state">No monsters in this category.</div>`;
+}
+document.addEventListener("click",e=>{ const btn=e.target.closest("[data-monster-dex-filter]"); if(!btn)return; monsterDexFilter=btn.dataset.monsterDexFilter||"All"; renderMonsterDex(); });
 
 function renderDex() {
   if (!gameData) return;
@@ -2134,6 +2168,7 @@ async function boot() {
     renderPetProgressionBanner();
     renderPets();
     renderDex();
+    renderMonsterDex();
     renderInventoryFilters();
     renderInventory();
     renderCollection();
