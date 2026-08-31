@@ -354,6 +354,7 @@ function navTo(screen) {
   if (screen === "inventory") refreshH2BInventory();
   if (screen === "monsterdex") refreshMonsterDex();
   if (screen === "players") h106RefreshPlayers();
+  if (screen === "daily") h1066RefreshDaily();
   if (screen === "merchant") refreshH2BMerchant();
   if (screen === "events") refreshH2CLiveEvents(true);
   if (screen === "notifications") refreshH4NotificationPrefs();
@@ -816,6 +817,75 @@ document.getElementById("activityResultClose")?.addEventListener("click",()=>{
   document.getElementById("activityResultPopup")?.classList.add("hidden");
   clearTimeout(activityResultTimer);
 });
+
+
+// H10.6.4 — Cosmetic unlock toast stack.
+let h1064CosmeticUnlockTimer=null;
+let h1064CosmeticUnlockBusy=false;
+function h1064CosmeticIcon(slot){
+  return ({Cloak:"🧥",Headgear:"🪖",Outfit:"🥋",Weapon:"⚔️","Hair Style":"💇"}[slot]||"✨");
+}
+function h1064EnsureCosmeticToastHost(){
+  let host=document.getElementById("cosmeticUnlockToastHost");
+  if(host) return host;
+  host=document.createElement("div");
+  host.id="cosmeticUnlockToastHost";
+  host.className="cosmetic-unlock-toast-host";
+  host.setAttribute("aria-live","polite");
+  document.body.appendChild(host);
+  return host;
+}
+function h1064ShowCosmeticUnlock(cosmetic){
+  const host=h1064EnsureCosmeticToastHost();
+  const toast=document.createElement("div");
+  toast.className="cosmetic-unlock-toast";
+  toast.innerHTML=`
+    <div class="cosmetic-unlock-burst">✨</div>
+    <div class="cosmetic-unlock-icon">${h1064CosmeticIcon(cosmetic.slot)}</div>
+    <div class="cosmetic-unlock-copy">
+      <small>NEW COSMETIC UNLOCKED!</small>
+      <strong>${escapeHtml(cosmetic.name||"New Cosmetic")}</strong>
+      <span>${escapeHtml(cosmetic.slot||"Cosmetic")} • ${escapeHtml(cosmetic.requirement||"Achievement unlocked")}</span>
+      <em>Available now in Character Creation.</em>
+    </div>
+    <button type="button" class="cosmetic-unlock-close" aria-label="Dismiss">×</button>`;
+  host.appendChild(toast);
+  requestAnimationFrame(()=>toast.classList.add("show"));
+  const dismiss=()=>{
+    toast.classList.remove("show");
+    setTimeout(()=>toast.remove(),300);
+  };
+  toast.querySelector(".cosmetic-unlock-close")?.addEventListener("click",dismiss);
+  setTimeout(dismiss,8500);
+}
+async function h1064CheckCosmeticUnlocks(){
+  if(h1064CosmeticUnlockBusy) return;
+  h1064CosmeticUnlockBusy=true;
+  try{
+    const response=await activityFetch("/api/activity/cosmetic-unlocks");
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) return;
+    const unlocks=Array.isArray(payload.unlocks)?payload.unlocks:[];
+    unlocks.forEach((cosmetic,index)=>setTimeout(()=>h1064ShowCosmeticUnlock(cosmetic),index*650));
+    if(unlocks.length){
+      // Refresh the Collection cards so the newly unlocked cosmetic visibly changes immediately.
+      try{
+        const syncRes=await activityFetch("/api/activity/sync");
+        const sync=await syncRes.json();
+        if(syncRes.ok&&sync.ok){
+          hunter=sync.hunter; gameData=sync.phaseD;
+          if(currentScreen==="collection") renderCollection();
+        }
+      }catch(_error){}
+    }
+  }catch(_error){}
+  finally{h1064CosmeticUnlockBusy=false;}
+}
+function h1064StartCosmeticUnlockWatcher(){
+  clearInterval(h1064CosmeticUnlockTimer);
+  h1064CheckCosmeticUnlocks();
+  h1064CosmeticUnlockTimer=setInterval(h1064CheckCosmeticUnlocks,5000);
+}
 
 async function refreshH2BInventory() {
   try {
@@ -2173,6 +2243,8 @@ async function boot() {
     renderInventoryFilters();
     renderInventory();
     renderCollection();
+    h1066RefreshDaily(false);
+    h1064StartCosmeticUnlockWatcher();
     renderActivePet();
     renderActivityFetch(hunter.fetch);
     startH5FetchPolling();
@@ -3569,3 +3641,121 @@ async function h106RefreshPlayers(){
   }finally{clearTimeout(timeout);}
 }
 document.getElementById("h106ShareHunter")?.addEventListener("click",h106ShareHunter);
+
+
+// ==================== H10.6.6 ACTIVITY DAILY HUB ====================
+let h1066DailyState=null;
+let h1066DailyTimer=null;
+let h1066DailyBusy=false;
+
+function h1066Countdown(ms){
+  const total=Math.max(0,Math.ceil(ms/1000));
+  const h=Math.floor(total/3600);
+  const m=Math.floor((total%3600)/60);
+  const s=total%60;
+  return h>0?`${h}h ${m}m`:`${m}m ${s}s`;
+}
+function h1066SetFeedback(id,text,kind=""){
+  const el=document.getElementById(id); if(!el)return;
+  el.className=`h1066-feedback ${kind}`.trim();
+  el.textContent=text||"";
+}
+function h1066RenderDaily(){
+  const daily=h1066DailyState;
+  if(!daily) return;
+  const now=Date.now();
+  const resetIn=Math.max(0,Number(daily.resetAt||0)-now);
+  const countdown=h1066Countdown(resetIn);
+  const top=document.getElementById("h1066DailyResetTop"); if(top) top.textContent=countdown;
+  const loginCountdown=document.getElementById("h1066LoginCountdown"); if(loginCountdown) loginCountdown.textContent=countdown;
+
+  const loginPill=document.getElementById("h1066LoginPill");
+  const loginBtn=document.getElementById("h1066ClaimLogin");
+  if(loginPill){loginPill.textContent=daily.login?.claimed?"✅ Claimed":"🎁 Ready";loginPill.classList.toggle("done",!!daily.login?.claimed);}
+  if(loginBtn){loginBtn.disabled=h1066DailyBusy||!daily.login?.canClaim;loginBtn.textContent=daily.login?.claimed?"✅ Daily Reward Claimed":"🎁 Claim Daily Reward";}
+
+  const quests=daily.quests||{};
+  const entries=Array.isArray(quests.entries)?quests.entries:[];
+  const questPill=document.getElementById("h1066QuestPill");
+  if(questPill){questPill.textContent=quests.claimed?"✅ Claimed":`${Number(quests.completeCount||0)}/${Number(quests.total||entries.length||3)}`;questPill.classList.toggle("done",!!quests.claimed);}
+  const list=document.getElementById("h1066QuestList");
+  if(list) list.innerHTML=entries.map(q=>{
+    const pct=Math.max(0,Math.min(100,(Number(q.progress||0)/Math.max(1,Number(q.goal||1)))*100));
+    return `<article class="h1066-quest-row ${q.complete?"complete":""}"><div class="h1066-quest-icon">${q.complete?"✅":"🎯"}</div><div class="h1066-quest-copy"><div><b>${escapeHtml(q.text)}</b><span>${Number(q.progress||0)}/${Number(q.goal||0)}</span></div><div class="h1066-progress"><i style="width:${pct}%"></i></div><small>+${Number(q.reward||0)} Hunter Points toward the completion reward</small></div></article>`;
+  }).join("")||'<div class="empty-state">No Daily Quests loaded.</div>';
+  const reward=document.getElementById("h1066QuestReward"); if(reward) reward.textContent=`⭐ +${Number(quests.totalReward||0)} Hunter Points`;
+  const claim=document.getElementById("h1066ClaimQuests");
+  if(claim){claim.disabled=h1066DailyBusy||!quests.canClaim;claim.textContent=quests.claimed?"✅ Quest Rewards Claimed":"🏆 Claim Quest Rewards";}
+  const reroll=document.getElementById("h1066RerollQuests");
+  if(reroll){reroll.disabled=h1066DailyBusy||!quests.reroll?.available;reroll.textContent=quests.reroll?.costType==="berry"?`🍓 Reroll (${Number(quests.reroll.berryCost||1)} Berry)`:"🔄 Reroll Unfinished";}
+  const note=document.getElementById("h1066RerollNote"); if(note) note.textContent=quests.reroll?.text||"No rerolls remaining today.";
+
+  const home=document.getElementById("dailyHomeStatus");
+  if(home){
+    if(!daily.login?.claimed) home.textContent="🎁 Daily reward ready!";
+    else if(quests.canClaim) home.textContent="🏆 Quest rewards ready!";
+    else if(quests.claimed) home.textContent="✅ Daily complete";
+    else home.textContent=`🎯 ${Number(quests.completeCount||0)}/${Number(quests.total||3)} quests complete`;
+  }
+}
+function h1066StartDailyTimer(){
+  clearInterval(h1066DailyTimer);
+  h1066DailyTimer=setInterval(()=>{
+    if(h1066DailyState){
+      if(Number(h1066DailyState.resetAt||0)<=Date.now()) h1066RefreshDaily(false);
+      else h1066RenderDaily();
+    }
+  },1000);
+}
+async function h1066RefreshDaily(showLoading=true){
+  if(h1066DailyBusy && showLoading) return;
+  if(showLoading){
+    const list=document.getElementById("h1066QuestList"); if(list&&!h1066DailyState) list.innerHTML='<p class="muted">Loading quests…</p>';
+  }
+  try{
+    const response=await activityFetch("/api/activity/daily",{cache:"no-store"});
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not load Daily rewards.");
+    h1066DailyState=payload.daily;
+    h1066RenderDaily();
+    h1066StartDailyTimer();
+  }catch(error){
+    const list=document.getElementById("h1066QuestList"); if(list) list.innerHTML=`<div class="empty-state">❌ ${escapeHtml(error.message)}</div>`;
+    const home=document.getElementById("dailyHomeStatus"); if(home) home.textContent="Daily unavailable";
+  }
+}
+async function h1066DailyAction(endpoint,buttonId,feedbackId,successTitle){
+  if(h1066DailyBusy) return;
+  h1066DailyBusy=true; h1066RenderDaily();
+  const btn=document.getElementById(buttonId); const original=btn?.textContent;
+  if(btn) btn.textContent="Working…";
+  h1066SetFeedback(feedbackId,"");
+  try{
+    const response=await activityFetch(endpoint,{method:"POST"});
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Daily action failed.");
+    if(payload.daily) h1066DailyState=payload.daily;
+    if(payload.hunter){
+      hunter=payload.hunter;
+      const points=document.getElementById("points"); if(points) points.textContent=hunter.points;
+      const tokens=document.getElementById("tokens"); if(tokens) tokens.textContent=hunter.tokens;
+    }
+    if(gameData&&Array.isArray(payload.inventory)) gameData.inventory=payload.inventory;
+    h1066RenderDaily();
+    let detail="";
+    if(payload.reward) detail=payload.reward;
+    else if(payload.points!=null) detail=`+${Number(payload.points)} Hunter Points${payload.bonusRewards?.length?` • ${payload.bonusRewards.join(" • ")}`:""}`;
+    else if(payload.costType) detail=payload.costType==="berry"?`Spent ${Number(payload.cost||1)} Hunter Berry.`:"Free reroll used.";
+    h1066SetFeedback(feedbackId,`✅ ${detail||successTitle}`,"success");
+    if(typeof showActivityResult==="function") showActivityResult("🎯",successTitle,detail||"Daily updated.");
+  }catch(error){
+    h1066SetFeedback(feedbackId,`❌ ${error.message}`,"error");
+  }finally{
+    h1066DailyBusy=false;
+    if(btn&&original) btn.textContent=original;
+    if(h1066DailyState) h1066RenderDaily();
+  }
+}
+document.getElementById("h1066ClaimLogin")?.addEventListener("click",()=>h1066DailyAction("/api/activity/daily/claim-login","h1066ClaimLogin","h1066LoginFeedback","Daily Reward Claimed!"));
+document.getElementById("h1066ClaimQuests")?.addEventListener("click",()=>h1066DailyAction("/api/activity/daily/claim-quests","h1066ClaimQuests","h1066QuestFeedback","Daily Quests Complete!"));
+document.getElementById("h1066RerollQuests")?.addEventListener("click",()=>h1066DailyAction("/api/activity/daily/reroll","h1066RerollQuests","h1066QuestFeedback","Daily Quests Rerolled!"));
