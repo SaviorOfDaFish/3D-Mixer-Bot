@@ -2796,7 +2796,20 @@ function h8CreatorOptionLabel(option){
 
 function h8BuildSelect(category){
   const select=document.getElementById(H8_SELECT_IDS[category]);
-  const options=h8CreatorData?.categories?.[category]||[];
+  let options=h8CreatorData?.categories?.[category]||[];
+  if(category==="skinTone" && !options.length){
+    options=[
+      {value:"very_fair",label:"Very Fair",unlocked:true},{value:"fair",label:"Fair",unlocked:true},{value:"light",label:"Light",unlocked:true},
+      {value:"light_medium",label:"Light-Medium",unlocked:true},{value:"medium",label:"Medium",unlocked:true},{value:"tan",label:"Tan",unlocked:true},
+      {value:"medium_deep",label:"Medium-Deep",unlocked:true},{value:"deep",label:"Deep",unlocked:true},{value:"very_deep",label:"Very Deep",unlocked:true},
+      {value:"ash_gray",label:"Fantasy — Ash Gray",unlocked:true},{value:"crimson",label:"Fantasy — Crimson",unlocked:true},
+      {value:"emerald",label:"Fantasy — Emerald Green",unlocked:true},{value:"azure",label:"Fantasy — Azure Blue",unlocked:true},
+      {value:"violet_skin",label:"Fantasy — Violet",unlocked:true},{value:"obsidian",label:"Fantasy — Obsidian",unlocked:true},
+      {value:"moonlight",label:"Fantasy — Pale Moonlight",unlocked:true},{value:"golden_skin",label:"Fantasy — Golden",unlocked:true},
+      {value:"copper_skin",label:"Fantasy — Copper",unlocked:true}
+    ];
+    h8CreatorData.categories.skinTone=options;
+  }
   if(!select) return;
   select.innerHTML=options.map(option=>
     `<option value="${escapeHtml(option.value)}" ${option.unlocked?"":"disabled"}>${escapeHtml(h8CreatorOptionLabel(option))}</option>`
@@ -2908,7 +2921,9 @@ async function h8OpenCreator(){
     const payload=await response.json();
     if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not load Hunter Creator.");
     h8CreatorData=payload;
+    if(!h8CreatorData.categories) h8CreatorData.categories={};
     h8CreatorSelection={...payload.draft,extras:Array.isArray(payload.draft?.extras)?payload.draft.extras:[]};
+    if(!h8CreatorSelection.skinTone) h8CreatorSelection.skinTone="medium";
     Object.keys(H8_SELECT_IDS).forEach(h8BuildSelect);
     h82RenderExtras();
     Object.values(H8_SELECT_IDS).forEach(id=>{
@@ -3508,7 +3523,8 @@ setTimeout(h93LoadAuthoritativeTutorialState,2300);
 })();
 
 
-// ===== H10.6 PLAYERS GALLERY + CHARACTER SHARE =====
+// ===== H10.6.1 PLAYERS GALLERY + CHARACTER SHARE FIX =====
+let h106LastGallery=[];
 async function h106ShareHunter(){
   const btn=document.getElementById("h106ShareHunter");
   const status=document.getElementById("h106ShareStatus");
@@ -3522,19 +3538,34 @@ async function h106ShareHunter(){
   }catch(error){if(status)status.textContent=`❌ ${error.message}`;}
   finally{if(btn){btn.disabled=false;btn.textContent="📣 Share My Hunter";}}
 }
+function h106RenderPlayers(players){
+  const grid=document.getElementById("h106PlayerGrid"); if(!grid)return;
+  h106LastGallery=Array.isArray(players)?players:[];
+  grid.innerHTML=h106LastGallery.length?h106LastGallery.map(p=>`<article class="h106-player-card ${p.isYou?'is-you':''}">
+    <div class="h106-player-art"><img src="${escapeHtml(activityProxyUrl(p.imageUrl))}" alt="${escapeHtml(p.name)}'s Hunter" loading="lazy"></div>
+    <div class="h106-player-copy"><p class="eyebrow">${p.isYou?'YOU':'MONSTER HUNTER'}</p><h3>${escapeHtml(p.name)}</h3>
+    <p><b>Level ${Number(p.level||1)}</b> • ${escapeHtml(p.title||'Novice Hunter')}</p>
+    <small>${escapeHtml([p.labels?.archetype,p.labels?.outfit,p.labels?.weapon].filter(Boolean).join(' • ')||'Custom Hunter')}</small></div>
+  </article>`).join(''):'<div class="panel"><h3>No Hunters Shared Yet</h3><p class="muted">Create and equip an AI Hunter to appear in the Players gallery.</p></div>';
+}
 async function h106RefreshPlayers(){
   const grid=document.getElementById("h106PlayerGrid"); if(!grid)return;
-  grid.innerHTML='<p class="muted">Loading hunters…</p>';
+  if(h106LastGallery.length) h106RenderPlayers(h106LastGallery);
+  else grid.innerHTML='<p class="muted">Loading hunters…</p>';
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),8000);
   try{
-    const response=await activityFetch("/api/activity/players"); const payload=await response.json();
-    if(!response.ok||!payload.ok)throw new Error(payload.error||"Could not load players.");
-    const players=payload.players||[];
-    grid.innerHTML=players.length?players.map(p=>`<article class="h106-player-card ${p.isYou?'is-you':''}">
-      <div class="h106-player-art"><img src="${escapeHtml(activityProxyUrl(p.imageUrl))}" alt="${escapeHtml(p.name)}'s Hunter"></div>
-      <div class="h106-player-copy"><p class="eyebrow">${p.isYou?'YOU':'MONSTER HUNTER'}</p><h3>${escapeHtml(p.name)}</h3>
-      <p><b>Level ${Number(p.level||1)}</b> • ${escapeHtml(p.title||'Novice Hunter')}</p>
-      <small>${escapeHtml([p.labels?.archetype,p.labels?.outfit,p.labels?.weapon].filter(Boolean).join(' • ')||'Custom Hunter')}</small></div>
-    </article>`).join(''):'<div class="panel"><h3>No Hunters Shared Yet</h3><p class="muted">Create and equip an AI Hunter to appear in the Players gallery.</p></div>';
-  }catch(error){grid.innerHTML=`<p class="muted">❌ ${escapeHtml(error.message)}</p>`;}
+    const response=await activityFetch("/api/activity/players",{signal:controller.signal,cache:"no-store"});
+    const text=await response.text();
+    let payload={}; try{payload=JSON.parse(text);}catch{throw new Error(`Gallery API returned HTTP ${response.status}. Deploy the complete H10.6.1 patch, including index.js.`);}
+    if(!response.ok||!payload.ok)throw new Error(payload.error||`Could not load players (HTTP ${response.status}).`);
+    h106RenderPlayers(payload.players||[]);
+    const status=document.getElementById("h106ShareStatus");
+    if(status && !status.textContent) status.textContent=`Gallery connected • ${payload.build||"server"}`;
+  }catch(error){
+    const message=error?.name==="AbortError"?"Player gallery timed out. Make sure the H10.6.1 index.js was deployed with the Activity files.":error.message;
+    grid.innerHTML=`<div class="panel"><h3>Gallery couldn't connect</h3><p class="muted">❌ ${escapeHtml(message)}</p><button class="secondary" type="button" id="h106RetryPlayers">↻ Retry</button></div>`;
+    document.getElementById("h106RetryPlayers")?.addEventListener("click",h106RefreshPlayers);
+  }finally{clearTimeout(timeout);}
 }
 document.getElementById("h106ShareHunter")?.addEventListener("click",h106ShareHunter);
