@@ -3005,6 +3005,23 @@ function h32FailureEffects(player,itemKey,monster){
   h32ClearCurrent(player); return {messages,persist};
 }
 function h32BaitSave(player,usedBait){ if(!usedBait) return ''; const rank=h32AbilityRank(player,'baitSaver'); if(rank && Math.random()*100<h3AbilityValue('baitSaver',rank)){ player.bait[usedBait]=(player.bait[usedBait]||0)+1; return `\n🧲 **Bait Saver:** Your ${usedBait} bait was preserved!`; } return ''; }
+
+function consumeSelectedBaitForHunt(player){
+  const type = String(player?.activeBait || '').toLowerCase();
+  if (!type) return { ok:true, usedBait:null };
+  if (!["rare","epic","legendary"].includes(type)) {
+    player.activeBait = null;
+    return { ok:true, usedBait:null };
+  }
+  const owned = Number(player?.bait?.[type] || 0);
+  if (owned <= 0) {
+    player.activeBait = null;
+    return { ok:false, code:"bait_missing", message:`You no longer have any ${type} bait. Choose another lure before hunting.` };
+  }
+  player.bait[type] = owned - 1;
+  player.activeBait = null;
+  return { ok:true, usedBait:type };
+}
 function h32AbilitySummary(player){
   const pet=getEquippedPet(player); if(!pet) return [];
   return getPetAbilityEntries(pet).map(e=>({key:e.ability,name:h3AbilityDef(e.ability).name,icon:h3AbilityDef(e.ability).icon,rank:h3RankRoman(e.level),effect:h3AbilityEffectText(e.ability,e.level),natural:Boolean(e.natural)}));
@@ -10458,7 +10475,12 @@ ${captureChoicesText(choices)}
       return message.reply(`⏳ You can hunt again in **${formatTime(timeLeft)}**.`);
     }
 
-    const usedBait = player.activeBait;
+    const baitUse = consumeSelectedBaitForHunt(player);
+    if (!baitUse.ok) {
+      saveData(data);
+      return message.reply(`❌ ${baitUse.message}`);
+    }
+    const usedBait = baitUse.usedBait;
     const signatureHuntText = prepareSignatureForHunt(player);
     const h3HuntEffects = h32PrepareHunt(player,data,message.author.id);
     let monster = getRandomMonsterForPlayer(player, data, message.author.id);
@@ -10469,7 +10491,6 @@ ${captureChoicesText(choices)}
     const chanceInfo = calculateCaptureChance(player, monster, null, data, message.author.id);
 
     player.currentMonster = monster;
-    player.activeBait = null;
     const h3BaitSaveText = h32BaitSave(player,usedBait);
     player.lastHunt = now;
     const huntSig = getSignaturePet(player);
@@ -11354,12 +11375,11 @@ ${captureChoicesText(choices)}
 
     if (player.bait[type] <= 0) return message.reply(`You don't have any ${type} bait.`);
 
-    player.bait[type]--;
     player.activeBait = type;
 
     saveData(data);
 
-    return message.reply(`🪤 **${type.toUpperCase()} bait activated!**\nYour next hunt has improved odds.`);
+    return message.reply(`🪤 **${type.toUpperCase()} bait selected!**\nIt will be consumed only when you actually start your next hunt.`);
   }
 
   if (command === "!events") {
@@ -14224,7 +14244,12 @@ async function activityStartNormalHunt(user) {
   const timeLeft = huntCooldown - (now - Number(player.lastHunt || 0));
   if (timeLeft > 0) return { ok:false, code:"cooldown", timeLeft, readyAt:Number(player.lastHunt || 0) + huntCooldown };
 
-  const usedBait = player.activeBait;
+  const baitUse = consumeSelectedBaitForHunt(player);
+  if (!baitUse.ok) {
+    saveData(data);
+    return { ok:false, code:baitUse.code, message:baitUse.message, player:activityPlayerPayload(data, user).hunter };
+  }
+  const usedBait = baitUse.usedBait;
   prepareSignatureForHunt(player);
   const h3HuntEffects=h32PrepareHunt(player,data,user.id);
   let monster = getRandomMonsterForPlayer(player, data, user.id);
@@ -14235,7 +14260,6 @@ async function activityStartNormalHunt(user) {
   const chanceInfo = calculateCaptureChance(player, monster, null, data, user.id);
 
   player.currentMonster = monster;
-  player.activeBait = null;
   const h3BaitSaveText=h32BaitSave(player,usedBait);
   player.lastHunt = now;
   player.reminderState.channelId = MONSTER_CHANNEL_ID;
@@ -14667,7 +14691,8 @@ const activityServer = http.createServer(async (req, res) => {
         } else {
           if (!["rare","epic","legendary"].includes(type)) return activityJson(res, { error:"Invalid bait type." }, 400);
           if (Number(player.bait?.[type] || 0) <= 0) return activityJson(res, { error:`You do not have any ${type} bait.` }, 400);
-          player.bait[type]--;
+          // H10.6.11: selecting bait only arms it for the next hunt.
+          // Inventory is not consumed until /api/activity/hunt/start actually begins the hunt.
           player.activeBait = type;
         }
         saveData(data);
