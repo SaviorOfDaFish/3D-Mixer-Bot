@@ -2271,9 +2271,9 @@ renderLureSelector = function() {
   const bait = hunter.bait || {rare:0,epic:0,legendary:0};
   const lures = [
     {key:"none",name:"No Lure",icon:"🏹",count:null,desc:"Use normal encounter odds."},
-    {key:"rare",name:"Rare Bait",icon:"🔵",count:Number(bait.rare||0),desc:"Improves Rare odds."},
-    {key:"epic",name:"Epic Bait",icon:"🟣",count:Number(bait.epic||0),desc:"Improves Epic odds."},
-    {key:"legendary",name:"Legendary Bait",icon:"🟠",count:Number(bait.legendary||0),desc:"Improves Legendary odds."}
+    {key:"rare",name:"Rare Bait",icon:"🔵",count:Number(bait.rare||0),desc:"Select for your next hunt. Consumed when Hunt starts."},
+    {key:"epic",name:"Epic Bait",icon:"🟣",count:Number(bait.epic||0),desc:"Select for your next hunt. Consumed when Hunt starts."},
+    {key:"legendary",name:"Legendary Bait",icon:"🟠",count:Number(bait.legendary||0),desc:"Select for your next hunt. Consumed when Hunt starts."}
   ];
   selectedLureKey = hunter.activeBait || "none";
   grid.innerHTML = lures.map(x => `
