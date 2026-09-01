@@ -213,7 +213,7 @@ const WORLD_STORY_PROCESS_BOOT_AT = Date.now();
 
 const SEASON_TIMEZONE = process.env.SEASON_TIMEZONE || "America/Denver";
 const SEASON_ANNOUNCEMENT_CHANNEL_ID = process.env.SEASON_ANNOUNCEMENT_CHANNEL_ID || "1521536122239586456";
-const SEASON_HUNT_CHANNEL_ID = process.env.SEASON_HUNT_CHANNEL_ID || "1533218205496115471";
+const SEASON_HUNT_CHANNEL_ID = process.env.SEASON_HUNT_CHANNEL_ID || "1520969860765450353";
 const SEASON_TEST_CHANNEL_ID = process.env.SEASON_TEST_CHANNEL_ID || "1520969860765450353";
 const SEASON_LIVE_START_MONTH = process.env.SEASON_LIVE_START_MONTH || "2026-09";
 const SEASON_AUTOMATION_ENABLED = String(process.env.SEASON_AUTOMATION_ENABLED || "true").toLowerCase() !== "false";
@@ -843,7 +843,7 @@ const CAPTURE_ITEMS = {
 const H4_PUBLIC_LAUNCH_AT = Date.parse("2026-09-01T06:00:00Z"); // Sep 1 00:00 MDT
 const H4_TEST_CHANNEL_ID = "1520969860765450353";
 const H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID = "1521536122239586456";
-const H4_PRODUCTION_HUNT_CHANNEL_ID = "1533218205496115471";
+const H4_PRODUCTION_HUNT_CHANNEL_ID = "1520969860765450353";
 const H4_PRODUCTION_EGGS_PETS_CHANNEL_ID = "1539117649840046140";
 
 const H4_HUNT_ALERT_ROLE_ID = "1543005506577113118";
@@ -6801,18 +6801,38 @@ async function h4PostSuccessfulActivityCatch(user, monster, rewards = {}) {
 }
 
 async function sendWorldEvent(sourceChannel, content, filename = null, pingEveryone = false) {
-  const source = await getAnnouncementChannel() || (sourceChannel?.isTextBased() ? sourceChannel : await getTextChannel(MONSTER_CHANNEL_ID));
+  h4RefreshChannelRouting();
+  const announcementChannel = await getAnnouncementChannel();
+  const huntChannel = await getTextChannel(MONSTER_CHANNEL_ID);
+  const fallback = sourceChannel?.isTextBased() ? sourceChannel : null;
+  const channels = [];
+  for (const channel of [announcementChannel, huntChannel, fallback]) {
+    if (channel?.isTextBased() && !channels.some(existing => String(existing.id) === String(channel.id))) channels.push(channel);
+  }
+  if (!channels.length) return null;
+
   const imagePath = filename ? findImageFile(filename) : null;
-  if (!source?.isTextBased()) return null;
   const finalContent = pingEveryone
     ? `${h4RoleMention(H4_WORLD_EVENT_ALERT_ROLE_ID)}\n\n${content}`
     : content;
-  const payload = {
-    content: finalContent,
-    allowedMentions: pingEveryone ? { roles: [H4_WORLD_EVENT_ALERT_ROLE_ID] } : { parse: [] }
+  const makePayload = () => {
+    const payload = {
+      content: finalContent,
+      allowedMentions: pingEveryone ? { roles: [H4_WORLD_EVENT_ALERT_ROLE_ID] } : { parse: [] }
+    };
+    if (imagePath) payload.files = [new AttachmentBuilder(imagePath)];
+    return payload;
   };
-  if (imagePath) payload.files = [new AttachmentBuilder(imagePath)];
-  return source.send(payload).catch(error => { console.error("World event send failed:", error); return null; });
+
+  let firstResult = null;
+  for (const channel of channels) {
+    const result = await channel.send(makePayload()).catch(error => {
+      console.error(`World event send failed in channel ${channel.id}:`, error);
+      return null;
+    });
+    if (!firstResult) firstResult = result;
+  }
+  return firstResult;
 }
 
 function nextWorldShatterSaturday(now = Date.now()) {
@@ -7690,14 +7710,36 @@ function merchantCollectionText(player, includeEffects = false) {
 
 async function sendRoleImageAnnouncement(channel, content, filename = null, pingRole = false) {
   if (!channel?.isTextBased()) return null;
+  h4RefreshChannelRouting();
   const imagePath = filename ? findImageFile(filename) : null;
   const roleId = typeof pingRole === "string" ? pingRole : (pingRole ? MONSTER_NOTIFY_ROLE : null);
-  const payload = {
-    content,
-    allowedMentions: roleId ? { roles: [roleId] } : { parse: [] }
+  const makePayload = () => {
+    const payload = {
+      content,
+      allowedMentions: roleId ? { roles: [roleId] } : { parse: [] }
+    };
+    if (imagePath) payload.files = [new AttachmentBuilder(imagePath)];
+    return payload;
   };
-  if (imagePath) payload.files = [new AttachmentBuilder(imagePath)];
-  return channel.send(payload).catch(error => { console.error("Monster Hunt announcement failed:", error); return null; });
+
+  const primary = await channel.send(makePayload()).catch(error => {
+    console.error("Monster Hunt announcement failed:", error);
+    return null;
+  });
+
+  // H10.6.10 Season 3 routing: anything the bot posts as an event/notification
+  // in #hunt-announcements is mirrored into the official #hunt-season-3 channel.
+  // IDs are de-duplicated so a shared/prelaunch route can never double-post.
+  if (String(channel.id) === String(H4_ANNOUNCEMENT_CHANNEL_ID) && String(MONSTER_CHANNEL_ID) !== String(channel.id)) {
+    const huntChannel = await getTextChannel(MONSTER_CHANNEL_ID);
+    if (huntChannel?.isTextBased()) {
+      await huntChannel.send(makePayload()).catch(error => {
+        console.error("Season 3 hunt-channel mirror failed:", error);
+        return null;
+      });
+    }
+  }
+  return primary;
 }
 
 async function announceBigGameStart(channel, data) {
