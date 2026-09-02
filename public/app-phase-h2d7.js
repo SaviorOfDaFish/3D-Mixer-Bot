@@ -2581,7 +2581,9 @@ async function h2dDoHunt(){
     activeHuntZone={
       key:"bounty",
       name:payload.isTarget ? "Bounty Target" : "Bounty Trail",
-      subtitle:payload.isTarget ? "Bounty Target Found" : "Bounty Trail Encounter"
+      subtitle:payload.isTarget
+        ? "Bounty Target Found"
+        : `🔎 Clue ${Number(payload.clues||1)} found • Target chance now ${Number(payload.trackingChance||20)}%`
     };
     huntAttemptNumber=1;
     currentEncounter={
@@ -2592,6 +2594,11 @@ async function h2dDoHunt(){
     selectedHuntMethod=null;
     selectedCaptureTool=null;
     currentRoll=null;
+
+    // The failed target-tracking roll already awards the clue/+10%. Refresh the
+    // shared event payload immediately so the Bounty card shows the new chance
+    // even before the decoy monster is captured.
+    if(!payload.isTarget) await refreshH2CLiveEvents(false);
 
     phaseFHunting.captureTools=(payload.choices||[]).map(c=>({
       key:c.itemKey||"none",
