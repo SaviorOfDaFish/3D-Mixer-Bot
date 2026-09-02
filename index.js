@@ -8563,6 +8563,49 @@ function isSeasonLocked(data) {
   return false;
 }
 
+// ==================== H10.6.12 DISCORD TEXT-GAME MASTER SWITCH ====================
+// Admin semantics requested for Season 3:
+//   !disableoff  -> turn Discord text gameplay OFF
+//   !disableon   -> turn Discord text gameplay ON
+// The Activity/API remains fully functional either way.
+function h10612TextGameplayEnabled(data) {
+  return data?.discordTextGameplayEnabled !== false;
+}
+
+function h10612IsTextGameplayCommand(command) {
+  const exact = new Set([
+    "!hunt", "!catch", "!bounty", "!bountystatus", "!bountyhunt", "!turninbounty",
+    "!eggs", "!egg", "!hatch", "!pets", "!petdex", "!pethelp", "!petshelp", "!unequippet",
+    "!fetch", "!daily", "!claimdaily", "!dailyreward", "!claimquests", "!claimquest",
+    "!claimdailyquests", "!dailyreroll", "!rerolldaily", "!bait", "!inventory", "!items",
+    "!captureitems", "!merchant", "!merchantstatus", "!merchantcollection", "!gamble",
+    "!accepttrade", "!declinetrade", "!tokens", "!titles", "!title", "!achievements",
+    "!collection", "!collectibles", "!lifetimecollection", "!dex", "!knowledge", "!relics",
+    "!events", "!distortionstatus", "!biggame", "!biggamestatus", "!story", "!world",
+    "!ultrahelp", "!ultrahunt"
+  ]);
+  if (exact.has(command)) return true;
+
+  const prefixes = [
+    "!catch ", "!hatch ", "!incubate", "!pet ", "!equippet ", "!namepet",
+    "!resetpetname", "!viewpet ", "!combine ", "!combinepet ", "!fetch ",
+    "!usebait ", "!use ", "!buy ", "!trade ", "!title ", "!titles ",
+    "!dex ", "!knowledge ", "!summon ", "!remind ", "!remindme "
+  ];
+  return prefixes.some(prefix => command.startsWith(prefix));
+}
+
+function h10612SyncDiscordIdentity(player, message) {
+  if (!player || !message?.author) return false;
+  const oldUsername = player.discordUsername || null;
+  const oldDisplayName = player.discordDisplayName || null;
+  const username = message.author.username || oldUsername || null;
+  const displayName = message.member?.displayName || message.author.globalName || username || oldDisplayName || null;
+  if (username) player.discordUsername = username;
+  if (displayName) player.discordDisplayName = displayName;
+  return oldUsername !== player.discordUsername || oldDisplayName !== player.discordDisplayName;
+}
+
 function isSeasonAdminBypassCommand(command) {
   const exact = new Set([
     "!resetseason", "!startnewseason", "!newseason",
@@ -8599,7 +8642,58 @@ client.on("messageCreate", async (message) => {
   const content = message.content.trim();
   const command = content.toLowerCase();
   const data = loadData();
+
+  // H10.6.12: persistent admin master switch for Discord text gameplay.
+  // IMPORTANT: the requested naming is intentionally preserved:
+  // !disableoff means turn text gameplay OFF; !disableon means turn it back ON.
+  if (command === "!disableoff" || command === "!disableon" || command === "!disablestatus") {
+    if (!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      return message.reply("Only admins can change the Monster Hunt Discord-command switch.");
+    }
+
+    if (command === "!disableoff") {
+      data.discordTextGameplayEnabled = false;
+      data.discordTextGameplayChangedAt = Date.now();
+      data.discordTextGameplayChangedBy = message.author.id;
+      saveData(data);
+      return message.reply(
+        "🔒 **Monster Hunt text gameplay is now DISABLED.**\n\n" +
+        "Player commands such as `!hunt`, `!bountyhunt`, `!eggs`, `!incubate`, `!hatch`, `!pets`, `!fetch`, Daily commands, Merchant commands, and other gameplay commands will direct players to the **Monster Hunt Activity** instead.\n\n" +
+        "✅ The Activity and automated events remain online.\n" +
+        "Use `!disableon` when you are ready to restore Discord text gameplay."
+      );
+    }
+
+    if (command === "!disableon") {
+      data.discordTextGameplayEnabled = true;
+      data.discordTextGameplayChangedAt = Date.now();
+      data.discordTextGameplayChangedBy = message.author.id;
+      saveData(data);
+      return message.reply(
+        "🔓 **Monster Hunt text gameplay is now ENABLED.**\n\n" +
+        "Players may use the Discord Monster Hunt gameplay commands again."
+      );
+    }
+
+    return message.reply(
+      `${h10612TextGameplayEnabled(data) ? "🔓 ENABLED" : "🔒 DISABLED"} — Monster Hunt Discord text gameplay is currently **${h10612TextGameplayEnabled(data) ? "ON" : "OFF"}**.`
+    );
+  }
+
   const player = getPlayer(data, message.author.id);
+  const identityChanged = h10612SyncDiscordIdentity(player, message);
+  if (identityChanged) saveData(data);
+
+  // When text gameplay is disabled, block only Monster Hunt player gameplay commands.
+  // Read-only/admin utilities such as !leaderboard, !moments, !rules/help and admin
+  // maintenance commands remain available. Activity endpoints are not affected.
+  if (!h10612TextGameplayEnabled(data) && h10612IsTextGameplayCommand(command)) {
+    return message.reply(
+      "🎮 **Monster Hunt Discord commands are temporarily disabled.**\n\n" +
+      "Please open the **Monster Hunt Activity** to hunt, manage pets and eggs, use Fetch, claim Dailies, visit Merchants, and continue your Season 3 progress.\n\n" +
+      "🏹 **Use the Activity to hunt right now.**"
+    );
+  }
 
   // H.2A.1: normal gameplay locks when a season ends, but admins keep
   // maintenance/testing access so they can prepare the next season.
