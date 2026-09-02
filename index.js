@@ -4106,7 +4106,10 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
         player.bountyTrophies[target.key] = Number(player.bountyTrophies[target.key] || 0) + 1;
         bountyCaptureResult = { targetName:target.name, trophy:target.trophy, image:target.image, target:true };
       }
-    } else if (monster.bountyTrailEncounter) {
+    } else if (monster.bountyTrailEncounter && !monster.bountyClueAlreadyAwarded) {
+      // Legacy trail encounters created before H10.6.13 can still award their clue
+      // on capture. New H10.6.13 encounters award the clue at the failed tracking
+      // attempt itself, so they are explicitly prevented from double-awarding here.
       const liveBounty = ensureBountyData(data);
       const target = bountyTarget(data);
       if (
@@ -10373,7 +10376,7 @@ ${captureChoicesText(choices)}
     const freshData=loadData();
     const freshPlayer=getPlayer(freshData,message.author.id);
     const monster=freshPlayer.currentMonster;
-    if(!monster?.bountyEncounter)return message.reply("The bounty trail vanished before the encounter could begin.");
+    if(!monster || (!monster.bountyEncounter && !monster.bountyTrailEncounter))return message.reply("The bounty trail vanished before the encounter could begin.");
 
     const choices=buildCaptureChoices(freshPlayer,monster);
     const validNumbers=choices.map(choice=>choice.number);
@@ -10383,7 +10386,7 @@ ${captureChoicesText(choices)}
       buildMonsterEmbed(
         monster,
         `${monster.bountyEncounter ? "📜 BOUNTY TARGET FOUND" : "🐾 BOUNTY TRAIL ENCOUNTER"} — ${monster.name}`,
-        `${monster.bountyEncounter ? "You tracked down the actual bounty target!" : "This creature crossed the bounty trail. Catch it to uncover a clue and improve your odds of finding the real target."}\n\n` +
+        `${monster.bountyEncounter ? "You tracked down the actual bounty target!" : `The target escaped your search, but you learned a clue: **${r.clue}**\n🎯 Your next Bounty Hunt target chance is now **${r.trackingChance}%**.\n\nA ${monster.name} crossed the trail too — catch it for normal hunt rewards.`}\n\n` +
         `**Base Capture Chance:** ${monster.chance}%\n` +
         `**Current Catch Chance:** ${chanceInfo.total}%\n\n` +
         `**Choose how to catch it:**\n${captureChoicesText(choices)}\n\n` +
@@ -13391,8 +13394,17 @@ async function performBountyHunt(data,id,ch=null){
      bountyTargetKey:target.key
    };
  }else{
-   // A wrong trail always produces a real normal monster encounter.
-   // It must be caught normally to earn the clue/tracking increase.
+   // H10.6.13: Every failed TARGET TRACKING roll immediately teaches this hunter a clue
+   // and improves their personal target chance by +10%. The decoy monster can still
+   // be caught normally for its regular rewards, but catching it must NOT award a
+   // second clue for the same Bounty Hunt attempt.
+   const improvedTracker=bountyTrackingReward(data,id);
+   const personalClue=target.clues[Math.min(target.clues.length-1,Math.max(0,improvedTracker.clues-1))];
+   // Keep the old global clueLevel moving for legacy text surfaces, while personal
+   // chance/clue progress remains authoritative in b.trackers[userId].
+   b.clueLevel=Math.min(target.clues.length-1,Math.max(Number(b.clueLevel||0),Math.min(target.clues.length-1,improvedTracker.clues-1)));
+
+   // A wrong trail still produces a real normal monster encounter.
    monster=getRandomMonsterForPlayer(player,data,id);
    // Keep Bounty trail decoys out of Distortion/World-Shatter special pools.
    if(monster.distortionEncounter||monster.worldShatterEncounter||monster.rarity==="Mythic"){
@@ -13402,7 +13414,9 @@ async function performBountyHunt(data,id,ch=null){
      ...monster,
      habitat:monster.habitat||"Hunting Grounds",
      bountyTrailEncounter:true,
-     bountyTargetKey:target.key
+     bountyTargetKey:target.key,
+     bountyClueAlreadyAwarded:true,
+     bountyClueText:personalClue
    };
  }
 
@@ -13434,6 +13448,7 @@ async function performBountyHunt(data,id,ch=null){
    choices,
    trackingChance:tracker.chance,
    clues:tracker.clues,
+   clue:!targetFound ? (monster.bountyClueText || target.clues[Math.min(target.clues.length-1,Math.max(0,tracker.clues-1))]) : null,
    participants:bountyCount(data),
    attempts:b.attempts,
    readyAt:now+BOUNTY_HUNT_COOLDOWN
