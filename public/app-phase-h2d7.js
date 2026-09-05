@@ -2486,6 +2486,7 @@ beginHuntFromZone = async function(zoneKey="normal") {
   currentEncounter = {
     ...payload.monster,
     baseChance:payload.baseChance,
+    chanceBreakdown:payload.chanceBreakdown || null,
     image:payload.monster.imageUrl || (payload.monster.image ? `${H102_DISTORTION_HABITATS.has(String(payload.monster.habitat||""))?"/assets/distortions":"/assets/monsters"}/${payload.monster.image}` : null)
   };
   hunter = {...hunter,...payload.player};
@@ -2497,8 +2498,30 @@ beginHuntFromZone = async function(zoneKey="normal") {
   }));
   populateEncounterPage();
   document.getElementById("encounterCatchChance").textContent = `${payload.chance}%`;
+  h10621ShowChanceBreakdown("encounterCatchChance", payload.chanceBreakdown);
   showHuntStep("encounter");
 };
+
+function h10621ChanceBreakdownHtml(info) {
+  if (!info) return "";
+  const rows=[];
+  const add=(label,value,icon="")=>{ const n=Number(value||0); if(n) rows.push(`<span>${icon}${escapeHtml(label)} <b>+${n}%</b></span>`); };
+  rows.push(`<span>Base <b>${Number(info.base||0)}%</b></span>`);
+  add("Pet",info.petBonus,"🐾 ");
+  add("Knowledge",info.knowledgeBonus,"📚 ");
+  add("Event",info.eventBonus,"⚡ ");
+  add("Comeback",info.comebackBonus,"🔥 ");
+  add("Capture Item",info.itemBonus,"🎒 ");
+  return `<div class="h10621-chance-breakdown" style="margin-top:8px;font-size:12px;opacity:.92;display:flex;gap:10px;flex-wrap:wrap">${rows.join("")}</div>`;
+}
+function h10621ShowChanceBreakdown(anchorId, info) {
+  const anchor=document.getElementById(anchorId); if(!anchor) return;
+  const host=anchor.parentElement || anchor;
+  let box=host.querySelector('.h10621-chance-breakdown');
+  if(box) box.remove();
+  host.insertAdjacentHTML('beforeend',h10621ChanceBreakdownHtml(info));
+  if(info?.petBonus) anchor.title=`Includes +${Number(info.petBonus)}% from your active companion.`;
+}
 
 openBaitPicker = function() {
   const picker = document.getElementById("baitPicker");
@@ -2522,6 +2545,10 @@ populateAttemptPage = function() {
     document.getElementById("attemptCatchChance").textContent = `${chance}%`;
     document.getElementById("rollTargetLabel").textContent = `Need ≤ ${chance}`;
     document.getElementById("rollMeterFill").style.width = `${chance}%`;
+    const baseInfo={...(currentEncounter?.chanceBreakdown||{})};
+    const noItemTotal=Number(currentEncounter?.chanceBreakdown?.total ?? phaseFHunting.captureTools?.find(t=>t.key==="none")?.liveChance ?? chance);
+    baseInfo.itemBonus=Math.max(0,chance-noItemTotal); baseInfo.total=chance;
+    h10621ShowChanceBreakdown("attemptCatchChance",baseInfo);
   }
   const btn=document.getElementById("performCaptureBtn");
   if(btn){
@@ -2567,6 +2594,9 @@ async function livePerformCapture() {
     document.getElementById("huntResultRewards").innerHTML = rewards.join("");
     document.getElementById("huntResultDetails").innerHTML = `
       <div><span>Catch Chance</span><b>${payload.chance}%</b></div>
+      ${payload.chanceBreakdown?.petBonus?`<div><span>🐾 Pet Capture Bonus</span><b>+${Number(payload.chanceBreakdown.petBonus)}%</b></div>`:""}
+      ${payload.chanceBreakdown?.knowledgeBonus?`<div><span>📚 Knowledge Bonus</span><b>+${Number(payload.chanceBreakdown.knowledgeBonus)}%</b></div>`:""}
+      ${payload.chanceBreakdown?.itemBonus?`<div><span>🎒 Capture Item Bonus</span><b>+${Number(payload.chanceBreakdown.itemBonus)}%</b></div>`:""}
       <div><span>Roll</span><b>${payload.roll ?? "—"}</b></div>
       <div><span>Method</span><b>${payload.method}</b></div>
       <div><span>Rarity</span><b>${currentEncounter.rarity}</b></div>
