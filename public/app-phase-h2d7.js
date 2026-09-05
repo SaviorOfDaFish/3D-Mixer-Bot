@@ -2701,7 +2701,15 @@ return { rollD100 };
 })();
 
 async function h10623RollPhysicalD100(chance,reason='Capture Roll'){
-  return h10624EmbeddedDice.rollD100({chance,reason});
+  // H10.6.27: use the actual Mixer v0.6.5 Three.js + cannon-es renderer.
+  // The module is preloaded by index.html so the click path does not depend on a dynamic import.
+  if (!window.MonsterHuntMixerD100?.rollD100) {
+    await new Promise((resolve, reject) => {
+      const timer=setTimeout(()=>reject(new Error('MIXER_D100_RENDERER_NOT_READY')),8000);
+      window.addEventListener('monster-hunt-d100-ready',()=>{clearTimeout(timer);resolve();},{once:true});
+    });
+  }
+  return window.MonsterHuntMixerD100.rollD100({chance,reason});
 }
 
 // Capture-phase delegated click handler. This runs in the capture phase so it
@@ -2824,7 +2832,7 @@ async function livePerformCapture() {
 }
 
 
-console.log("[Monster Hunt] H10.6.26 D100 cache-bust + live build marker loaded");
+console.log("[Monster Hunt] H10.6.27 REAL Mixer v0.6.5 renderer loaded");
 boot();
 
 
