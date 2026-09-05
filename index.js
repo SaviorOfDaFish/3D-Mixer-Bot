@@ -15005,9 +15005,12 @@ const activityServer = http.createServer(async (req, res) => {
     }
 
     const ext = path.extname(filePath).toLowerCase();
+    const activityCacheControl = [".html", ".js", ".css"].includes(ext)
+      ? "no-store, no-cache, must-revalidate"
+      : "public, max-age=300";
     res.writeHead(200, {
       "Content-Type": ACTIVITY_CONTENT_TYPES[ext] || "application/octet-stream",
-      "Cache-Control": ext === ".html" ? "no-store" : "public, max-age=300"
+      "Cache-Control": activityCacheControl
     });
 
     if (req.method === "HEAD") return res.end();
