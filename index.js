@@ -2151,45 +2151,62 @@ async function h106ShareHunterToDiscord(user) {
 }
 
 // ==================== H10.6.14 PET SHARING ====================
-async function h10614SharePetToDiscord(user, petId = null) {
-  const data=loadData();
-  const player=getPlayer(data,user.id);
-  const ownedPets=Array.isArray(player.pets)?player.pets:[];
-  let owned=null;
-  if(petId !== null && petId !== undefined && String(petId).trim()) {
-    owned=ownedPets.find(p=>String(p.id)===String(petId));
-  } else {
-    owned=getEquippedPet(player);
+async function h10614SharePetToDiscord(user, petId = null, petKey = null) {
+  try {
+    const data=loadData();
+    const player=getPlayer(data,user.id);
+    const ownedPets=Array.isArray(player.pets)?player.pets:[];
+
+    // H10.6.16 — Resolve shares defensively. Older pet records / Activity payloads
+    // can disagree about an instance id after combine, hatch, or migration. Prefer
+    // exact id, then species key, then the authoritative equipped companion.
+    let owned=null;
+    if(petId !== null && petId !== undefined && String(petId).trim()) {
+      owned=ownedPets.find(p=>String(p.id)===String(petId)) || null;
+    }
+    if(!owned && petKey) {
+      owned=ownedPets.find(p=>String(p.key||"").toLowerCase()===String(petKey).toLowerCase()) || null;
+    }
+    if(!owned) owned=getEquippedPet(player);
+    if(!owned) return {ok:false,error:"Choose one of your companions before sharing it."};
+
+    const def=getOwnedPetDefinition(owned);
+    if(!def) return {ok:false,error:"That companion could not be found in the PetDex."};
+
+    h4RefreshChannelRouting();
+    const channel=await getMonsterHuntChannel();
+    if(!channel?.isTextBased()) {
+      const botState=String(process.env.BOT_ENABLED||"true").toLowerCase()==="false" ? " The Discord bot is currently disabled on this Railway service." : "";
+      return {ok:false,error:`The Monster Hunt Discord channel is not available.${botState}`};
+    }
+
+    const hunterName=user.global_name||user.username||player.discordDisplayName||player.discordUsername||"A Hunter";
+    const petName=getOwnedPetName(owned);
+    const species=def.name||"Companion";
+    const levelInfo=getCompanionLevelInfo(owned);
+    const bond=getPetBondLevel(owned);
+    const abilityLines=getPetAbilityEntries(owned).map(entry=>{
+      const natural=entry.natural?"":" 🧬";
+      return `${h3AbilityDef(entry.ability).icon||"✨"} **${abilityDisplayName(entry.ability)}** • Rank ${h3RankRoman(entry.level)}${natural}`;
+    });
+    const nicknameLine=petName!==species?`\n**Species:** ${species}`:"";
+    const abilityText=abilityLines.length?`\n\n**Abilities**\n${abilityLines.join("\n")}`:"";
+    const content=`# 🐾 ${hunterName} shared ${petName}!\n**${def.rarity||"Companion"} Companion** • ${def.habitat||"Unknown Habitat"}${nicknameLine}\n**Level:** ${levelInfo.level} • **Bond:** ${bond}/5${abilityText}\n\nAnother companion joins the Monster Hunt showcase!`;
+
+    // Artwork is preferred, but a missing local art file should never make the
+    // entire Share Pet button fail. The social post still goes through as text.
+    const filePath=getPetArtworkPath(def);
+    const payload={content,allowedMentions:{parse:[]}};
+    if(filePath && fs.existsSync(filePath)) {
+      payload.files=[{attachment:filePath,name:`${String(petName).replace(/[^a-z0-9_-]/gi,"_")}_pet.png`}];
+    }
+
+    await channel.send(payload);
+    return {ok:true,message:`${petName} was shared to the Monster Hunt Discord channel!${payload.files?"":" (Artwork could not be attached, but the pet was still shared.)"}`};
+  } catch (error) {
+    console.error("H10.6.16 Share Pet failed:",error);
+    return {ok:false,error:`Share Pet failed: ${error?.message||"Unknown Discord error"}`};
   }
-  if(!owned) return {ok:false,error:"Choose one of your companions before sharing it."};
-
-  const def=getOwnedPetDefinition(owned);
-  if(!def) return {ok:false,error:"That companion could not be found in the PetDex."};
-  const filePath=getPetArtworkPath(def);
-  if(!filePath || !fs.existsSync(filePath)) return {ok:false,error:"That companion's artwork could not be found."};
-
-  h4RefreshChannelRouting();
-  const channel=await getMonsterHuntChannel();
-  if(!channel?.isTextBased()) return {ok:false,error:"The Monster Hunt Discord channel is not available."};
-
-  const hunterName=user.global_name||user.username||player.discordDisplayName||player.discordUsername||"A Hunter";
-  const petName=getOwnedPetName(owned);
-  const species=def.name||"Companion";
-  const levelInfo=getCompanionLevelInfo(owned);
-  const bond=getPetBondLevel(owned);
-  const abilityLines=getPetAbilityEntries(owned).map(entry=>{
-    const natural=entry.natural?"":" 🧬";
-    return `${h3AbilityDef(entry.ability).icon||"✨"} **${abilityDisplayName(entry.ability)}** • Rank ${h3RankRoman(entry.level)}${natural}`;
-  });
-  const nicknameLine=petName!==species?`\n**Species:** ${species}`:"";
-  const abilityText=abilityLines.length?`\n\n**Abilities**\n${abilityLines.join("\n")}`:"";
-
-  await channel.send({
-    content:`# 🐾 ${hunterName} shared ${petName}!\n**${def.rarity||"Companion"} Companion** • ${def.habitat||"Unknown Habitat"}${nicknameLine}\n**Level:** ${levelInfo.level} • **Bond:** ${bond}/5${abilityText}\n\nAnother companion joins the Monster Hunt showcase!`,
-    files:[{attachment:filePath,name:`${String(petName).replace(/[^a-z0-9_-]/gi,"_")}_pet.png`}],
-    allowedMentions:{parse:[]}
-  });
-  return {ok:true,message:`${petName} was shared to the Monster Hunt Discord channel!`};
 }
 
 function getTitleDefinition(titleName) {
@@ -14787,9 +14804,14 @@ const activityServer = http.createServer(async (req, res) => {
       }
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/share") {
-        const body=await readRequestJson(req);
-        const result=await h10614SharePetToDiscord(user,body.petId||null);
-        return activityJson(res,result,result.ok?200:400);
+        try {
+          const body=await readRequestJson(req);
+          const result=await h10614SharePetToDiscord(user,body.petId ?? null,body.petKey ?? null);
+          return activityJson(res,result,result.ok?200:400);
+        } catch (error) {
+          console.error("H10.6.16 pet share route failed:",error);
+          return activityJson(res,{ok:false,error:`Share Pet request failed: ${error?.message||"Unknown error"}`},500);
+        }
       }
 
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/daily") {
