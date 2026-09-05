@@ -173,6 +173,17 @@ const PET_BOND_XP_THRESHOLDS = [0, 25, 75, 150, 250];
 const PET_BOND_XP_PER_SUCCESSFUL_HUNT = 2;
 const PET_BOND_XP_PER_FETCH = 5;
 const PET_BOND_XP_AFFECTION_BONUS = 5;
+// H10.6.19 — Bond perks are real gameplay bonuses, not just a progress badge.
+const PET_BOND_PERKS = {
+  1: { inheritance:0,  fetchItem:0,  companionXp:0 },
+  2: { inheritance:5,  fetchItem:0,  companionXp:0 },
+  3: { inheritance:10, fetchItem:5,  companionXp:0 },
+  4: { inheritance:15, fetchItem:10, companionXp:0 },
+  5: { inheritance:20, fetchItem:15, companionXp:10 }
+};
+function getPetBondPerks(ownedPet) {
+  return PET_BOND_PERKS[getPetBondLevel(ownedPet)] || PET_BOND_PERKS[1];
+}
 
 const EGG_TYPES = {
   Common: { icon: "🥚", image: "common_egg.png", incubationMs: 30 * 60 * 1000 },
@@ -770,7 +781,7 @@ function h3AbilityInheritanceChance(targetOwned, donorOwned, abilityKey) {
   if (!def.inheritable || def.tier === "Special") return {base:0,bondBonus:0,habitatBonus:0,total:0,label:"Locked"};
   const base=Number(PET_INHERIT_CHANCE[def.tier] ?? 40);
   const bond=getPetBondLevel(targetOwned);
-  const bondBonus=({1:0,2:3,3:6,4:9,5:12})[bond] || 0;
+  const bondBonus=(PET_BOND_PERKS[bond] || PET_BOND_PERKS[1]).inheritance || 0;
   const habitatBonus=targetDef?.habitat && donorDef?.habitat && targetDef.habitat===donorDef.habitat ? 5 : 0;
   const total=Math.min(95,base+bondBonus+habitatBonus);
   return {base,bondBonus,habitatBonus,total,label:total>=80?"Excellent":total>=60?"Good":total>=40?"Uncertain":"Risky"};
@@ -907,7 +918,7 @@ const BIG_GAME_TOKEN_REWARDS = {
   Event: 4,
   Secret: 15
 };
-const BIG_GAME_PLACEMENT_REWARDS = [50, 30, 15];
+const BIG_GAME_PLACEMENT_REWARDS = [15, 10, 5];
 const BIG_GAME_IMAGE = "big_game_hunt.png";
 const BIG_GAME_AWARD_IMAGES = ["big_game_first.png", "big_game_second.png", "big_game_third.png"];
 
@@ -2955,7 +2966,8 @@ function awardCompanionXpToPet(player, ownedPet, amount, reason = "Companion XP"
   const entries=getPetAbilityEntries(ownedPet);
   const trainerEntry=entries.find(entry=>entry.ability==="companionTrainer");
   const trainer=trainerEntry ? Math.min(H3_GLOBAL_CAPS.companionTrainer, h3AbilityValue("companionTrainer",trainerEntry.level)) : 0;
-  const adjusted=Math.max(1,Math.round(amount*(1+trainer/100)));
+  const bondXpBonus = getPetBondPerks(ownedPet).companionXp || 0;
+  const adjusted=Math.max(1,Math.round(amount*(1+(trainer+bondXpBonus)/100)));
   const before=getCompanionLevelInfo(ownedPet).level;
   ownedPet.companionXp=Math.max(0,Number(ownedPet.companionXp||0))+adjusted;
   const after=getCompanionLevelInfo(ownedPet).level;
@@ -3947,9 +3959,13 @@ function rollFetchRewards(data, player, ownedPet, definition) {
     Legendary: { two: 16, three: 2 }
   };
   const quantity = quantityChances[definition.rarity] || quantityChances.Common;
-  const count = quantityRoll < quantity.three
+  let count = quantityRoll < quantity.three
     ? 3
     : (quantityRoll < quantity.three + quantity.two ? 2 : 1);
+
+  // Bond 3+ can bring home one extra normal Fetch reward.
+  const bondFetchItemChance = getPetBondPerks(ownedPet).fetchItem || 0;
+  if (bondFetchItemChance > 0 && Math.random() * 100 < bondFetchItemChance) count += 1;
 
   const rarityQualityBoost = {
     Common: 0,
@@ -7891,7 +7907,7 @@ async function announceBigGameStart(channel, data) {
     `<@&${H4_BIG_HUNT_ALERT_ROLE_ID}>\n\n🚨 **BIG GAME HUNT HAS BEGUN!**\n\n` +
     `For the next **2 HOURS**, monster activity has surged!\n\n` +
     `⏱️ \`!hunt\` every **30 minutes**\n🪙 Successful catches earn **DOUBLE Hunt Tokens**\n` +
-    `🥇 1st — **+50 Hunter Points**\n🥈 2nd — **+30 Hunter Points**\n🥉 3rd — **+15 Hunter Points**\n\n` +
+    `🥇 1st — **+15 Hunter Points**\n🥈 2nd — **+10 Hunter Points**\n🥉 3rd — **+5 Hunter Points**\n\n` +
     `Everyone can hunt **RIGHT NOW**. Tokens remain yours after the event.\n` +
     `**Ends <t:${Math.floor(data.bigGame.endsAt / 1000)}:t> Mountain Time (<t:${Math.floor(data.bigGame.endsAt / 1000)}:R>). GO!**`, BIG_GAME_IMAGE, H4_BIG_HUNT_ALERT_ROLE_ID);
 }
@@ -8007,7 +8023,7 @@ async function processBigGameMerchantSystem() {
         await sendRoleImageAnnouncement(channel,
           `<@&${H4_BIG_HUNT_ALERT_ROLE_ID}>\n\n🎯 **BIG GAME HUNT TODAY**\n\n` +
           `Monster activity is expected to surge **<t:${Math.floor(event.startAt / 1000)}:t> Mountain Time**.\n\n` +
-          `⚔️ Hunt every 30 minutes\n🪙 Earn Hunt Tokens\n🏆 Compete for 50 / 30 / 15 Hunter Points\n\nGet your bait ready.`, BIG_GAME_IMAGE, H4_BIG_HUNT_ALERT_ROLE_ID);
+          `⚔️ Hunt every 30 minutes\n🪙 Earn Hunt Tokens\n🏆 Compete for 15 / 10 / 5 Hunter Points\n\nGet your bait ready.`, BIG_GAME_IMAGE, H4_BIG_HUNT_ALERT_ROLE_ID);
       }
 
       if (now >= event.startAt - 30 * 60 * 1000 && now < event.startAt && !event.warningSent) {
@@ -8904,7 +8920,7 @@ client.on("messageCreate", async (message) => {
       return sendRoleImageAnnouncement(message.channel,
         `🧪 **PRIVATE TEST — NO ROLE PING**\n\n🎯 **BIG GAME HUNT TODAY**\n\n` +
         `This test represents one of the **3 random weekly hunts**. Live events begin between **3:30 PM and 8:00 PM Mountain Time** and last 2 hours.\n\n` +
-        `⚔️ Hunt every 30 minutes\n🪙 Earn Hunt Tokens\n🏆 Compete for 50 / 30 / 15 Hunter Points\n\nGet your bait ready.`,
+        `⚔️ Hunt every 30 minutes\n🪙 Earn Hunt Tokens\n🏆 Compete for 15 / 10 / 5 Hunter Points\n\nGet your bait ready.`,
         BIG_GAME_IMAGE, false);
     }
 
@@ -8923,7 +8939,7 @@ client.on("messageCreate", async (message) => {
       return sendRoleImageAnnouncement(message.channel,
         `🧪 **PRIVATE TEST EVENT — NO ROLE PING / NO LIVE REWARDS**\n\n🚨 **BIG GAME HUNT HAS BEGUN!**\n\n` +
         `⏱️ Test duration: **2 hours**\n🪙 Simulated catches award test Hunt Tokens\n` +
-        `🥇 1st — 50 Hunter Points\n🥈 2nd — 30 Hunter Points\n🥉 3rd — 15 Hunter Points\n\n` +
+        `🥇 1st — 15 Hunter Points\n🥈 2nd — 10 Hunter Points\n🥉 3rd — 5 Hunter Points\n\n` +
         `Use \`!testeconomy catch common/rare/epic/legendary/ultra\` to build the board.`,
         BIG_GAME_IMAGE, false);
     }
@@ -9084,7 +9100,7 @@ client.on("messageCreate", async (message) => {
       return message.reply(
         `🎯 **BIG GAME HUNT**\n\nNext event: <t:${Math.floor(nextAt / 1000)}:F> (<t:${Math.floor(nextAt / 1000)}:R>)\n` +
         `There are **3 Big Game Hunts every week** on different random days. Each lasts 2 hours and begins between **3:30 PM and 8:00 PM Mountain Time**.\n\n` +
-        `⏱️ 30-minute hunts • 🪙 Hunt Tokens • 🏆 50 / 30 / 15 Hunter Points\n` +
+        `⏱️ 30-minute hunts • 🪙 Hunt Tokens • 🏆 15 / 10 / 5 Hunter Points\n` +
         `Your Token Balance: **${player.huntTokens} 🪙**`
       );
     }
@@ -9335,7 +9351,7 @@ client.on("messageCreate", async (message) => {
     return sendRoleImageAnnouncement(message.channel,
       `<@&${MONSTER_NOTIFY_ROLE}>\n\n🎯 **BIG GAME HUNT HAS ARRIVED!**\n\n` +
       `There are **3 Big Game Hunts every week** on different random days. Each lasts 2 hours, starts between **3:30 PM and 8:00 PM Mountain Time**, and lets you hunt every 30 minutes for Hunt Tokens.\n\n` +
-      `🥇 50 HP • 🥈 30 HP • 🥉 15 HP\n\nNext hunt: <t:${Math.floor(nextAt / 1000)}:F>.`, BIG_GAME_IMAGE, true);
+      `🥇 15 HP • 🥈 10 HP • 🥉 5 HP\n\nNext hunt: <t:${Math.floor(nextAt / 1000)}:F>.`, BIG_GAME_IMAGE, true);
   }
 
   if (["!startbiggame", "!endbiggame", "!biggamestatus", "!merchantstatus", "!adminshop", "!endmerchant", "!restockmerchant", "!starttokensurge", "!endtokensurge"].includes(command) || command.startsWith("!spawnmerchant") || command.startsWith("!testmerchant") || command.startsWith("!settokens ") || command.startsWith("!addtokens ") || command.startsWith("!removetokens ") || command.startsWith("!giveitem ") || command.startsWith("!removeitem ")) {
@@ -12014,7 +12030,7 @@ ${captureChoicesText(choices)}
       `Restore its species name with \`!resetpetname pet#\`.\n\n` +
       `⭐ **Companion Progression**\n` +
       `The equipped pet earns **10 Companion XP** after successful hunts. Affection Events can award **5 bonus XP**.\n` +
-      `Pets can reach **Level 25**. ❤️ **Bond is separate from Level**: successful hunts, Fetch adventures, and Affection Events build Bond XP up to Bond 5, strengthening inheritance odds and showing how much you have adventured together.\n\n` +
+      `Pets can reach **Level 25**. ❤️ **Bond is separate from Level**: successful hunts, Fetch adventures, and Affection Events build Bond XP up to Bond 5, unlocking inheritance, Fetch-item, and Companion-XP bonuses while showing how much you have adventured together.\n\n` +
       `✨ **Pet Passives**\n` +
       `Passives can improve capture chance, egg discovery, shiny odds, points, item finds, or hunt cooldowns.\n\n` +
       `📖 **Pet Dex Collections**\n` +
@@ -12084,7 +12100,7 @@ ${captureChoicesText(choices)}
       `Use \`!daily\` to view quests, \`!claimquests\` after completing them, and \`!claimdaily\` for your free daily login item.\n\n` +
       `🪙 **Big Game Hunt**\n` +
       `Three times every week on different random days, a 2-hour Big Game Hunt begins between **3:30 PM and 8:00 PM Mountain Time** and the hunt cooldown becomes **30 minutes**. ` +
-      `Successful catches award Hunt Tokens by rarity. The Top 3 earn **50 / 30 / 15 Hunter Points**, and everyone keeps their tokens.\n` +
+      `Successful catches award Hunt Tokens by rarity. The Top 3 earn **15 / 10 / 5 Hunter Points**, and everyone keeps their tokens.\n` +
       `Traveling Merchants now make **3 random visits per week**. Use \`!merchant\`, \`!buy\`, \`!tokens\`, and \`!merchantcollection\`.\n\n` +
       `🏆 **Collections & Rewards**\n` +
       `Complete the Monster Dex, unlock achievements and titles, collect habitat pet sets, and climb the leaderboard.\n\n` +
@@ -13075,7 +13091,7 @@ const H1_PHASE_E_EVENTS = {
       { name: "Mythicredd", score: 5 }
     ],
     tokenRewards: { Common: 1, Rare: 2, Epic: 4, Legendary: 8, Mythic: 15 },
-    placementRewards: [50, 30, 15]
+    placementRewards: [15, 10, 5]
   },
 
   bounty: {
