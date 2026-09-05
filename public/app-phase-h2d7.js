@@ -387,8 +387,12 @@ function allKnownPet(key) { return [...(gameData?.petDex || []), ...(gameData?.b
 
 function renderHunterXp() {
   if (!hunter) return;
-  const current = Math.max(0, Number(hunter.xpCurrent ?? (Number(hunter.points||0) % 100)));
-  const target = Math.max(1, Number(hunter.xpNeeded || 100));
+  // H10.6.17: derive safely from total Hunter Points if older/cached payloads omit XP fields.
+  const points = Math.max(0, Number(hunter.points || 0));
+  const rawCurrent = Number(hunter.xpCurrent);
+  const rawTarget = Number(hunter.xpNeeded);
+  const current = Number.isFinite(rawCurrent) ? Math.max(0, rawCurrent) : (points % 100);
+  const target = Number.isFinite(rawTarget) && rawTarget > 0 ? rawTarget : 100;
   const remaining = Math.max(0, target - current);
   const pct = Math.min(100, Math.max(0, (current / target) * 100));
   const text = document.getElementById("hunterXpText");
@@ -739,7 +743,7 @@ async function refreshMonsterDex(){
     const response=await activityFetch("/api/activity/sync");
     const payload=await response.json();
     if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not sync Monster Dex.");
-    hunter=payload.hunter; gameData=payload.phaseD; renderMonsterDex();
+    hunter=payload.hunter; gameData=payload.phaseD; renderHunterXp(); renderMonsterDex();
   }catch(error){ const host=document.getElementById("monsterDexHabitats"); if(host) host.innerHTML=`<div class="empty-state">❌ ${escapeHtml(error.message)}</div>`; }
 }
 function renderMonsterDex(){
