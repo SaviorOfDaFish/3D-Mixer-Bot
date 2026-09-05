@@ -449,10 +449,29 @@ function renderActivePet() {
   const bondNext = document.getElementById("petBondXpNext");
   if (bondText) bondText.textContent = bondMax ? "MAX BOND" : `${bondCurrent} / ${bondTarget}`;
   if (bondFill) bondFill.style.width = `${bondPct}%`;
-  if (bondNext) bondNext.textContent = bondMax ? "Maximum Bond reached" : `${Math.max(0,bondTarget-bondCurrent)} Bond XP needed for Bond ${Number(pet.bond||1)+1}`;
+  if (bondNext) bondNext.innerHTML = `${bondMax ? "Maximum Bond reached" : `${Math.max(0,bondTarget-bondCurrent)} Bond XP needed for Bond ${Number(pet.bond||1)+1}`}<br>${h10619BondEffectHtml(pet.bond,true)}`;
   renderPets();
 }
 
+
+
+function h10619BondEffectHtml(bondValue, compact=false) {
+  const bond=Math.max(1,Math.min(5,Number(bondValue||1)));
+  const perks={
+    1:{inheritance:0,fetch:0,xp:0,next:"Bond 2 unlocks +5% inheritance chance."},
+    2:{inheritance:5,fetch:0,xp:0,next:"Bond 3 upgrades inheritance to +10% and unlocks +5% Fetch item chance."},
+    3:{inheritance:10,fetch:5,xp:0,next:"Bond 4 upgrades to +15% inheritance and +10% Fetch item chance."},
+    4:{inheritance:15,fetch:10,xp:0,next:"Bond 5 upgrades to +20% inheritance, +15% Fetch item chance, and +10% Companion XP."},
+    5:{inheritance:20,fetch:15,xp:10,next:"Maximum Bond perks unlocked."}
+  }[bond];
+  const lines=[];
+  if(perks.inheritance) lines.push(`🧬 +${perks.inheritance}% inheritance chance`);
+  if(perks.fetch) lines.push(`🎒 +${perks.fetch}% chance to bring home an extra Fetch reward`);
+  if(perks.xp) lines.push(`⭐ +${perks.xp}% Companion XP`);
+  if(!lines.length) lines.push("No bonus yet — adventure together to strengthen your bond.");
+  if(compact) return `💞 <b>Bond Effect:</b> ${lines.join(" • ")}<br><small><b>Next:</b> ${perks.next}</small>`;
+  return `<div class="bond-effect-box"><b>💞 Bond Effect — Bond ${bond}</b><div>${lines.join("<br>")}</div><small><b>${bond<5?"Next":"Status"}:</b> ${perks.next}</small></div>`;
+}
 
 function h2aAge(ms) {
   const seconds=Math.floor(Number(ms||0)/1000);
@@ -557,6 +576,7 @@ function showPetDetail(key) {
         <div class="detail-xp-head"><span>❤️ Bond XP • Bond ${Number(p.bond||1)}/5</span><b>${p.bondMax?"MAX BOND":`${Number(p.bondXpCurrent||0)} / ${Number(p.bondXpNeeded||0)} XP`}</b></div>
         <div class="pet-xp-meter bond-xp-meter"><span style="width:${p.bondMax?100:Math.min(100,(Number(p.bondXpCurrent||0)/Math.max(1,Number(p.bondXpNeeded||1)))*100)}%"></span></div>
         <small>${p.bondMax?"Maximum Bond reached":`${Math.max(0,Number(p.bondXpNeeded||0)-Number(p.bondXpCurrent||0))} Bond XP needed for Bond ${Number(p.bond||1)+1} • Hunt, Fetch, and trigger Affection Events together`}</small>
+        ${h10619BondEffectHtml(p.bond)}
       </div>
       <div class="detail-actions">
         <button class="secondary" id="renameDetailPet">✏️ Name Pet</button>

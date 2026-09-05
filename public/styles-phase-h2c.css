@@ -3891,3 +3891,9 @@ body.background-view-only.h10-distortion-active{min-height:100vh;background-imag
 .bond-xp-meter span, .bond-progress span { background: linear-gradient(90deg, #ff4f8b, #ff8fb8); }
 .bond-card-line { margin-top: 7px; }
 .bond-detail-block { margin-top: 10px; }
+
+
+/* H10.6.19 Bond perk explanation */
+.bond-effect-box{margin-top:10px;padding:10px 12px;border:1px solid rgba(244,114,182,.28);border-radius:12px;background:rgba(244,114,182,.07);line-height:1.55}
+.bond-effect-box>b{display:block;margin-bottom:4px}.bond-effect-box small{display:block;margin-top:5px;opacity:.82}
+#petBondXpNext{display:block;line-height:1.5}
