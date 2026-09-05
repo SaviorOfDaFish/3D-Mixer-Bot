@@ -13690,6 +13690,7 @@ async function performBountyHunt(data,id,ch=null){
    monster:{...monster,imageUrl:activityMonsterImageUrl(monster)},
    chance:chanceInfo.total,
    baseChance:Number(monster.chance||0),
+   companion:h10630ActivityCompanionSnapshot(player),
    encounters,
    choices,
    trackingChance:tracker.chance,
@@ -14592,6 +14593,51 @@ function activityPlayerPayload(data, user) {
   };
 }
 
+// H10.6.30 — Authoritative Activity companion snapshot.
+// The encounter card and the ability panel must resolve the SAME equipped pet.
+function h10630ActivityCompanionSnapshot(player) {
+  const ownedPet = getEquippedPet(player);
+  const definition = getOwnedPetDefinition(ownedPet);
+  if (!ownedPet || !definition) return null;
+
+  const current = h32Current(player);
+  const abilities = getPetAbilityEntries(ownedPet).map(entry => {
+    const def = h3AbilityDef(entry.ability);
+    return {
+      key: entry.ability,
+      name: def.name || abilityDisplayName(entry.ability),
+      icon: def.icon || "🐾",
+      rank: h3RankRoman(entry.level),
+      rankNumber: Number(entry.level || 1),
+      effect: formatAbilityEffect(entry),
+      natural: Boolean(entry.natural)
+    };
+  });
+
+  const active = [];
+  const push = (icon, label, value) => {
+    const n = Number(value || 0);
+    if (n > 0) active.push({ icon, label, value:`+${Number.isInteger(n) ? n : n.toFixed(1)}%` });
+  };
+  push("🎯", "Capture this hunt", current.capture);
+  push("💎", "Rare+ weighting", current.rare);
+  push("🥚", "Egg Find", current.egg);
+  push("🎒", "Item Find", current.item);
+  push("✨", "Shiny chance", current.shiny);
+
+  return {
+    petId: ownedPet.id || null,
+    petKey: definition.key,
+    petName: getOwnedPetName(ownedPet),
+    icon: getPetDisplayIcon(definition),
+    level: getCompanionLevelInfo(ownedPet).level,
+    bond: getPetBondLevel(ownedPet),
+    abilities,
+    active,
+    triggered: Array.isArray(current.messages) ? [...current.messages] : []
+  };
+}
+
 async function activityStartNormalHunt(user) {
   const data = loadData();
   if (isSeasonLocked(data)) {
@@ -14649,6 +14695,7 @@ async function activityStartNormalHunt(user) {
     monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
     chance:chanceInfo.total,
     baseChance:Number(monster.chance || 0),
+    companion:h10630ActivityCompanionSnapshot(player),
     choices,
     player:activityPlayerPayload(data, user).hunter
   };
