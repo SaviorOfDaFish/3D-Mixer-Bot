@@ -2569,27 +2569,66 @@ populateAttemptPage = function() {
   }
 };
 
+let h10623DiceModulePromise=null;
+async function h10623DiceModule(){
+  if(!h10623DiceModulePromise){
+    const url=activityProxyUrl('/monster-hunt-d100.js');
+    h10623DiceModulePromise=import(url);
+  }
+  return h10623DiceModulePromise;
+}
+
+async function h10623RollPhysicalD100(chance,reason='Capture Roll'){
+  const mod=await h10623DiceModule();
+  if(!mod?.rollD100) throw new Error('The Mixer D100 table could not load.');
+  return mod.rollD100({chance,reason});
+}
+
 async function livePerformCapture() {
   if (!currentEncounter || !selectedCaptureTool) return;
   const btn = document.getElementById("performCaptureBtn");
-  btn.disabled = true; btn.textContent = "🎲 Resolving Hunt…";
+  btn.disabled = true; btn.textContent = "🎲 Opening D100 Table…";
   const itemKey = selectedCaptureTool.key === "none" ? null : selectedCaptureTool.key;
   try {
     const status=document.getElementById("status");
-    if(status) status.textContent="🎲 Resolving your live capture...";
-    const response = await activityFetch("/api/activity/hunt/capture", {
-      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({itemKey})
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      document.getElementById("status").textContent = `❌ ${payload.error || payload.message}`;
-      return;
+    if(status) status.textContent="🎲 Opening the Mixer D100 table...";
+
+    let chance=Number(selectedCaptureTool.liveChance ?? currentEncounter.chance ?? 0);
+    let rollInfo=await h10623RollPhysicalD100(chance,`${currentEncounter.name} capture`);
+    let payload=null;
+
+    // The physical landed result is authoritative for Activity captures.
+    // If a signature ability such as Rime Sprite grants an immediate reroll,
+    // the server returns retryRequired and we automatically open the table again.
+    for(let physicalAttempt=1;physicalAttempt<=3;physicalAttempt++){
+      if(status) status.textContent=`🎲 Physical D100: ${rollInfo.result}. Resolving capture...`;
+      const response = await activityFetch("/api/activity/hunt/capture", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({itemKey,physicalRoll:Number(rollInfo.result)})
+      });
+      payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        document.getElementById("status").textContent = `❌ ${payload.error || payload.message}`;
+        return;
+      }
+      if(!payload.retryRequired) break;
+
+      chance=Number(payload.retry?.chance ?? payload.chance ?? chance);
+      if(status) status.textContent=payload.retry?.text || "❄️ Second Chance! Roll the physical D100 again.";
+      await new Promise(resolve=>setTimeout(resolve,450));
+      rollInfo=await h10623RollPhysicalD100(chance,payload.retry?.type==='rime_second_chance'?'Rime Sprite — Second Chance':'Companion Retry');
     }
+
+    if(payload?.retryRequired){
+      throw new Error("The capture requested too many physical rerolls.");
+    }
+
     hunter = {...hunter,...payload.player};
     populateResultArtwork();
     document.getElementById("resultStatusIcon").textContent = payload.caught ? "🏆" : "💨";
     document.getElementById("huntResultTitle").textContent = payload.caught ? `🎉 ${currentEncounter.name} Caught!` : `💨 ${currentEncounter.name} Escaped`;
-    document.getElementById("huntResultText").textContent = `Roll ${payload.roll ?? "—"} • ${payload.chance}% catch chance • ${payload.method}`;
+    document.getElementById("huntResultText").textContent = `Physical D100 ${payload.roll ?? "—"} • ${payload.chance}% catch chance • ${payload.method}`;
 
     const rewards = [];
     if (payload.rewards.points) rewards.push(`<div><span>⭐ Hunter Points</span><b>+${payload.rewards.points}</b></div>`);
@@ -2605,7 +2644,7 @@ async function livePerformCapture() {
     document.getElementById("huntResultRewards").innerHTML = rewards.join("");
     document.getElementById("huntResultDetails").innerHTML = `
       <div><span>Catch Chance</span><b>${payload.chance}%</b></div>
-      <div><span>Roll</span><b>${payload.roll ?? "—"}</b></div>
+      <div><span>🎲 Physical D100</span><b>${payload.roll ?? "—"}</b></div>
       <div><span>Method</span><b>${payload.method}</b></div>
       <div><span>Rarity</span><b>${currentEncounter.rarity}</b></div>
       <div><span>Discord Update</span><b>Sent</b></div>`;
@@ -2613,11 +2652,12 @@ async function livePerformCapture() {
     document.getElementById("huntAgainBtn").textContent = "🏹 Hunting Grounds";
     document.getElementById("huntAgainBtn").onclick = () => { returnToHuntOverview(); renderPhaseFHunting(); };
     showHuntStep("result");
+    if(status) status.textContent=`🎲 D100 ${payload.roll} • ${payload.caught?'CAPTURED':'ESCAPED'}`;
     if(currentEncounter?.bountyEncounter || currentEncounter?.bountyTrailEncounter){
       await refreshH2CLiveEvents(false);
       if(payload.caught && currentEncounter?.bountyEncounter){
         showActivityResult("🏆","Bounty Target Captured",
-          `${currentEncounter.name} was captured with the normal Roll to Catch system. Return the trophy to complete the bounty.`);
+          `${currentEncounter.name} was captured with the physical D100 Roll to Catch system. Return the trophy to complete the bounty.`);
       } else if(payload.caught && currentEncounter?.bountyTrailEncounter){
         const b=h2aLiveEvents?.bounty;
         showActivityResult("🔎","Bounty Clue Found",
@@ -2625,7 +2665,7 @@ async function livePerformCapture() {
       }
     }
   } catch(error) {
-    console.error("Activity capture request failed:",error);
+    console.error("Activity physical capture request failed:",error);
     const status=document.getElementById("status");
     if(status) status.textContent=`❌ Capture connection failed: ${error.message}`;
   } finally {
@@ -2633,6 +2673,7 @@ async function livePerformCapture() {
     btn.textContent = "🎲 Roll to Catch";
   }
 }
+
 
 boot();
 
