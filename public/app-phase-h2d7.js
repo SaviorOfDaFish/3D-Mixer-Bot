@@ -1213,6 +1213,8 @@ function renderCollection() {
       <div class="cosmetic-body"><h3>${escapeHtml(c.name)}</h3><p class="card-meta">${escapeHtml(c.slot)}</p><p class="card-ability">${c.unlocked ? "Unlocked in Appearance Editor" : escapeHtml(c.requirement)}</p></div>
     </article>
   `).join("");
+
+  h10632RenderDiceLocker();
 }
 
 function cosmeticIcon(slot) {
@@ -1857,6 +1859,89 @@ function h10622AbilityPanelHtml(companion, includeAll=true) {
   </div>`;
 }
 
+
+// ===== H10.6.32 DICE LOCKER =====
+let h10632DiceDraft=null;
+function h10632DiceLocker(){
+  return gameData?.diceLocker || null;
+}
+function h10632RenderDiceLocker(){
+  const locker=h10632DiceLocker();
+  const bodyGrid=document.getElementById("diceBodyColorGrid");
+  const numberGrid=document.getElementById("diceNumberColorGrid");
+  const preview=document.getElementById("diceLockerPreview");
+  const label=document.getElementById("diceLockerCurrentName");
+  const status=document.getElementById("diceLockerStatus");
+  const equipBtn=document.getElementById("equipDiceCosmeticBtn");
+  if(!locker||!bodyGrid||!numberGrid||!preview||!label||!equipBtn) return;
+
+  if(!h10632DiceDraft){
+    h10632DiceDraft={body:locker.equipped?.body||"sapphire",numbers:locker.equipped?.numbers||"white"};
+  }
+  const body=(locker.bodyColors||[]).find(x=>x.key===h10632DiceDraft.body) || locker.bodyColors?.[0];
+  const numbers=(locker.numberColors||[]).find(x=>x.key===h10632DiceDraft.numbers) || locker.numberColors?.[0];
+  if(!body||!numbers) return;
+
+  preview.style.setProperty("--dice-body",body.hex);
+  preview.style.setProperty("--dice-number",numbers.hex);
+  label.textContent=`${body.name} • ${numbers.name} Numbers`;
+
+  const makeSwatches=(items,type)=>items.map(item=>`
+    <button type="button" class="dice-swatch ${h10632DiceDraft[type]===item.key?"selected":""}"
+      data-dice-${type}="${escapeHtml(item.key)}" title="${escapeHtml(item.name)}">
+      <span class="dice-swatch-chip" style="--swatch:${escapeHtml(item.hex)}"></span>
+      <small>${escapeHtml(item.name)}</small>
+    </button>`).join("");
+
+  bodyGrid.innerHTML=makeSwatches(locker.bodyColors||[],"body");
+  numberGrid.innerHTML=makeSwatches(locker.numberColors||[],"numbers");
+
+  bodyGrid.querySelectorAll("[data-dice-body]").forEach(btn=>btn.onclick=()=>{
+    h10632DiceDraft.body=btn.dataset.diceBody;
+    h10632RenderDiceLocker();
+  });
+  numberGrid.querySelectorAll("[data-dice-numbers]").forEach(btn=>btn.onclick=()=>{
+    h10632DiceDraft.numbers=btn.dataset.diceNumbers;
+    h10632RenderDiceLocker();
+  });
+
+  const equipped=locker.equipped||{};
+  const dirty=h10632DiceDraft.body!==equipped.body || h10632DiceDraft.numbers!==equipped.numbers;
+  equipBtn.disabled=!dirty;
+  equipBtn.textContent=dirty?"🎲 Equip Dice Colors":"✓ Dice Colors Equipped";
+  if(status) status.textContent=dirty?"Previewing new colors — save to use them on your next roll.":"These colors are equipped for every physical D100 roll.";
+
+  equipBtn.onclick=async()=>{
+    if(!dirty) return;
+    equipBtn.disabled=true; equipBtn.textContent="Saving…";
+    try{
+      const response=await activityFetch("/api/activity/dice-cosmetic",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(h10632DiceDraft)
+      });
+      const payload=await response.json();
+      if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not equip dice colors.");
+      gameData.diceLocker=payload.diceLocker;
+      if(hunter) hunter.diceCosmetic=payload.diceLocker?.equipped||hunter.diceCosmetic;
+      h10632DiceDraft={body:payload.diceLocker.equipped.body,numbers:payload.diceLocker.equipped.numbers};
+      h10632RenderDiceLocker();
+      showActivityResult("🎲","Dice Locker Updated",payload.message||"Your D100 colors are equipped.");
+    }catch(error){
+      if(status) status.textContent=`❌ ${error.message}`;
+      equipBtn.disabled=false; equipBtn.textContent="🎲 Equip Dice Colors";
+    }
+  };
+}
+function h10632CurrentDiceCosmetic(){
+  const equipped=gameData?.diceLocker?.equipped || hunter?.diceCosmetic || null;
+  if(!equipped) return {bodyColor:"#17467f",numberColor:"#f3f7ff"};
+  return {
+    bodyColor:equipped.bodyColor||"#17467f",
+    numberColor:equipped.numberColor||"#f3f7ff"
+  };
+}
+
 function h10622RenderEncounterCompanion(companion){
   const rewards=document.getElementById("possibleRewards");
   if(!rewards) return;
@@ -1872,6 +1957,31 @@ function h10622RenderResultCompanion(companion,effects=[]){
   if(!panel){ panel=document.createElement("div"); panel.id="h10622ResultCompanion"; details.insertAdjacentElement("afterend",panel); }
   const copy=companion?{...companion,triggered:[...(effects||[])]}:null;
   panel.innerHTML=h10622AbilityPanelHtml(copy,false);
+}
+
+function h10631ChanceBreakdownText(breakdown){
+  const b=breakdown||{};
+  const parts=[`Base ${Number(b.base||0)}%`];
+  if(Number(b.knowledge||0)) parts.push(`Knowledge +${Number(b.knowledge)}%`);
+  if(Number(b.event||0)) parts.push(`Event +${Number(b.event)}%`);
+  if(Number(b.pet||0)) parts.push(`🐾 Pet +${Number(b.pet)}%`);
+  if(Number(b.comeback||0)) parts.push(`Comeback +${Number(b.comeback)}%`);
+  if(Number(b.item||0)) parts.push(`Item +${Number(b.item)}%`);
+  return parts.join(" • ");
+}
+function h10631RenderChanceBreakdown(){
+  const breakdown=currentEncounter?.chanceBreakdown;
+  const text=breakdown?h10631ChanceBreakdownText(breakdown):"";
+  const encounterDetail=document.getElementById("encounterChanceBreakdown");
+  if(encounterDetail){
+    encounterDetail.textContent=text;
+    encounterDetail.classList.toggle("hidden",!text);
+  }
+  const attemptDetail=document.getElementById("attemptChanceBreakdown");
+  if(attemptDetail){
+    attemptDetail.textContent=text;
+    attemptDetail.classList.toggle("hidden",!text);
+  }
 }
 
 function populateEncounterPage() {
@@ -1890,7 +2000,8 @@ function populateEncounterPage() {
 
   document.getElementById("encounterMonsterName").textContent = currentEncounter.name;
   document.getElementById("encounterMonsterRarity").textContent = currentEncounter.rarity;
-  document.getElementById("encounterCatchChance").textContent = `${currentEncounter.baseChance}%`;
+  document.getElementById("encounterCatchChance").textContent = `${Number(currentEncounter.chance ?? currentEncounter.baseChance)}%`;
+  h10631RenderChanceBreakdown();
   document.getElementById("encounterHabitat").textContent = activeHuntZone.name;
   document.getElementById("encounterDifficulty").textContent = getDifficulty(currentEncounter.baseChance);
   const encounterPetName=document.getElementById("encounterPetName");
@@ -2519,6 +2630,8 @@ beginHuntFromZone = async function(zoneKey="normal") {
   currentEncounter = {
     ...payload.monster,
     baseChance:payload.baseChance,
+    chance:Number(payload.chance ?? payload.baseChance ?? payload.monster.chance ?? 0),
+    chanceBreakdown:payload.chanceBreakdown||null,
     companion:payload.companion||null,
     image:payload.monster.imageUrl || (payload.monster.image ? `${H102_DISTORTION_HABITATS.has(String(payload.monster.habitat||""))?"/assets/distortions":"/assets/monsters"}/${payload.monster.image}` : null)
   };
@@ -2531,6 +2644,7 @@ beginHuntFromZone = async function(zoneKey="normal") {
   }));
   populateEncounterPage();
   document.getElementById("encounterCatchChance").textContent = `${payload.chance}%`;
+  h10631RenderChanceBreakdown();
   if(payload.companion?.triggered?.length){
     const status=document.getElementById("status");
     if(status) status.textContent=`🐾 ${payload.companion.petName}: ${payload.companion.triggered.map(x=>String(x).replace(/\*\*/g,"")).join(" • ")}`;
@@ -2561,6 +2675,7 @@ populateAttemptPage = function() {
     document.getElementById("rollTargetLabel").textContent = `Need ≤ ${chance}`;
     document.getElementById("rollMeterFill").style.width = `${chance}%`;
   }
+  h10631RenderChanceBreakdown();
   const btn=document.getElementById("performCaptureBtn");
   if(btn){
     btn.disabled=false;
@@ -2709,7 +2824,7 @@ async function h10623RollPhysicalD100(chance,reason='Capture Roll'){
       window.addEventListener('monster-hunt-d100-ready',()=>{clearTimeout(timer);resolve();},{once:true});
     });
   }
-  return window.MonsterHuntMixerD100.rollD100({chance,reason});
+  return window.MonsterHuntMixerD100.rollD100({chance,reason,cosmetic:h10632CurrentDiceCosmetic()});
 }
 
 // Capture-phase delegated click handler. This runs in the capture phase so it
