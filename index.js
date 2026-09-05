@@ -673,7 +673,7 @@ const H3_GLOBAL_CAPS = {
   rewardDouble:15, persistence:15
 };
 const H3_ABILITY_DEFS = {
-  capture:{name:"Capture",icon:"🎯",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:"%",description:"Increases normal capture chance.",capText:"Pet capture bonuses can never exceed +20% total."},
+  capture:{name:"Capture",icon:"🎯",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:"%",description:"Increases capture chance on standard capture rolls, including Normal, Distortion, Bounty, and Big Game Hunts.",capText:"Pet capture bonuses can never exceed +20% total."},
   cooldown:{name:"Swift Hunter",icon:"⏱️",tier:"Rare",inheritable:true,values:[0,5,10,15,20,25],unit:" min",description:"Reduces the normal hunt cooldown.",capText:"Pet effects can never push a normal hunt below 1 hour."},
   points:{name:"Hunter's Spirit",icon:"⭐",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:" points",description:"Awards bonus Hunter Points after successful catches.",capText:"Pet-derived Hunter Point bonuses cap at +20 per catch."},
   tokenFinder:{name:"Token Finder",icon:"🪙",tier:"Common",inheritable:true,values:[0,10,15,20,25,30],unit:"% proc",description:"Chance to find bonus Hunt Tokens after a successful catch.",capText:"Pet-derived bonus Hunt Token payout can scale up to +50 from one successful catch."},
@@ -4132,13 +4132,13 @@ function calculateCaptureChance(player, monster, itemKey = null, data = null, us
 }
 
 
-function buildCaptureChoices(player, monster) {
+function buildCaptureChoices(player, monster, data = null, userId = null) {
   const choices = [
     {
       number: 1,
       itemKey: null,
       label: "🎯 Normal Throw",
-      chance: calculateCaptureChance(player, monster).total
+      chance: calculateCaptureChance(player, monster, null, data, userId).total
     }
   ];
 
@@ -4150,7 +4150,7 @@ function buildCaptureChoices(player, monster) {
       number: choices.length + 1,
       itemKey,
       label: `${item.name} x${player.captureItems[itemKey]}`,
-      chance: calculateCaptureChance(player, monster, itemKey).total
+      chance: calculateCaptureChance(player, monster, itemKey, data, userId).total
     });
   }
 
@@ -13633,7 +13633,7 @@ async function performBountyHunt(data,id,ch=null){
  player.currentMonster=monster;
  saveData(data);
 
- const choices=buildCaptureChoices(player,monster).map(choice=>({
+ const choices=buildCaptureChoices(player,monster,data,id).map(choice=>({
    number:choice.number,
    itemKey:choice.itemKey,
    label:choice.label,
@@ -13652,6 +13652,7 @@ async function performBountyHunt(data,id,ch=null){
    monster:{...monster,imageUrl:activityMonsterImageUrl(monster)},
    chance:chanceInfo.total,
    baseChance:Number(monster.chance||0),
+   chanceBreakdown:{...chanceInfo},
    encounters,
    choices,
    trackingChance:tracker.chance,
@@ -14594,7 +14595,7 @@ async function activityStartNormalHunt(user) {
   checkTitleUnlocks(player);
   saveData(data);
 
-  const choices = buildCaptureChoices(player, monster).map(choice => ({
+  const choices = buildCaptureChoices(player, monster, data, user.id).map(choice => ({
     number: choice.number,
     itemKey: choice.itemKey,
     label: choice.label,
@@ -14611,6 +14612,7 @@ async function activityStartNormalHunt(user) {
     monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
     chance:chanceInfo.total,
     baseChance:Number(monster.chance || 0),
+    chanceBreakdown:{...chanceInfo},
     choices,
     player:activityPlayerPayload(data, user).hunter
   };
@@ -14707,6 +14709,7 @@ async function activityCapture(user, itemKey = null) {
     monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
     roll,
     chance,
+    chanceBreakdown:{...calculateCaptureChance(beforePlayer, monster, itemKey || null, beforeData, user.id)},
     method:itemKey ? CAPTURE_ITEMS[itemKey].name : "Normal Throw",
     rewards:{
       points:after.points - before.points,
