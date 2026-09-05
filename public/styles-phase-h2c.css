@@ -3885,3 +3885,9 @@ body.background-view-only.h10-distortion-active{min-height:100vh;background-imag
   .hunter-xp-block { margin-top:8px; }
   .hunter-xp-label, .detail-xp-head { font-size:.7rem; }
 }
+
+/* H10.6.18 — activity-driven companion Bond progression */
+.bond-xp-block { margin-top: 8px; }
+.bond-xp-meter span, .bond-progress span { background: linear-gradient(90deg, #ff4f8b, #ff8fb8); }
+.bond-card-line { margin-top: 7px; }
+.bond-detail-block { margin-top: 10px; }

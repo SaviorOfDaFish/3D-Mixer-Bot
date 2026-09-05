@@ -439,6 +439,17 @@ function renderActivePet() {
   if (petXpText) petXpText.textContent = isMaxLevel ? "MAX" : `${xpCurrent} / ${xpTarget} XP`;
   if (petXpFill) petXpFill.style.width = `${xpPct}%`;
   if (petXpNext) petXpNext.textContent = isMaxLevel ? "Maximum companion level reached" : `${xpRemaining} XP needed for Level ${Number(pet.level || 1) + 1}`;
+
+  const bondCurrent = Math.max(0, Number(pet.bondXpCurrent || 0));
+  const bondTarget = Math.max(0, Number(pet.bondXpNeeded || 0));
+  const bondMax = Boolean(pet.bondMax) || Number(pet.bond || 1) >= 5 || bondTarget <= 0;
+  const bondPct = bondMax ? 100 : Math.min(100, Math.max(0, (bondCurrent / Math.max(1, bondTarget)) * 100));
+  const bondText = document.getElementById("petBondXpText");
+  const bondFill = document.getElementById("petBondXpFill");
+  const bondNext = document.getElementById("petBondXpNext");
+  if (bondText) bondText.textContent = bondMax ? "MAX BOND" : `${bondCurrent} / ${bondTarget}`;
+  if (bondFill) bondFill.style.width = `${bondPct}%`;
+  if (bondNext) bondNext.textContent = bondMax ? "Maximum Bond reached" : `${Math.max(0,bondTarget-bondCurrent)} Bond XP needed for Bond ${Number(pet.bond||1)+1}`;
   renderPets();
 }
 
@@ -492,6 +503,8 @@ function renderPets() {
         ${p.inheritedSlotsMax != null ? `<p class="card-slots">🧬 ${p.inheritedSlotsUsed}/${p.inheritedSlotsMax} inherited slots</p>` : ""}
         <div class="pet-card-xp"><span>XP</span><b>${Number(p.xpNeeded||0) <= 0 ? "MAX" : `${Number(p.xpCurrent||0)} / ${Number(p.xpNeeded||0)}`}</b></div>
         <div class="pet-progress"><span style="width:${Number(p.xpNeeded||0) <= 0 ? 100 : Math.max(4,Math.min(100,(Number(p.xpCurrent||0)/Math.max(1,Number(p.xpNeeded||1)))*100))}%"></span></div>
+        <div class="pet-card-xp bond-card-line"><span>❤️ Bond ${Number(p.bond||1)}/5</span><b>${p.bondMax?"MAX":`${Number(p.bondXpCurrent||0)} / ${Number(p.bondXpNeeded||0)}`}</b></div>
+        <div class="pet-progress bond-progress"><span style="width:${p.bondMax?100:Math.max(4,Math.min(100,(Number(p.bondXpCurrent||0)/Math.max(1,Number(p.bondXpNeeded||1)))*100))}%"></span></div>
       </div>
     </article>
   `).join("");
@@ -539,6 +552,11 @@ function showPetDetail(key) {
         <div class="detail-xp-head"><span>Companion XP</span><b>${Number(p.xpNeeded||0) <= 0 ? "MAX LEVEL" : `${Number(p.xpCurrent||0)} / ${Number(p.xpNeeded||0)} XP`}</b></div>
         <div class="pet-xp-meter"><span style="width:${Number(p.xpNeeded||0) <= 0 ? 100 : Math.min(100,(Number(p.xpCurrent||0)/Math.max(1,Number(p.xpNeeded||1)))*100)}%"></span></div>
         <small>${Number(p.xpNeeded||0) <= 0 ? "Maximum companion level reached" : `${Math.max(0,Number(p.xpNeeded||0)-Number(p.xpCurrent||0))} XP needed for Level ${Number(p.level||1)+1}`}</small>
+      </div>
+      <div class="detail-xp-block bond-detail-block">
+        <div class="detail-xp-head"><span>❤️ Bond XP • Bond ${Number(p.bond||1)}/5</span><b>${p.bondMax?"MAX BOND":`${Number(p.bondXpCurrent||0)} / ${Number(p.bondXpNeeded||0)} XP`}</b></div>
+        <div class="pet-xp-meter bond-xp-meter"><span style="width:${p.bondMax?100:Math.min(100,(Number(p.bondXpCurrent||0)/Math.max(1,Number(p.bondXpNeeded||1)))*100)}%"></span></div>
+        <small>${p.bondMax?"Maximum Bond reached":`${Math.max(0,Number(p.bondXpNeeded||0)-Number(p.bondXpCurrent||0))} Bond XP needed for Bond ${Number(p.bond||1)+1} • Hunt, Fetch, and trigger Affection Events together`}</small>
       </div>
       <div class="detail-actions">
         <button class="secondary" id="renameDetailPet">✏️ Name Pet</button>
@@ -2479,6 +2497,7 @@ async function livePerformCapture() {
     if (payload.rewards.points) rewards.push(`<div><span>⭐ Hunter Points</span><b>+${payload.rewards.points}</b></div>`);
     if (payload.rewards.tokens) rewards.push(`<div><span>🪙 Hunt Tokens</span><b>+${payload.rewards.tokens}</b></div>`);
     if (payload.rewards.petXp) rewards.push(`<div><span>🐾 ${escapeHtml(payload.rewards.petName||"Companion")} XP</span><b>+${payload.rewards.petXp}</b></div>`);
+    if (payload.rewards.bondXp) rewards.push(`<div><span>❤️ ${escapeHtml(payload.rewards.petName||"Companion")} Bond XP</span><b>+${payload.rewards.bondXp}${payload.rewards.bond?` • Bond ${payload.rewards.bond}/5`:""}</b></div>`);
     if (payload.rewards.eggs) rewards.push(`<div><span>🥚 Eggs Found</span><b>+${payload.rewards.eggs}</b></div>`);
     for(const item of (payload.rewards.items||[])){
       rewards.push(`<div><span>${item.icon||"🎒"} ${escapeHtml(item.label||"Item")}</span><b>+${Number(item.amount||1)}</b></div>`);
@@ -2810,7 +2829,7 @@ function renderActivityFetch(fetchState=hunter?.fetch){
     btn.textContent=`⏳ Fetch Ready in ${h5FetchCountdown(cooldownLeft)}`;
     const result=f.result;
     status.innerHTML=result
-      ? `<span>${result.petIcon||"🐾"}</span><div><b>${escapeHtml(result.petName||f.pet.name)} returned!</b><small>${(result.rewards||[]).map(escapeHtml).join(" • ")||"Fetch complete."}</small></div>`
+      ? `<span>${result.petIcon||"🐾"}</span><div><b>${escapeHtml(result.petName||f.pet.name)} returned!</b><small>🎒 ${(result.rewards||[]).map(escapeHtml).join(" • ")||"Fetch complete."}${result.companionXpGained?` • ⭐ +${Number(result.companionXpGained)} XP`:""}${result.bondXpGained?` • ❤️ +${Number(result.bondXpGained)} Bond XP`:""}</small></div>`
       : `<span>🐾</span><div><b>Fetch Resting</b><small>Ready again in ${h5FetchCountdown(cooldownLeft)}</small></div>`;
 
     const completedAt=Number(f.completedAt||0);
@@ -2819,7 +2838,7 @@ function renderActivityFetch(fetchState=hunter?.fetch){
       showActivityResult(
         result.petIcon||"🐾",
         `${result.petName||f.pet.name} Returned!`,
-        `${result.flavor||"Fetch complete."}${result.rewards?.length?` Found: ${result.rewards.join(" • ")}`:""}${result.xpText?` ${result.xpText}`:""}`
+        `${result.flavor||"Fetch complete."}${result.rewards?.length?` 🎒 Brought back: ${result.rewards.join(" • ")}`:""}${result.companionXpGained?` ⭐ +${Number(result.companionXpGained)} Companion XP.`:""}${result.bondXpGained?` ❤️ +${Number(result.bondXpGained)} Bond XP${result.bond?` (Bond ${result.bond}/5)`:""}.`:""}`
       );
       activityFetch("/api/activity/fetch/ack",{method:"POST"}).catch(()=>null);
       if(hunter?.fetch) hunter.fetch.revealResult=false;
