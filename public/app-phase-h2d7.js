@@ -539,7 +539,7 @@ function showPetDetail(key) {
       <div class="detail-actions">
         <button class="secondary" id="renameDetailPet">✏️ Name Pet</button>
         <button class="primary" id="equipDetailPet">${p.key === activePetKey ? "Currently Active" : "Make Active"}</button>
-        <button class="secondary" id="h10614ShareDetailPet">📣 Share Pet</button>
+        <button class="secondary" id="h10614ShareDetailPet" data-pet-id="${p.id}">📣 Share Pet</button>
       </div>` : `
       <p class="detail-copy">This companion has not been collected in the test profile.</p>`}
   `;
@@ -560,8 +560,6 @@ function showPetDetail(key) {
   const rename = document.getElementById("renameDetailPet");
   if (rename) rename.onclick = () => openRenamePet(p.key);
 
-  const sharePet = document.getElementById("h10614ShareDetailPet");
-  if (sharePet) sharePet.onclick = () => h10614SharePet(p.id, sharePet);
 }
 
 function openRenamePet(key) {
@@ -3628,34 +3626,57 @@ setTimeout(h93LoadAuthoritativeTutorialState,2300);
 
 
 // ===== H10.6.14 PET SHARING =====
-async function h10614SharePet(petId, button=null){
+async function h10614SharePet(petOrId, button=null){
+  const pet = (petOrId && typeof petOrId === "object") ? petOrId : (gameData?.ownedPets||[]).find(p=>String(p.id)===String(petOrId));
+  const petId = pet?.id ?? petOrId ?? null;
+  const petKey = pet?.key ?? null;
   const btn=button||document.getElementById("h10614ShareActivePet");
   const original=btn?.textContent||"📣 Share Pet";
   if(btn){btn.disabled=true;btn.textContent="📣 Sharing…";}
   const status=document.getElementById("status");
-  if(status) status.textContent="Sending companion to the Monster Hunt Discord channel…";
+  if(status) status.textContent="📣 Sending companion to the Monster Hunt Discord channel…";
   try{
     const response=await activityFetch("/api/activity/pet/share",{
-      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({petId})
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({petId,petKey})
     });
-    const payload=await response.json();
-    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not share that companion.");
+    let payload={};
+    try{ payload=await response.json(); }catch{ throw new Error(`Share Pet returned HTTP ${response.status}.`); }
+    if(!response.ok||!payload.ok) throw new Error(payload.error||`Could not share that companion (HTTP ${response.status}).`);
     if(status) status.textContent=`✅ ${payload.message}`;
   }catch(error){
+    console.error("Share Pet failed",error);
     if(status) status.textContent=`❌ ${error.message}`;
   }finally{
     if(btn){btn.disabled=false;btn.textContent=original;}
   }
 }
 
-document.getElementById("h10614ShareActivePet")?.addEventListener("click",()=>{
-  const pet=ownedPet(activePetKey)||gameData?.ownedPets?.find(p=>p.equipped)||gameData?.ownedPets?.[0];
-  if(!pet){
-    const status=document.getElementById("status");
-    if(status) status.textContent="❌ You need to own a companion before you can share one.";
+function h10616ActivePetForShare(){
+  return ownedPet(activePetKey)||gameData?.ownedPets?.find(p=>p.equipped)||gameData?.ownedPets?.[0]||null;
+}
+
+// H10.6.16 — Delegated click handling keeps both the static Pets header button
+// and the dynamically-created pet-detail button reliable after rerenders.
+document.addEventListener("click",event=>{
+  const activeButton=event.target.closest?.("#h10614ShareActivePet");
+  if(activeButton){
+    event.preventDefault();
+    const pet=h10616ActivePetForShare();
+    if(!pet){
+      const status=document.getElementById("status");
+      if(status) status.textContent="❌ You need to own a companion before you can share one.";
+      return;
+    }
+    h10614SharePet(pet,activeButton);
     return;
   }
-  h10614SharePet(pet.id,document.getElementById("h10614ShareActivePet"));
+  const detailButton=event.target.closest?.("#h10614ShareDetailPet");
+  if(detailButton){
+    event.preventDefault();
+    const petId=detailButton.dataset.petId;
+    const pet=(gameData?.ownedPets||[]).find(p=>String(p.id)===String(petId));
+    if(pet) h10614SharePet(pet,detailButton);
+  }
 });
 
 // ===== H10.6.1 PLAYERS GALLERY + CHARACTER SHARE FIX =====
