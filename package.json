@@ -1,8 +1,8 @@
 {
   "name": "mixer-monster-hunt-h0",
-  "version": "2.3.0-h2e-art",
+  "version": "2.3.0-h10.6.28",
   "private": true,
-  "description": "Monster Hunt H.2E - new season core art integration",
+  "description": "Monster Hunt H10.6.28 - locally bundled Mixer 3D D100 renderer",
   "main": "index.js",
   "scripts": {
     "start": "npm run build:activity && node index.js",
@@ -17,6 +17,8 @@
     "dotenv": "^17.2.0",
     "node-cron": "^4.0.0",
     "@discord/embedded-app-sdk": "^2.4.0",
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "three": "0.185.1",
+    "cannon-es": "0.20.0"
   }
 }
