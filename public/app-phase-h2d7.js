@@ -385,6 +385,20 @@ function petAbilitySummaryHtml(pet, compact=false) {
 
 function allKnownPet(key) { return [...(gameData?.petDex || []), ...(gameData?.beyondPets || [])].find(p => p.key === key) || null; }
 
+function renderHunterXp() {
+  if (!hunter) return;
+  const current = Math.max(0, Number(hunter.xpCurrent ?? (Number(hunter.points||0) % 100)));
+  const target = Math.max(1, Number(hunter.xpNeeded || 100));
+  const remaining = Math.max(0, target - current);
+  const pct = Math.min(100, Math.max(0, (current / target) * 100));
+  const text = document.getElementById("hunterXpText");
+  const fill = document.getElementById("hunterXpFill");
+  const next = document.getElementById("hunterXpNext");
+  if (text) text.textContent = `${current} / ${target} XP`;
+  if (fill) fill.style.width = `${pct}%`;
+  if (next) next.textContent = `${remaining} XP needed for Hunter Level ${Number(hunter.level||1)+1}`;
+}
+
 function renderActivePet() {
   const pet = ownedPet(activePetKey) || gameData?.ownedPets[0];
   if (!pet) return;
@@ -410,16 +424,17 @@ function renderActivePet() {
   const petAbilityHost=document.getElementById("petAbility");
   if (petAbilityHost) petAbilityHost.innerHTML = petAbilitySummaryHtml(pet, true);
 
-  const xpTarget = Math.max(100, pet.level * 100);
-  const xpCurrent = Math.round((Number(pet.xp || 0) / 100) * xpTarget);
-  const xpNeeded = Math.max(0, xpTarget - xpCurrent);
-  const xpPct = Math.min(100, Math.max(0, Number(pet.xp || 0)));
+  const xpCurrent = Math.max(0, Number(pet.xpCurrent || 0));
+  const xpTarget = Math.max(0, Number(pet.xpNeeded || 0));
+  const isMaxLevel = xpTarget <= 0;
+  const xpRemaining = isMaxLevel ? 0 : Math.max(0, xpTarget - xpCurrent);
+  const xpPct = isMaxLevel ? 100 : Math.min(100, Math.max(0, (xpCurrent / Math.max(1, xpTarget)) * 100));
   const petXpText = document.getElementById("petXpText");
   const petXpFill = document.getElementById("petXpFill");
   const petXpNext = document.getElementById("petXpNext");
-  if (petXpText) petXpText.textContent = `${xpCurrent} / ${xpTarget}`;
+  if (petXpText) petXpText.textContent = isMaxLevel ? "MAX" : `${xpCurrent} / ${xpTarget} XP`;
   if (petXpFill) petXpFill.style.width = `${xpPct}%`;
-  if (petXpNext) petXpNext.textContent = `${xpNeeded} XP to next level`;
+  if (petXpNext) petXpNext.textContent = isMaxLevel ? "Maximum companion level reached" : `${xpRemaining} XP needed for Level ${Number(pet.level || 1) + 1}`;
   renderPets();
 }
 
@@ -471,7 +486,8 @@ function renderPets() {
         <p class="card-meta">${p.name !== petDisplayName(p) ? `${p.name} • ` : ""}${p.habitat} • Lv. ${p.level}</p>
         <p class="card-ability">${p.abilities?.[0] ? `${p.abilities[0].icon || "✨"} ${p.abilities[0].name} ${p.abilities[0].rankRoman || ""}` : p.ability}</p>
         ${p.inheritedSlotsMax != null ? `<p class="card-slots">🧬 ${p.inheritedSlotsUsed}/${p.inheritedSlotsMax} inherited slots</p>` : ""}
-        <div class="pet-progress"><span style="width:${Math.max(8,p.xp)}%"></span></div>
+        <div class="pet-card-xp"><span>XP</span><b>${Number(p.xpNeeded||0) <= 0 ? "MAX" : `${Number(p.xpCurrent||0)} / ${Number(p.xpNeeded||0)}`}</b></div>
+        <div class="pet-progress"><span style="width:${Number(p.xpNeeded||0) <= 0 ? 100 : Math.max(4,Math.min(100,(Number(p.xpCurrent||0)/Math.max(1,Number(p.xpNeeded||1)))*100))}%"></span></div>
       </div>
     </article>
   `).join("");
@@ -515,7 +531,11 @@ function showPetDetail(key) {
     </div>
     ${p.description ? `<p class="detail-copy"><b>About this companion</b><br>${p.description}</p>` : ""}
     ${owned ? `
-      <p class="detail-copy">Companion XP: <b>${p.xp}%</b> toward the next level.</p>
+      <div class="detail-xp-block">
+        <div class="detail-xp-head"><span>Companion XP</span><b>${Number(p.xpNeeded||0) <= 0 ? "MAX LEVEL" : `${Number(p.xpCurrent||0)} / ${Number(p.xpNeeded||0)} XP`}</b></div>
+        <div class="pet-xp-meter"><span style="width:${Number(p.xpNeeded||0) <= 0 ? 100 : Math.min(100,(Number(p.xpCurrent||0)/Math.max(1,Number(p.xpNeeded||1)))*100)}%"></span></div>
+        <small>${Number(p.xpNeeded||0) <= 0 ? "Maximum companion level reached" : `${Math.max(0,Number(p.xpNeeded||0)-Number(p.xpCurrent||0))} XP needed for Level ${Number(p.level||1)+1}`}</small>
+      </div>
       <div class="detail-actions">
         <button class="secondary" id="renameDetailPet">✏️ Name Pet</button>
         <button class="primary" id="equipDetailPet">${p.key === activePetKey ? "Currently Active" : "Make Active"}</button>
@@ -2223,6 +2243,7 @@ async function boot() {
     document.getElementById("level").textContent=hunter.level;
     document.getElementById("points").textContent=hunter.points;
     document.getElementById("tokens").textContent=hunter.tokens;
+    renderHunterXp();
     document.getElementById("petsCount").textContent=`${gameData.ownedPets.length} owned`;
     document.getElementById("ownedPetCount").textContent=gameData.ownedPets.length;
     document.getElementById("petdexCount").textContent=hunter.stats.petDex;
