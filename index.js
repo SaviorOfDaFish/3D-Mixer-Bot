@@ -2477,6 +2477,64 @@ function recordPointMilestoneMoments(data, playerId, previousPoints, currentPoin
   }
 }
 
+// H10.6.32 — Permanent Dice Locker cosmetics.
+// Cosmetics never influence physics, face mapping, or capture odds.
+const H10632_DICE_BODY_COLORS = Object.freeze({
+  sapphire:{name:"Hunter's Sapphire",hex:"#17467f"},
+  crimson:{name:"Crimson",hex:"#8f1f32"},
+  ember:{name:"Ember",hex:"#c24d16"},
+  gold:{name:"Gold",hex:"#b88716"},
+  emerald:{name:"Emerald",hex:"#15734c"},
+  teal:{name:"Teal",hex:"#11747a"},
+  cyan:{name:"Cyan",hex:"#1686a8"},
+  royal:{name:"Royal Blue",hex:"#244eb6"},
+  amethyst:{name:"Amethyst",hex:"#6336a5"},
+  violet:{name:"Violet",hex:"#7c3fb0"},
+  magenta:{name:"Magenta",hex:"#9c2d78"},
+  rose:{name:"Rose",hex:"#b43f65"},
+  obsidian:{name:"Obsidian",hex:"#161922"},
+  slate:{name:"Slate",hex:"#3d4b5d"},
+  silver:{name:"Silver",hex:"#7f8c9b"},
+  ivory:{name:"Ivory",hex:"#d6d1c4"}
+});
+const H10632_DICE_NUMBER_COLORS = Object.freeze({
+  white:{name:"White",hex:"#f3f7ff"},
+  ice:{name:"Ice Blue",hex:"#a9d9ff"},
+  gold:{name:"Gold",hex:"#ffd66b"},
+  orange:{name:"Orange",hex:"#ff9f43"},
+  red:{name:"Red",hex:"#ff657a"},
+  pink:{name:"Pink",hex:"#ff9ad5"},
+  violet:{name:"Violet",hex:"#c7a4ff"},
+  green:{name:"Green",hex:"#8ff0b7"},
+  cyan:{name:"Cyan",hex:"#79e8ff"},
+  black:{name:"Black",hex:"#111318"}
+});
+function h10632EnsureDiceCosmetic(player){
+  if(!player.diceCosmetic || typeof player.diceCosmetic!=="object") player.diceCosmetic={body:"sapphire",numbers:"white"};
+  if(!H10632_DICE_BODY_COLORS[player.diceCosmetic.body]) player.diceCosmetic.body="sapphire";
+  if(!H10632_DICE_NUMBER_COLORS[player.diceCosmetic.numbers]) player.diceCosmetic.numbers="white";
+  return player.diceCosmetic;
+}
+function h10632DiceLockerPayload(player){
+  const equipped=h10632EnsureDiceCosmetic(player);
+  const body=H10632_DICE_BODY_COLORS[equipped.body];
+  const numbers=H10632_DICE_NUMBER_COLORS[equipped.numbers];
+  return {
+    equipped:{body:equipped.body,numbers:equipped.numbers,bodyColor:body.hex,numberColor:numbers.hex,bodyName:body.name,numberName:numbers.name},
+    bodyColors:Object.entries(H10632_DICE_BODY_COLORS).map(([key,value])=>({key,...value})),
+    numberColors:Object.entries(H10632_DICE_NUMBER_COLORS).map(([key,value])=>({key,...value}))
+  };
+}
+async function h10632EquipDiceCosmetic(user,bodyKey,numberKey){
+  const data=loadData(), player=getPlayer(data,user.id);
+  const body=String(bodyKey||"").toLowerCase(), numbers=String(numberKey||"").toLowerCase();
+  if(!H10632_DICE_BODY_COLORS[body]) return {ok:false,error:"That dice body color is not available."};
+  if(!H10632_DICE_NUMBER_COLORS[numbers]) return {ok:false,error:"That dice number color is not available."};
+  player.diceCosmetic={body,numbers};
+  saveData(data);
+  return {ok:true,diceLocker:h10632DiceLockerPayload(player),message:`Dice equipped: ${H10632_DICE_BODY_COLORS[body].name} with ${H10632_DICE_NUMBER_COLORS[numbers].name} numbers.`};
+}
+
 function getPlayer(data, userId) {
   if (!data.players[userId]) {
     data.players[userId] = {
@@ -2564,6 +2622,9 @@ function getPlayer(data, userId) {
   
 
   const player = data.players[userId];
+
+  // H10.6.32: Dice Locker cosmetics are permanent and cosmetic-only.
+  h10632EnsureDiceCosmetic(player);
 
   // H10.6.20: migrate the old points-based Hunter Level into permanent Hunter XP once.
   // This preserves each hunter's current visible level/progress at deployment, then
@@ -8693,6 +8754,11 @@ function hardResetSeasonForNewCompetition(data) {
     if (oldPlayerData.activityProfile) {
       fresh.activityProfile = JSON.parse(JSON.stringify(oldPlayerData.activityProfile));
     }
+    // Dice Locker is permanent collection/cosmetic progress.
+    fresh.diceCosmetic = oldPlayerData.diceCosmetic
+      ? JSON.parse(JSON.stringify(oldPlayerData.diceCosmetic))
+      : {body:"sapphire",numbers:"white"};
+    h10632EnsureDiceCosmetic(fresh);
 
     // Permanent collection history.
     fresh.lifetimeCaught = lifetimeCaught;
@@ -14558,6 +14624,7 @@ function activityMonsterDexPayload(player) {
   });
 }
 
+
 function activityPlayerPayload(data, user) {
   const player = getPlayer(data, user.id);
   const profile = ensureActivityProfile(player, user);
@@ -14594,7 +14661,8 @@ function activityPlayerPayload(data, user) {
       fetch: activityFetchPayload(player),
       generatedHunterImage: player.generatedHunter?.imageUrl || null,
       generatedHunter: h81PublicHunterRecord(player.generatedHunter),
-      tutorial:h9TutorialPayload(player)
+      tutorial:h9TutorialPayload(player),
+      diceCosmetic:h10632DiceLockerPayload(player).equipped
     },
     phaseD: {
       ownedPets,
@@ -14605,6 +14673,7 @@ function activityPlayerPayload(data, user) {
       trophies: h7SeasonBountyTrophies(data,user.id),
       titles: h7SeasonTitlesPayload(player),
       cosmetics: h7CosmeticsPayload(player,data,user.id),
+      diceLocker:h10632DiceLockerPayload(player),
       petProgression:{hunterLevel:h3HunterLevel(player),inheritedSlots:h3InheritedSlotLimit(player),incubators:getIncubatorSlots(player),maxInherited:H3_MAX_INHERITED_ABILITIES}
     },
     eggs: activityEggInventoryPayload(player),
@@ -15214,6 +15283,12 @@ const activityServer = http.createServer(async (req, res) => {
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/title/equip") {
         const body=await readRequestJson(req);
         const result=await activityEquipTitle(user,body.title);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/dice-cosmetic") {
+        const body=await readRequestJson(req);
+        const result=await h10632EquipDiceCosmetic(user,body.body,body.numbers);
         return activityJson(res,result,result.ok?200:400);
       }
 
