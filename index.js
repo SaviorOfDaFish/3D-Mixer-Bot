@@ -167,6 +167,12 @@ const COMPANION_XP_PER_SUCCESSFUL_HUNT = 10;
 const COMPANION_XP_AFFECTION_BONUS = 5;
 const MAX_COMPANION_LEVEL = 25;
 const MAX_PET_BOND_LEVEL = 5;
+// H10.6.18 — Bond is now its own activity-driven progression instead of a level mirror.
+// Thresholds are TOTAL Bond XP required to reach Bond 1..5.
+const PET_BOND_XP_THRESHOLDS = [0, 25, 75, 150, 250];
+const PET_BOND_XP_PER_SUCCESSFUL_HUNT = 2;
+const PET_BOND_XP_PER_FETCH = 5;
+const PET_BOND_XP_AFFECTION_BONUS = 5;
 
 const EGG_TYPES = {
   Common: { icon: "🥚", image: "common_egg.png", incubationMs: 30 * 60 * 1000 },
@@ -2601,11 +2607,22 @@ function getPlayer(data, userId) {
       ownedPet.key = LEGACY_PET_KEY_MIGRATION[ownedPet.key];
     }
 
-    // Convert the previous hunt-based Bond progress into Companion XP.
+    // H10.6.18 migration:
+    // 1) Preserve the ancient pre-Companion-XP bond counter as Companion XP when needed.
+    // 2) Seed the new activity-driven Bond system at the player's previously displayed
+    //    level-derived Bond so nobody loses Bond when this patch is deployed.
+    const legacyBondCounter = ownedPet.bondSystemVersion === undefined ? Math.max(0, Number(ownedPet.bondXp || 0)) : 0;
     if (ownedPet.companionXp === undefined) {
-      ownedPet.companionXp = Math.max(0, Number(ownedPet.bondXp || 0) * COMPANION_XP_PER_SUCCESSFUL_HUNT);
+      ownedPet.companionXp = legacyBondCounter * COMPANION_XP_PER_SUCCESSFUL_HUNT;
     }
-    delete ownedPet.bondXp;
+    if (ownedPet.bondSystemVersion !== 2) {
+      const legacyLevel = getCompanionLevelInfo(ownedPet).level;
+      const legacyBond = Math.min(MAX_PET_BOND_LEVEL, 1 + Math.floor((legacyLevel - 1) / 5));
+      ownedPet.bondXp = PET_BOND_XP_THRESHOLDS[Math.max(0, legacyBond - 1)] || 0;
+      ownedPet.bondSystemVersion = 2;
+    } else {
+      ownedPet.bondXp = Math.max(0, Math.min(PET_BOND_XP_THRESHOLDS[MAX_PET_BOND_LEVEL - 1], Number(ownedPet.bondXp || 0)));
+    }
 
     if (ownedPet.affectionEvents === undefined) ownedPet.affectionEvents = 0;
     if (ownedPet.timesHelped === undefined) ownedPet.timesHelped = 0;
@@ -2814,9 +2831,38 @@ function getCompanionLevelInfo(ownedPet) {
   return { level, xpIntoLevel, xpNeeded: level >= MAX_COMPANION_LEVEL ? 0 : companionXpRequiredForLevel(level, rarity), rarity };
 }
 
+function getPetBondInfo(ownedPet) {
+  const totalXp = Math.max(0, Math.min(PET_BOND_XP_THRESHOLDS[MAX_PET_BOND_LEVEL - 1], Number(ownedPet?.bondXp || 0)));
+  let bond = 1;
+  for (let i = 1; i < PET_BOND_XP_THRESHOLDS.length; i++) {
+    if (totalXp >= PET_BOND_XP_THRESHOLDS[i]) bond = i + 1;
+    else break;
+  }
+  if (bond >= MAX_PET_BOND_LEVEL) {
+    return { bond:MAX_PET_BOND_LEVEL, totalXp, xpIntoBond:0, xpNeeded:0, nextAt:PET_BOND_XP_THRESHOLDS[MAX_PET_BOND_LEVEL - 1], max:true };
+  }
+  const currentAt = PET_BOND_XP_THRESHOLDS[bond - 1] || 0;
+  const nextAt = PET_BOND_XP_THRESHOLDS[bond];
+  return { bond, totalXp, xpIntoBond:Math.max(0,totalXp-currentAt), xpNeeded:Math.max(1,nextAt-currentAt), nextAt, max:false };
+}
+
 function getPetBondLevel(ownedPet) {
-  const { level } = getCompanionLevelInfo(ownedPet);
-  return Math.min(MAX_PET_BOND_LEVEL, 1 + Math.floor((level - 1) / 5));
+  return getPetBondInfo(ownedPet).bond;
+}
+
+function awardPetBondXp(ownedPet, amount, reason = "Adventure Together") {
+  if (!ownedPet || amount <= 0) return { amount:0, text:"", before:1, after:1, info:getPetBondInfo(ownedPet) };
+  const before = getPetBondLevel(ownedPet);
+  const cap = PET_BOND_XP_THRESHOLDS[MAX_PET_BOND_LEVEL - 1];
+  const oldTotal = Math.max(0, Number(ownedPet.bondXp || 0));
+  ownedPet.bondXp = Math.min(cap, oldTotal + Math.max(0, Math.floor(Number(amount || 0))));
+  ownedPet.bondSystemVersion = 2;
+  const info = getPetBondInfo(ownedPet);
+  const gained = Math.max(0, ownedPet.bondXp - oldTotal);
+  const displayName = getOwnedPetName(ownedPet);
+  const progress = info.max ? `Bond **${info.bond}/5** • **MAX BOND**` : `Bond **${info.bond}/5** • **${info.xpIntoBond}/${info.xpNeeded} Bond XP**`;
+  const text = gained > 0 ? `❤️ **${displayName} gained +${gained} Bond XP!** (${reason})\n${progress}${info.bond>before?`\n💞 **BOND UP! ${displayName} reached Bond ${info.bond}/5!**`:""}` : "";
+  return { amount:gained, text, before, after:info.bond, info };
 }
 
 function companionXpBar(ownedPet, length = 10) {
@@ -2902,9 +2948,13 @@ function formatAllPetAbilityProgress(ownedPet) {
   return lines.join("\n");
 }
 
-function awardCompanionXp(player, amount, reason = "Companion XP") {
-  const ownedPet=getEquippedPet(player), definition=getOwnedPetDefinition(ownedPet); if(!ownedPet||!definition||amount<=0) return "";
-  const trainer=Math.min(H3_GLOBAL_CAPS.companionTrainer,getPetBonus(player,"companionTrainer"));
+function awardCompanionXpToPet(player, ownedPet, amount, reason = "Companion XP") {
+  const definition=getOwnedPetDefinition(ownedPet); if(!ownedPet||!definition||amount<=0) return "";
+  // Companion Trainer belongs to the pet being trained. Fetch must reward the pet
+  // that actually went adventuring even if the player equips another pet meanwhile.
+  const entries=getPetAbilityEntries(ownedPet);
+  const trainerEntry=entries.find(entry=>entry.ability==="companionTrainer");
+  const trainer=trainerEntry ? Math.min(H3_GLOBAL_CAPS.companionTrainer, h3AbilityValue("companionTrainer",trainerEntry.level)) : 0;
   const adjusted=Math.max(1,Math.round(amount*(1+trainer/100)));
   const before=getCompanionLevelInfo(ownedPet).level;
   ownedPet.companionXp=Math.max(0,Number(ownedPet.companionXp||0))+adjusted;
@@ -2915,6 +2965,10 @@ function awardCompanionXp(player, amount, reason = "Companion XP") {
   return `${getPetDisplayIcon(definition)} **${displayName} gained ${adjusted} Companion XP!** (${reason})\n${companionXpBar(ownedPet)}\n\n**Ability Progress**\n${formatAllPetAbilityProgress(ownedPet)}`+
     `${after>before?`\n🎉 **LEVEL UP! ${displayName} reached Level ${after}!**`:""}`+
     `${abilityDistribution.levelUps.length?`\n🧬 **ABILITY RANK UP!** ${abilityDistribution.levelUps.join("\n🧬 **ABILITY RANK UP!** ")}`:""}`;
+}
+
+function awardCompanionXp(player, amount, reason = "Companion XP") {
+  return awardCompanionXpToPet(player, getEquippedPet(player), amount, reason);
 }
 
 function abilityDisplayName(ability) {
@@ -4223,6 +4277,9 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
     }
     const reaction = companionReaction(player, monster);
     const affectionEvent = rollPetAffectionEvent(player);
+    const huntBondPet = getEquippedPet(player);
+    const bondGain = PET_BOND_XP_PER_SUCCESSFUL_HUNT + (affectionEvent.bonusXp > 0 ? PET_BOND_XP_AFFECTION_BONUS : 0);
+    const bondProgress = awardPetBondXp(huntBondPet, bondGain, affectionEvent.bonusXp > 0 ? "Successful Hunt + Affection Event" : "Successful Hunt");
     const companionXpText = awardCompanionXp(
       player,
       COMPANION_XP_PER_SUCCESSFUL_HUNT + affectionEvent.bonusXp,
@@ -4340,6 +4397,7 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
         `${reaction.rewards.length > 0 ? `\n${reaction.rewards.join("\n")}` : ""}` +
         `${affectionEvent.text ? `\n\n❤️ **Affection Event**\n${affectionEvent.text}` : ""}` +
         `${companionXpText ? `\n\n⭐ **Companion Progress**\n${companionXpText}` : ""}` +
+        `${bondProgress.text ? `\n\n❤️ **Bond Progress**\n${bondProgress.text}` : ""}` +
         `${bonusRewards.length > 0 ? `\n\n**Bonus Rewards:**\n${bonusRewards.join("\n")}` : ""}` +
         `${incubatorUnlockText}` +
         `${formatSecretUnlocks(mixerUnlocks)}`
@@ -6620,7 +6678,10 @@ async function processFetchReturnsAndReminders() {
       if (ownedPet && definition) {
         const fetchResult = rollFetchRewards(data, player, ownedPet, definition);
         const rewards = fetchResult.rewards;
-        const xpText = awardCompanionXp(player, FETCH_COMPANION_XP, "Fetch Adventure");
+        const beforeFetchXp = Number(ownedPet.companionXp || 0);
+        const xpText = awardCompanionXpToPet(player, ownedPet, FETCH_COMPANION_XP, "Fetch Adventure");
+        const fetchXpGained = Math.max(0, Number(ownedPet.companionXp || 0) - beforeFetchXp);
+        const bondProgress = awardPetBondXp(ownedPet, PET_BOND_XP_PER_FETCH, "Fetch Adventure");
         const returnFlavor = fetchFlavor(definition, ownedPet.personality, true, ownedPet);
 
         player.fetchState.result = {
@@ -6630,6 +6691,10 @@ async function processFetchReturnsAndReminders() {
           petIcon:definition.icon || "🐾",
           rewards:[...rewards],
           xpText,
+          companionXpGained:fetchXpGained,
+          bondXpGained:bondProgress.amount,
+          bondText:bondProgress.text,
+          bond:getPetBondLevel(ownedPet),
           flavor:returnFlavor
         };
         player.fetchState.completed = true;
@@ -6640,7 +6705,7 @@ async function processFetchReturnsAndReminders() {
         if (petChannel?.isTextBased()) {
           const embed = new EmbedBuilder()
             .setTitle(`🐾 ${getOwnedPetName(ownedPet)} Returned!`)
-            .setDescription(`${returnFlavor}\n\n**Found:**\n${rewards.map(x => `• ${x}`).join("\n")}\n\n⭐ ${xpText}`);
+            .setDescription(`${returnFlavor}\n\n🎒 **Brought Back:**\n${rewards.map(x => `• ${x}`).join("\n")}\n\n⭐ **Companion Progress**\n${xpText}${bondProgress.text?`\n\n❤️ **Bond Progress**\n${bondProgress.text}`:""}`);
           const art = getPetArtworkUrl(definition); if (art) embed.setImage(art);
           await petChannel.send({
             content:`<@${userId}>`,
@@ -11949,7 +12014,7 @@ ${captureChoicesText(choices)}
       `Restore its species name with \`!resetpetname pet#\`.\n\n` +
       `⭐ **Companion Progression**\n` +
       `The equipped pet earns **10 Companion XP** after successful hunts. Affection Events can award **5 bonus XP**.\n` +
-      `Pets can reach **Level 25**. Bond increases every five levels, up to Bond 5, strengthening the passive.\n\n` +
+      `Pets can reach **Level 25**. ❤️ **Bond is separate from Level**: successful hunts, Fetch adventures, and Affection Events build Bond XP up to Bond 5, strengthening inheritance odds and showing how much you have adventured together.\n\n` +
       `✨ **Pet Passives**\n` +
       `Passives can improve capture chance, egg discovery, shiny odds, points, item finds, or hunt cooldowns.\n\n` +
       `📖 **Pet Dex Collections**\n` +
@@ -14157,7 +14222,9 @@ function activityOwnedPetPayload(player) {
     return {id:owned.id,key:def.key,name:def.name,nickname:owned.nickname||null,icon:def.icon,habitat:def.habitat,rarity:def.rarity,
       ability:abilities[0]?.name||abilityDisplayName(def.ability),abilityEffect:abilities[0]?.effect||def.description,abilities,description:def.description,
       level:levelInfo.level,bond,xp:levelInfo.level>=MAX_COMPANION_LEVEL?100:Math.min(100,Math.round((levelInfo.xpIntoLevel/Math.max(1,levelInfo.xpNeeded))*100)),
-      xpCurrent:levelInfo.xpIntoLevel,xpNeeded:levelInfo.xpNeeded,image:def.image||null,imageUrl:activityPetImageUrl(def),equipped:String(player.equippedPetId||"")===String(owned.id),
+      xpCurrent:levelInfo.xpIntoLevel,xpNeeded:levelInfo.xpNeeded,
+      bondXp:getPetBondInfo(owned).totalXp,bondXpCurrent:getPetBondInfo(owned).xpIntoBond,bondXpNeeded:getPetBondInfo(owned).xpNeeded,bondMax:getPetBondInfo(owned).max,
+      image:def.image||null,imageUrl:activityPetImageUrl(def),equipped:String(player.equippedPetId||"")===String(owned.id),
       inheritedSlotsUsed:(owned.inheritedAbilities||[]).length,inheritedSlotsMax:inheritedLimit,totalAbilitySlots:1+inheritedLimit
     };
   }).filter(Boolean);
@@ -14479,6 +14546,7 @@ async function activityCapture(user, itemKey = null) {
     captureItems:{...(beforePlayer.captureItems||{})},
     bait:{...(beforePlayer.bait||{})},
     petXp:Number(beforePet?.companionXp||0),
+    petBondXp:Number(beforePet?.bondXp||0),
     petName:beforePet?getOwnedPetName(beforePet):null
   };
 
@@ -14504,6 +14572,7 @@ async function activityCapture(user, itemKey = null) {
     captureItems:{...(afterPlayer.captureItems||{})},
     bait:{...(afterPlayer.bait||{})},
     petXp:Number(afterPet?.companionXp||0),
+    petBondXp:Number(afterPet?.bondXp||0),
     petName:afterPet?getOwnedPetName(afterPet):null
   };
 
@@ -14522,6 +14591,7 @@ async function activityCapture(user, itemKey = null) {
     if(amount>0) itemRewards.push({key,icon,label,amount});
   }
   const petXpGained=Math.max(0,after.petXp-before.petXp);
+  const petBondXpGained=Math.max(0,after.petBondXp-before.petBondXp);
 
   let description = "";
   for (const payload of [...sent].reverse()) {
@@ -14555,6 +14625,8 @@ async function activityCapture(user, itemKey = null) {
       eggs:after.eggs - before.eggs,
       items:itemRewards,
       petXp:petXpGained,
+      bondXp:petBondXpGained,
+      bond:afterPet?getPetBondLevel(afterPet):null,
       petName:after.petName || before.petName || null
     },
     player:activityPlayerPayload(afterData, user).hunter
