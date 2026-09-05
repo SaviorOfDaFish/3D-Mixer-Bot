@@ -1843,6 +1843,37 @@ function getPossibleRewards(encounter) {
   return rewards;
 }
 
+// H10.6.22 — Make companion abilities visible where they actually matter.
+function h10622AbilityPanelHtml(companion, includeAll=true) {
+  if(!companion) return `<div style="padding:10px 12px;border-radius:12px;background:rgba(15,23,42,.72);margin-top:10px"><b>🐾 Companion Effects</b><br><small>No active companion.</small></div>`;
+  const triggered=(companion.triggered||[]).map(m=>`<div style="margin-top:5px"><small>⚡ ${escapeHtml(String(m).replace(/\*\*/g,""))}</small></div>`).join("");
+  const active=(companion.active||[]).map(a=>`<div class="possible-reward-row"><span>${escapeHtml(a.icon||"🐾")} ${escapeHtml(a.label||"Effect")}</span><b>${escapeHtml(String(a.value||""))}</b></div>`).join("");
+  const abilities=includeAll?(companion.abilities||[]).map(a=>`<div style="padding:7px 0;border-top:1px solid rgba(148,163,184,.18)"><b>${escapeHtml(a.icon||"🐾")} ${escapeHtml(a.name||a.key)} • Rank ${escapeHtml(a.rank||"")}</b><br><small>${escapeHtml(a.effect||"")}${a.natural?" • Natural":" • Inherited"}</small></div>`).join(""):"";
+  return `<div style="padding:12px;border-radius:12px;background:rgba(15,23,42,.78);margin-top:10px">
+    <b>🐾 ${escapeHtml(companion.petName||"Companion")} — Ability Effects</b>
+    ${triggered?`<div style="margin-top:7px">${triggered}</div>`:""}
+    ${active?`<div style="margin-top:8px">${active}</div>`:""}
+    ${abilities?`<div style="margin-top:8px">${abilities}</div>`:""}
+  </div>`;
+}
+
+function h10622RenderEncounterCompanion(companion){
+  const rewards=document.getElementById("possibleRewards");
+  if(!rewards) return;
+  let panel=document.getElementById("h10622EncounterCompanion");
+  if(!panel){ panel=document.createElement("div"); panel.id="h10622EncounterCompanion"; rewards.insertAdjacentElement("afterend",panel); }
+  panel.innerHTML=h10622AbilityPanelHtml(companion,true);
+}
+
+function h10622RenderResultCompanion(companion,effects=[]){
+  const details=document.getElementById("huntResultDetails");
+  if(!details) return;
+  let panel=document.getElementById("h10622ResultCompanion");
+  if(!panel){ panel=document.createElement("div"); panel.id="h10622ResultCompanion"; details.insertAdjacentElement("afterend",panel); }
+  const copy=companion?{...companion,triggered:[...(effects||[])]}:null;
+  panel.innerHTML=h10622AbilityPanelHtml(copy,false);
+}
+
 function populateEncounterPage() {
   if (!activeHuntZone || !currentEncounter) return;
   const pet = ownedPet(activePetKey) || gameData.ownedPets[0];
@@ -1882,6 +1913,8 @@ function populateEncounterPage() {
     getPossibleRewards(currentEncounter).map(r => `
       <div class="possible-reward-row"><span>${r.icon} ${r.label}</span><b>${r.value}</b></div>
     `).join("") || `<div class="possible-reward-row"><span>🎒 Rewards</span><b>Varies</b></div>`;
+
+  h10622RenderEncounterCompanion(currentEncounter.companion || null);
 
   document.getElementById("baitPicker").classList.add("hidden");
 }
@@ -2486,7 +2519,7 @@ beginHuntFromZone = async function(zoneKey="normal") {
   currentEncounter = {
     ...payload.monster,
     baseChance:payload.baseChance,
-    chanceBreakdown:payload.chanceBreakdown || null,
+    companion:payload.companion||null,
     image:payload.monster.imageUrl || (payload.monster.image ? `${H102_DISTORTION_HABITATS.has(String(payload.monster.habitat||""))?"/assets/distortions":"/assets/monsters"}/${payload.monster.image}` : null)
   };
   hunter = {...hunter,...payload.player};
@@ -2498,30 +2531,12 @@ beginHuntFromZone = async function(zoneKey="normal") {
   }));
   populateEncounterPage();
   document.getElementById("encounterCatchChance").textContent = `${payload.chance}%`;
-  h10621ShowChanceBreakdown("encounterCatchChance", payload.chanceBreakdown);
+  if(payload.companion?.triggered?.length){
+    const status=document.getElementById("status");
+    if(status) status.textContent=`🐾 ${payload.companion.petName}: ${payload.companion.triggered.map(x=>String(x).replace(/\*\*/g,"")).join(" • ")}`;
+  }
   showHuntStep("encounter");
 };
-
-function h10621ChanceBreakdownHtml(info) {
-  if (!info) return "";
-  const rows=[];
-  const add=(label,value,icon="")=>{ const n=Number(value||0); if(n) rows.push(`<span>${icon}${escapeHtml(label)} <b>+${n}%</b></span>`); };
-  rows.push(`<span>Base <b>${Number(info.base||0)}%</b></span>`);
-  add("Pet",info.petBonus,"🐾 ");
-  add("Knowledge",info.knowledgeBonus,"📚 ");
-  add("Event",info.eventBonus,"⚡ ");
-  add("Comeback",info.comebackBonus,"🔥 ");
-  add("Capture Item",info.itemBonus,"🎒 ");
-  return `<div class="h10621-chance-breakdown" style="margin-top:8px;font-size:12px;opacity:.92;display:flex;gap:10px;flex-wrap:wrap">${rows.join("")}</div>`;
-}
-function h10621ShowChanceBreakdown(anchorId, info) {
-  const anchor=document.getElementById(anchorId); if(!anchor) return;
-  const host=anchor.parentElement || anchor;
-  let box=host.querySelector('.h10621-chance-breakdown');
-  if(box) box.remove();
-  host.insertAdjacentHTML('beforeend',h10621ChanceBreakdownHtml(info));
-  if(info?.petBonus) anchor.title=`Includes +${Number(info.petBonus)}% from your active companion.`;
-}
 
 openBaitPicker = function() {
   const picker = document.getElementById("baitPicker");
@@ -2545,10 +2560,6 @@ populateAttemptPage = function() {
     document.getElementById("attemptCatchChance").textContent = `${chance}%`;
     document.getElementById("rollTargetLabel").textContent = `Need ≤ ${chance}`;
     document.getElementById("rollMeterFill").style.width = `${chance}%`;
-    const baseInfo={...(currentEncounter?.chanceBreakdown||{})};
-    const noItemTotal=Number(currentEncounter?.chanceBreakdown?.total ?? phaseFHunting.captureTools?.find(t=>t.key==="none")?.liveChance ?? chance);
-    baseInfo.itemBonus=Math.max(0,chance-noItemTotal); baseInfo.total=chance;
-    h10621ShowChanceBreakdown("attemptCatchChance",baseInfo);
   }
   const btn=document.getElementById("performCaptureBtn");
   if(btn){
@@ -2594,13 +2605,11 @@ async function livePerformCapture() {
     document.getElementById("huntResultRewards").innerHTML = rewards.join("");
     document.getElementById("huntResultDetails").innerHTML = `
       <div><span>Catch Chance</span><b>${payload.chance}%</b></div>
-      ${payload.chanceBreakdown?.petBonus?`<div><span>🐾 Pet Capture Bonus</span><b>+${Number(payload.chanceBreakdown.petBonus)}%</b></div>`:""}
-      ${payload.chanceBreakdown?.knowledgeBonus?`<div><span>📚 Knowledge Bonus</span><b>+${Number(payload.chanceBreakdown.knowledgeBonus)}%</b></div>`:""}
-      ${payload.chanceBreakdown?.itemBonus?`<div><span>🎒 Capture Item Bonus</span><b>+${Number(payload.chanceBreakdown.itemBonus)}%</b></div>`:""}
       <div><span>Roll</span><b>${payload.roll ?? "—"}</b></div>
       <div><span>Method</span><b>${payload.method}</b></div>
       <div><span>Rarity</span><b>${currentEncounter.rarity}</b></div>
       <div><span>Discord Update</span><b>Sent</b></div>`;
+    h10622RenderResultCompanion(payload.companion||currentEncounter.companion||null,payload.companionEffects||[]);
     document.getElementById("huntAgainBtn").textContent = "🏹 Hunting Grounds";
     document.getElementById("huntAgainBtn").onclick = () => { returnToHuntOverview(); renderPhaseFHunting(); };
     showHuntStep("result");
@@ -2726,6 +2735,7 @@ async function h2dDoHunt(){
     currentEncounter={
       ...payload.monster,
       baseChance:Number(payload.baseChance||payload.monster.chance||30),
+      companion:payload.companion||null,
       image:payload.monster.imageUrl || (payload.monster.image ? `${H102_DISTORTION_HABITATS.has(String(payload.monster.habitat||""))?"/assets/distortions":"/assets/monsters"}/${payload.monster.image}` : null)
     };
     selectedHuntMethod=null;
