@@ -2564,7 +2564,7 @@ populateAttemptPage = function() {
   const btn=document.getElementById("performCaptureBtn");
   if(btn){
     btn.disabled=false;
-    btn.textContent="🎲 Roll to Catch";
+    btn.textContent="🎲 Roll to Catch • 3D";
     btn.onclick=livePerformCapture;
   }
 };
@@ -2717,7 +2717,7 @@ document.addEventListener("click", event => {
   btn.textContent="🎲 Opening Mixer D100…";
   livePerformCapture().catch(err => {
     console.error("[Monster Hunt D100] Roll to Catch failed", err);
-    btn.dataset.mhD100Busy="0"; btn.disabled=false; btn.textContent="🎲 Roll to Catch";
+    btn.dataset.mhD100Busy="0"; btn.disabled=false; btn.textContent="🎲 Roll to Catch • 3D";
     const flavor=document.getElementById("attemptFlavor");
     if(flavor) flavor.textContent=`⚠️ Dice table could not open: ${err?.message || err}`;
   });
@@ -2819,12 +2819,12 @@ async function livePerformCapture() {
   } finally {
     btn.dataset.mhD100Busy = "0";
     btn.disabled = false;
-    btn.textContent = "🎲 Roll to Catch";
+    btn.textContent = "🎲 Roll to Catch • 3D";
   }
 }
 
 
-console.log("[Monster Hunt] H10.6.24 Roll-to-Catch click hotfix loaded");
+console.log("[Monster Hunt] H10.6.26 D100 cache-bust + live build marker loaded");
 boot();
 
 
