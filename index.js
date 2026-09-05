@@ -2150,6 +2150,48 @@ async function h106ShareHunterToDiscord(user) {
   return {ok:true,message:"Your Hunter was shared to the Monster Hunt Discord channel!"};
 }
 
+// ==================== H10.6.14 PET SHARING ====================
+async function h10614SharePetToDiscord(user, petId = null) {
+  const data=loadData();
+  const player=getPlayer(data,user.id);
+  const ownedPets=Array.isArray(player.pets)?player.pets:[];
+  let owned=null;
+  if(petId !== null && petId !== undefined && String(petId).trim()) {
+    owned=ownedPets.find(p=>String(p.id)===String(petId));
+  } else {
+    owned=getEquippedPet(player);
+  }
+  if(!owned) return {ok:false,error:"Choose one of your companions before sharing it."};
+
+  const def=getOwnedPetDefinition(owned);
+  if(!def) return {ok:false,error:"That companion could not be found in the PetDex."};
+  const filePath=getPetArtworkPath(def);
+  if(!filePath || !fs.existsSync(filePath)) return {ok:false,error:"That companion's artwork could not be found."};
+
+  h4RefreshChannelRouting();
+  const channel=await getMonsterHuntChannel();
+  if(!channel?.isTextBased()) return {ok:false,error:"The Monster Hunt Discord channel is not available."};
+
+  const hunterName=user.global_name||user.username||player.discordDisplayName||player.discordUsername||"A Hunter";
+  const petName=getOwnedPetName(owned);
+  const species=def.name||"Companion";
+  const levelInfo=getCompanionLevelInfo(owned);
+  const bond=getPetBondLevel(owned);
+  const abilityLines=getPetAbilityEntries(owned).map(entry=>{
+    const natural=entry.natural?"":" 🧬";
+    return `${h3AbilityDef(entry.ability).icon||"✨"} **${abilityDisplayName(entry.ability)}** • Rank ${h3RankRoman(entry.level)}${natural}`;
+  });
+  const nicknameLine=petName!==species?`\n**Species:** ${species}`:"";
+  const abilityText=abilityLines.length?`\n\n**Abilities**\n${abilityLines.join("\n")}`:"";
+
+  await channel.send({
+    content:`# 🐾 ${hunterName} shared ${petName}!\n**${def.rarity||"Companion"} Companion** • ${def.habitat||"Unknown Habitat"}${nicknameLine}\n**Level:** ${levelInfo.level} • **Bond:** ${bond}/5${abilityText}\n\nAnother companion joins the Monster Hunt showcase!`,
+    files:[{attachment:filePath,name:`${String(petName).replace(/[^a-z0-9_-]/gi,"_")}_pet.png`}],
+    allowedMentions:{parse:[]}
+  });
+  return {ok:true,message:`${petName} was shared to the Monster Hunt Discord channel!`};
+}
+
 function getTitleDefinition(titleName) {
   const builtIn = h7AllTitleDefinitions().find(title => title.name === titleName);
   if (builtIn) return builtIn;
@@ -14738,6 +14780,12 @@ const activityServer = http.createServer(async (req, res) => {
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunter/share") {
         const result=await h106ShareHunterToDiscord(user);
+        return activityJson(res,result,result.ok?200:400);
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/pet/share") {
+        const body=await readRequestJson(req);
+        const result=await h10614SharePetToDiscord(user,body.petId||null);
         return activityJson(res,result,result.ok?200:400);
       }
 
