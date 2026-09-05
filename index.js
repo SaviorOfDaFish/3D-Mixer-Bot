@@ -62,7 +62,6 @@ db.exec(`
 `);
 
 console.log(`Monster Hunt SQLite database: ${DATABASE_FILE}`);
-// H10.6.22 — Pet Ability Audit + Activity Visibility
 const HUNT_COOLDOWN = 2 * 60 * 60 * 1000;
 const SHINY_CHANCE = 5;
 const MAX_CAPTURE_CHANCE = 95;
@@ -674,7 +673,7 @@ const H3_GLOBAL_CAPS = {
   rewardDouble:15, persistence:15
 };
 const H3_ABILITY_DEFS = {
-  capture:{name:"Capture",icon:"🎯",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:"%",description:"Increases capture chance on eligible Normal, Distortion, Bounty and Big Game capture rolls.",capText:"Pet capture bonuses can never exceed +20% total."},
+  capture:{name:"Capture",icon:"🎯",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:"%",description:"Increases normal capture chance.",capText:"Pet capture bonuses can never exceed +20% total."},
   cooldown:{name:"Swift Hunter",icon:"⏱️",tier:"Rare",inheritable:true,values:[0,5,10,15,20,25],unit:" min",description:"Reduces the normal hunt cooldown.",capText:"Pet effects can never push a normal hunt below 1 hour."},
   points:{name:"Hunter's Spirit",icon:"⭐",tier:"Common",inheritable:true,values:[0,2,4,7,10,12],unit:" points",description:"Awards bonus Hunter Points after successful catches.",capText:"Pet-derived Hunter Point bonuses cap at +20 per catch."},
   tokenFinder:{name:"Token Finder",icon:"🪙",tier:"Common",inheritable:true,values:[0,10,15,20,25,30],unit:"% proc",description:"Chance to find bonus Hunt Tokens after a successful catch.",capText:"Pet-derived bonus Hunt Token payout can scale up to +50 from one successful catch."},
@@ -684,7 +683,7 @@ const H3_ABILITY_DEFS = {
   rareTracker:{name:"Rare Tracker",icon:"🌟",tier:"Epic",inheritable:true,values:[0,3,5,8,11,15],unit:"%",description:"Shifts eligible encounter weighting toward Rare+ monsters.",capText:"Rare Tracker weighting caps at +15%."},
   companionTrainer:{name:"Companion Trainer",icon:"🧬",tier:"Common",inheritable:true,values:[0,10,20,30,40,50],unit:"% XP",description:"Increases Companion XP earned by the equipped pet.",capText:"Companion XP bonuses cap at +50%."},
   incubator:{name:"Incubator",icon:"🪺",tier:"Rare",inheritable:true,values:[0,5,10,15,20,25],unit:"% faster",description:"Reduces egg incubation duration while this pet is equipped.",capText:"Pet incubation reduction caps at 30%."},
-  luckyHunter:{name:"Lucky Hunter",icon:"🎲",tier:"Epic",inheritable:true,values:[0,3,5,8,11,15],unit:"%",description:"Chance to double the monster’s base Hunter Point reward on a successful catch. Unique trophies and restricted rewards never duplicate.",capText:"Reward doubling caps at 15%."},
+  luckyHunter:{name:"Lucky Hunter",icon:"🎲",tier:"Epic",inheritable:true,values:[0,3,5,8,11,15],unit:"%",description:"Chance to double ordinary hunt rewards. Unique trophies and restricted rewards never duplicate.",capText:"Reward doubling caps at 15%."},
   baitSaver:{name:"Bait Saver",icon:"🧲",tier:"Rare",inheritable:true,values:[0,8,14,20,26,30],unit:"%",description:"Chance to preserve eligible bait after it is used.",capText:"Bait saving caps at 30%."},
   trapMaster:{name:"Trap Master",icon:"🪤",tier:"Rare",inheritable:true,values:[0,8,14,20,26,30],unit:"%",description:"Chance to preserve an eligible capture item after a failed capture.",capText:"Capture-item saving caps at 30%."},
   bloodhound:{name:"Bloodhound",icon:"🐾",tier:"Common",inheritable:true,values:[0,3,5,7,9,10],unit:"%",description:"After prey escapes, improves the next eligible attempt against that species.",capText:"Still obeys the +20% companion capture ceiling."},
@@ -707,7 +706,7 @@ const H3_ABILITY_DEFS = {
   merchantInstinct:{name:"Merchant's Instinct",icon:"🗝️",tier:"Epic",inheritable:true,values:[0,3,5,7,10,12],unit:"%",description:"Reduces Hunt Token prices when buying non-barter goods from traveling merchants.",capText:"Merchant discount caps at 12%."},
   contrabandFinder:{name:"Contraband Finder",icon:"💼",tier:"Epic",inheritable:true,values:[0,3,5,7,10,12],unit:"%",description:"Fetch has a chance to return with an extra usable item from the merchant reward pool.",capText:"At most one Contraband bonus is added to a Fetch return."},
   ancientMemory:{name:"Ancient Memory",icon:"🏺",tier:"Legendary",inheritable:true,values:[0,6,9,12,16,20],unit:"%",description:"When you encounter a species already captured before, may redirect the trail toward a species you have never caught.",capText:"Attempts one redirect per hunt and never guarantees a specific rarity."},
-  appraiser:{name:"Appraiser",icon:"💎",tier:"Epic",inheritable:true,values:[0,5,8,11,14,18],unit:"%",description:"Successful catches can produce an upgraded bonus supply reward such as Sticky Honey, an Enchanted Net, Epic Bait or a Master Charm.",capText:"At most one Appraiser upgrade per successful catch."},
+  appraiser:{name:"Appraiser",icon:"💎",tier:"Epic",inheritable:true,values:[0,5,8,11,14,18],unit:"%",description:"Successful catches can upgrade a bonus supply reward into a more valuable hunting item.",capText:"At most one Appraiser upgrade per successful catch."},
   omen:{name:"Omen",icon:"⚫",tier:"Legendary",inheritable:true,values:[0,4,7,10,13,16],unit:"%",description:"Before a hunt, may sense something unusual and sharply increase Rare+ encounter weighting for that hunt.",capText:"Omen activates at most once per hunt."},
   foresight:{name:"Foresight",icon:"👁️",tier:"Legendary",inheritable:true,values:[0,5,8,12,16,20],unit:"%",description:"May glimpse two possible encounters and automatically follow the trail with the higher rarity.",capText:"Only one extra future is generated per hunt."},
   cosmicFortune:{name:"Cosmic Fortune",icon:"🌌",tier:"Special",inheritable:false,values:[0,1,2,3,4,5],unit:"",description:"Astræl's signature all-rounder: small Capture, Egg, Item and Shiny bonuses.",capText:"Exclusive to Astræl; each component obeys its own global cap."},
@@ -3211,34 +3210,6 @@ function h32AbilitySummary(player){
   return getPetAbilityEntries(pet).map(e=>({key:e.ability,name:h3AbilityDef(e.ability).name,icon:h3AbilityDef(e.ability).icon,rank:h3RankRoman(e.level),effect:h3AbilityEffectText(e.ability,e.level),natural:Boolean(e.natural)}));
 }
 
-// H10.6.22 — A single Activity-facing source of truth for companion ability visibility.
-function h10622ActivityCompanionSnapshot(player, data = null, userId = null, monster = null, chanceInfo = null) {
-  const owned = getEquippedPet(player);
-  const def = getOwnedPetDefinition(owned);
-  if (!owned || !def) return null;
-  const abilities = h32AbilitySummary(player);
-  const current = h32Current(player);
-  const active = [];
-  const add=(icon,label,value)=>active.push({icon,label,value});
-  const captureBase=getPetBonus(player,"capture");
-  const dynamic=monster ? h32CaptureDynamicBonus(player,monster,data||loadData(),userId) : Number(current.capture||0);
-  const sigCapture=getSignatureCaptureBonus(player);
-  const combinedCapture=Math.min(H3_GLOBAL_CAPS.capture,Math.max(0,captureBase+dynamic+sigCapture));
-  if(combinedCapture>0) add("🎯","Catch Chance",`+${combinedCapture}%`);
-  const points=getPetBonus(player,"points"); if(points>0) add("⭐","Hunter Points on success",`+${points}`);
-  const egg=Math.min(H3_GLOBAL_CAPS.eggFinder,getPetBonus(player,"eggFinder")+Number(current.egg||0)); if(egg>0) add("🥚","Egg Find",`+${egg}%`);
-  const item=Math.min(H3_GLOBAL_CAPS.itemFinder,getPetBonus(player,"itemFinder")+Number(current.item||0)); if(item>0) add("🎒","Item Find",`+${item}%`);
-  const shiny=Math.min(H3_GLOBAL_CAPS.shiny,getPetBonus(player,"shiny")+Number(current.shiny||0)); if(shiny>0) add("✨","Shiny Chance",`+${Number(shiny.toFixed(2))}%`);
-  const rare=Math.min(H3_GLOBAL_CAPS.rareTracker,getPetBonus(player,"rareTracker")+Number(current.rare||0)); if(rare>0) add("🌟","Rare+ Weighting",`+${rare}%`);
-  const trainer=getPetBonus(player,"companionTrainer"); if(trainer>0) add("🧬","Companion XP",`+${trainer}%`);
-  const cd=getPetBonus(player,"cooldown"); if(cd>0) add("⏱️","Normal Hunt Cooldown",`-${cd} min`);
-  return {
-    petId:owned.id, petKey:def.key, petName:getOwnedPetName(owned), petIcon:getPetDisplayIcon(def),
-    abilities, active, triggered:[...(current.messages||[])],
-    finalCatchChance:chanceInfo?.total ?? null, petCatchBonus:combinedCapture
-  };
-}
-
 function getPlayerPetIcon(player) {
   const ownedPet = getEquippedPet(player);
   const definition = getOwnedPetDefinition(ownedPet);
@@ -4236,7 +4207,7 @@ function h83SuccessfulHuntSupplyDrop(player, monster) {
   return `🟣 Hunt Loot: 1 Epic Bait`;
 }
 
-async function performCaptureAttempt(message, userId, itemKey = null, options = {}) {
+async function performCaptureAttempt(message, userId, itemKey = null) {
   const data = loadData();
   const player = getPlayer(data, userId);
 
@@ -4251,9 +4222,7 @@ async function performCaptureAttempt(message, userId, itemKey = null, options = 
   const monster = player.currentMonster;
   let bountyCaptureResult = null;
   const chanceInfo = calculateCaptureChance(player, monster, itemKey, data, userId);
-  const requestedPhysicalRoll = Number(options?.physicalRoll);
-  const hasPhysicalRoll = Number.isInteger(requestedPhysicalRoll) && requestedPhysicalRoll >= 1 && requestedPhysicalRoll <= 100;
-  let roll = hasPhysicalRoll ? requestedPhysicalRoll : (Math.floor(Math.random() * 100) + 1);
+  let roll = Math.floor(Math.random() * 100) + 1;
   let criticalCatch = roll === 100;
   let perfectCatch = roll === 1;
   let signatureAttemptText = "";
@@ -4268,37 +4237,10 @@ async function performCaptureAttempt(message, userId, itemKey = null, options = 
 
   let caught = criticalCatch || chanceInfo.guaranteed || roll <= chanceInfo.total;
   const rimeSig = getSignaturePet(player);
-  if (!caught && chanceInfo.total >= 25 && rimeSig?.definition.signatureAbility === "second_chance" && !monster.activityRimeRetried) {
+  if (!caught && chanceInfo.total >= 25 && rimeSig?.definition.signatureAbility === "second_chance") {
     const procChance = signatureTier(rimeSig.level,15,20,25);
     if (Math.random()*100 < procChance) {
       const firstRoll = roll;
-      if (message.isActivity && hasPhysicalRoll) {
-        // H10.6.23 — never replace a player's physical D100 with a hidden server reroll.
-        // Preserve the encounter, refund the selected item so the physical retry does
-        // not consume it twice, and ask the Activity to open the dice table again.
-        monster.activityRimeRetried = true;
-        if (itemKey) {
-          player.captureItems[itemKey] = Number(player.captureItems[itemKey] || 0) + 1;
-          player.titleProgress.captureItemsUsed = Math.max(0, Number(player.titleProgress.captureItemsUsed || 0) - 1);
-          if (itemKey === "masterCharm") player.titleProgress.masterCharmUsed = Math.max(0, Number(player.titleProgress.masterCharmUsed || 0) - 1);
-        }
-        player.currentMonster = monster;
-        message.activityPhysicalRetry = {
-          type:"rime_second_chance",
-          firstRoll,
-          chance:chanceInfo.total,
-          itemKey:itemKey || null,
-          text:"❄️ Rime Sprite froze the escape! Roll the physical D100 again."
-        };
-        saveData(data);
-        return message.reply(
-          buildMonsterEmbed(
-            monster,
-            `❄️ RIME SPRITE — SECOND CHANCE!`,
-            `**First Physical Roll:** ${firstRoll}\n**Capture Chance:** ${chanceInfo.total}%\n\nTime freezes before the creature can escape. **Roll the D100 again.**`
-          )
-        );
-      }
       roll = Math.floor(Math.random()*100)+1;
       criticalCatch = roll === 100; perfectCatch = roll === 1;
       caught = criticalCatch || chanceInfo.guaranteed || roll <= chanceInfo.total;
@@ -4510,7 +4452,6 @@ async function performCaptureAttempt(message, userId, itemKey = null, options = 
       );
     }
 
-    if (message.isActivity) message.activityPetAbilityMessages = [...h3AbilityMessages];
     const captureReply = await message.reply(
       buildMonsterEmbed(
         monster,
@@ -4570,7 +4511,6 @@ async function performCaptureAttempt(message, userId, itemKey = null, options = 
   const failureMessages = [];
   const h3Failure = h32FailureEffects(player,itemKey,monster);
   failureMessages.push(...h3Failure.messages);
-  if (message.isActivity) message.activityPetAbilityMessages = [...h3Failure.messages];
   let keepEncounter = Boolean(h3Failure.persist);
   if (failureSig?.definition.signatureAbility === "kindled_hunt") { ensureSignatureState(failureSig.owned).kindledReady = true; failureMessages.push(`🔥 **KINDLED HUNT!** Your failed catch fuels Ember Imp. Your next capture attempt gains **+${signatureTier(failureSig.level,5,7,10)}%**.`); }
   if (failureSig?.definition.signatureAbility === "veilwalk" && ensureSignatureState(failureSig.owned).veilwalkReady) { ensureSignatureState(failureSig.owned).veilwalkReady=false; keepEncounter=true; failureMessages.push(`👻 **VEILWALK!** The monster starts to escape, but Veilkin pulls it back through the Veil. **The encounter remains active — use \`!catch\` to try again.**`); }
@@ -4592,7 +4532,7 @@ async function performCaptureAttempt(message, userId, itemKey = null, options = 
       `
 🏹 **Hunter XP: +${hunterXpAward.gained}**${hunterXpAward.leveledUp ? ` • **LEVEL UP! Hunter Level ${hunterXpAward.afterLevel}**` : ''}` +
       `${signatureAttemptText}` +
-      `${failureMessages.length ? `\n\n🐾 **PET / SIGNATURE EFFECTS**\n${failureMessages.join("\n")}` : ""}` +
+      `${failureMessages.length ? `\n\n❖ **SIGNATURE ABILITY**\n${failureMessages.join("\n")}` : ""}` +
       `\n\n📚 You learned from the encounter!\n` +
       `**${cleanMonsterName(monster.name)} Knowledge:** ${encounters} encounter${encounters === 1 ? "" : "s"}\n` +
       `**Future Catch Bonus:** +${knowledgeBonus}%`
@@ -4779,19 +4719,9 @@ function applyShiny(monster, player = null, data = null) {
   return monster;
 }
 
-function weightedDistortionMonster(definition, player = null, data = null) {
-  // H10.6.22 — Distortion encounters now honor the same pet Rare+/Shiny bonuses
-  // that normal hunts use instead of bypassing those abilities entirely.
-  const rareBoost = player
-    ? Math.min(H3_GLOBAL_CAPS.rareTracker, getPetBonus(player,"rareTracker") + Number(h32Current(player).rare || 0))
-    : 0;
-  let pool = definition.monsters || [];
-  if (rareBoost > 0 && Math.random() * 100 < rareBoost) {
-    const rarePlus = pool.filter(m => ["Rare","Epic","Legendary"].includes(m.rarity));
-    if (rarePlus.length) pool = rarePlus;
-  }
+function weightedDistortionMonster(definition) {
   const weighted = [];
-  for (const monster of pool) {
+  for (const monster of definition.monsters) {
     const weight = monster.rarity === "Common" ? 40 :
       monster.rarity === "Rare" ? 25 :
       monster.rarity === "Epic" ? 8 :
@@ -4799,8 +4729,7 @@ function weightedDistortionMonster(definition, player = null, data = null) {
       monster.name === "NULL" ? 1 : 12;
     for (let i = 0; i < weight; i++) weighted.push(monster);
   }
-  const picked = { ...(weighted[Math.floor(Math.random() * weighted.length)] || pool[0]) };
-  return player ? applyShiny(picked, player, data) : picked;
+  return { ...weighted[Math.floor(Math.random() * weighted.length)] };
 }
 
 function getRandomMonsterForPlayer(player, data, userId) {
@@ -4811,13 +4740,13 @@ function getRandomMonsterForPlayer(player, data, userId) {
     const roll = Math.random() * 100;
     if (ws.stage === "unmade") {
       if (roll < 60) {
-        const monster = weightedDistortionMonster(DISTORTIONS.unmade, player, data);
+        const monster = weightedDistortionMonster(DISTORTIONS.unmade);
         monster.distortionKey = "unmade"; monster.distortionEncounter = true; monster.worldShatterEncounter = true;
         return monster;
       }
       if (roll < 90) {
         const key = WORLD_KNOWN_DISTORTION_KEYS[Math.floor(Math.random()*WORLD_KNOWN_DISTORTION_KEYS.length)];
-        const monster = weightedDistortionMonster(DISTORTIONS[key], player, data);
+        const monster = weightedDistortionMonster(DISTORTIONS[key]);
         monster.distortionKey = key; monster.distortionEncounter = true; monster.worldShatterEncounter = true;
         return monster;
       }
@@ -4825,7 +4754,7 @@ function getRandomMonsterForPlayer(player, data, userId) {
     }
     if (roll < 80) {
       const key = WORLD_KNOWN_DISTORTION_KEYS[Math.floor(Math.random()*WORLD_KNOWN_DISTORTION_KEYS.length)];
-      const monster = weightedDistortionMonster(DISTORTIONS[key], player, data);
+      const monster = weightedDistortionMonster(DISTORTIONS[key]);
       monster.distortionKey = key; monster.distortionEncounter = true; monster.worldShatterEncounter = true;
       return monster;
     }
@@ -4833,7 +4762,7 @@ function getRandomMonsterForPlayer(player, data, userId) {
   }
   const distortion = getDistortionForPlayer(data, userId);
   if (distortion && Math.random() * 100 < DISTORTION_EVENT_MONSTER_CHANCE) {
-    const monster = weightedDistortionMonster(distortion.definition, player, data);
+    const monster = weightedDistortionMonster(distortion.definition);
     monster.distortionKey = distortion.key;
     monster.distortionEncounter = true;
     monster.adminTest = distortion.test;
@@ -7098,15 +7027,42 @@ async function h4PostSuccessfulActivityCatch(user, monster, rewards = {}) {
 }
 
 async function sendWorldEvent(sourceChannel, content, filename = null, pingEveryone = false) {
+  // H10.6.29: World Events always have two explicit production destinations:
+  //   1) server announcement channel
+  //   2) Monster Hunt gameplay channel
+  // Do not depend on the caller's channel to decide whether announcements are delivered.
   h4RefreshChannelRouting();
-  const announcementChannel = await getAnnouncementChannel();
-  const huntChannel = await getTextChannel(MONSTER_CHANNEL_ID);
-  const fallback = sourceChannel?.isTextBased() ? sourceChannel : null;
+
+  const testing = h4UsingTestChannel();
+  const announcementChannelId = testing ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID;
+  const huntChannelId = testing ? H4_TEST_CHANNEL_ID : H4_PRODUCTION_HUNT_CHANNEL_ID;
+
+  const resolveWorldEventChannel = async (channelId) => {
+    if (!channelId) return null;
+    const cached = client.channels.cache.get(String(channelId));
+    if (cached?.isTextBased?.()) return cached;
+    const fetched = await client.channels.fetch(String(channelId)).catch(error => {
+      console.error(`H10.6.29 World Event channel fetch failed for ${channelId}:`, error);
+      return null;
+    });
+    return fetched?.isTextBased?.() ? fetched : null;
+  };
+
+  const announcementChannel = await resolveWorldEventChannel(announcementChannelId);
+  const huntChannel = await resolveWorldEventChannel(huntChannelId);
+  const fallback = sourceChannel?.isTextBased?.() ? sourceChannel : null;
+
   const channels = [];
   for (const channel of [announcementChannel, huntChannel, fallback]) {
-    if (channel?.isTextBased() && !channels.some(existing => String(existing.id) === String(channel.id))) channels.push(channel);
+    if (channel?.isTextBased?.() && !channels.some(existing => String(existing.id) === String(channel.id))) {
+      channels.push(channel);
+    }
   }
-  if (!channels.length) return null;
+
+  if (!channels.length) {
+    console.error(`H10.6.29 World Event routing failed: no usable destination channels. announcement=${announcementChannelId} hunt=${huntChannelId}`);
+    return null;
+  }
 
   const imagePath = filename ? findImageFile(filename) : null;
   const finalContent = pingEveryone
@@ -7124,11 +7080,22 @@ async function sendWorldEvent(sourceChannel, content, filename = null, pingEvery
   let firstResult = null;
   for (const channel of channels) {
     const result = await channel.send(makePayload()).catch(error => {
-      console.error(`World event send failed in channel ${channel.id}:`, error);
+      console.error(`H10.6.29 World Event send failed in channel ${channel.id}:`, error);
       return null;
     });
-    if (!firstResult) firstResult = result;
+    if (result) {
+      console.log(`H10.6.29 World Event posted to #${channel.name || channel.id} (${channel.id}).`);
+      if (!firstResult) firstResult = result;
+    }
   }
+
+  // A production World Event is not considered fully routed unless the dedicated
+  // announcement channel received it. Keep the Hunt post independent so one channel
+  // failure never prevents the other destination from receiving the event.
+  if (!testing && !channels.some(channel => String(channel.id) === String(H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID))) {
+    console.error(`H10.6.29 CRITICAL: announcement channel ${H4_PRODUCTION_ANNOUNCEMENT_CHANNEL_ID} could not be resolved for World Event delivery.`);
+  }
+
   return firstResult;
 }
 
@@ -13658,10 +13625,6 @@ async function performBountyHunt(data,id,ch=null){
  // Catching a non-target trail monster awards a clue and +10%, capped at 70%.
  const targetFound=(Math.random()*100)<tracker.chance;
  prepareSignatureForHunt(player);
- // H10.6.22 — Bounty hunts now initialize the pet runtime exactly like normal hunts,
- // so Pack Hunter, Eventborn, Mixed Results, First Light, Omen and other pre-hunt
- // companion effects are not silently skipped on Bounty encounters.
- const h3HuntEffects=h32PrepareHunt(player,data,id);
 
  let monster;
  if(targetFound){
@@ -13727,7 +13690,6 @@ async function performBountyHunt(data,id,ch=null){
    monster:{...monster,imageUrl:activityMonsterImageUrl(monster)},
    chance:chanceInfo.total,
    baseChance:Number(monster.chance||0),
-   companion:h10622ActivityCompanionSnapshot(player,data,id,monster,chanceInfo),
    encounters,
    choices,
    trackingChance:tracker.chance,
@@ -14687,13 +14649,12 @@ async function activityStartNormalHunt(user) {
     monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
     chance:chanceInfo.total,
     baseChance:Number(monster.chance || 0),
-    companion:h10622ActivityCompanionSnapshot(player,data,user.id,monster,chanceInfo),
     choices,
     player:activityPlayerPayload(data, user).hunter
   };
 }
 
-async function activityCapture(user, itemKey = null, physicalRoll = null) {
+async function activityCapture(user, itemKey = null) {
   const beforeData = loadData();
   const beforePlayer = getPlayer(beforeData, user.id);
   const monster = beforePlayer.currentMonster ? { ...beforePlayer.currentMonster } : null;
@@ -14722,24 +14683,7 @@ async function activityCapture(user, itemKey = null, physicalRoll = null) {
     reply:async payload => { sent.push(payload); return { reply:async()=>null }; }
   };
 
-  await performCaptureAttempt(fakeMessage, user.id, itemKey || null, { physicalRoll });
-
-  if (fakeMessage.activityPhysicalRetry) {
-    const retryData = loadData();
-    const retryPlayer = getPlayer(retryData, user.id);
-    return {
-      ok:true,
-      retryRequired:true,
-      retry:fakeMessage.activityPhysicalRetry,
-      caught:false,
-      keptEncounter:true,
-      monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
-      roll:Number(physicalRoll),
-      chance:Number(fakeMessage.activityPhysicalRetry.chance || 0),
-      method:itemKey ? CAPTURE_ITEMS[itemKey].name : "Normal Throw",
-      player:activityPlayerPayload(retryData, user).hunter
-    };
-  }
+  await performCaptureAttempt(fakeMessage, user.id, itemKey || null);
 
   const afterData = loadData();
   const afterPlayer = getPlayer(afterData, user.id);
@@ -14800,11 +14744,8 @@ async function activityCapture(user, itemKey = null, physicalRoll = null) {
     keptEncounter:Boolean(afterPlayer.currentMonster),
     monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
     roll,
-    rollSource:"physical_d100",
     chance,
     method:itemKey ? CAPTURE_ITEMS[itemKey].name : "Normal Throw",
-    companionEffects:Array.isArray(fakeMessage.activityPetAbilityMessages)?fakeMessage.activityPetAbilityMessages:[],
-    companion:h10622ActivityCompanionSnapshot(afterPlayer,afterData,user.id,monster,calculateCaptureChance(afterPlayer,monster,itemKey||null,afterData,user.id)),
     rewards:{
       points:after.points - before.points,
       hunterXp:Math.max(0, after.hunterXp - before.hunterXp),
@@ -15235,15 +15176,7 @@ const activityServer = http.createServer(async (req, res) => {
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunt/capture") {
         try {
           const body = await readRequestJson(req);
-          const physicalRoll = Number(body.physicalRoll);
-          if (!Number.isInteger(physicalRoll) || physicalRoll < 1 || physicalRoll > 100) {
-            return activityJson(res, { ok:false, error:"A physical D100 result from 1-100 is required." }, 400);
-          }
-          const result = await activityCapture(
-            user,
-            body.itemKey == null ? null : String(body.itemKey),
-            physicalRoll
-          );
+          const result = await activityCapture(user, body.itemKey == null ? null : String(body.itemKey));
           return activityJson(res, result, result.ok ? 200 : 400);
         } catch (error) {
           console.error("Activity capture failed:", error);
