@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-h2c.css?v=1400" />
+  <link rel="stylesheet" href="/styles-phase-h2c.css?v=20617" />
 </head>
 <body>
+  <button id="backgroundViewToggle" class="background-view-toggle" type="button" aria-pressed="false" title="Hide menus and view the Distortion background">👁️ Hide Menus</button>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">PHASE H.2D.1 • BOUNTY UI FIX</p>
+        <p class="eyebrow">H.10 • DISTORTIONS REBORN</p>
         <h1>🏹 Monster Hunt</h1>
       </div>
       <div class="wallet">
@@ -32,6 +33,12 @@
                 <p class="hunter-meta"><span id="hunterTitle">—</span> • Level <span id="level">—</span></p>
               </div>
               <button class="secondary" id="customizeBtn" type="button">Customize</button>
+            </div>
+
+            <div class="hunter-xp-block">
+              <div class="hunter-xp-label"><span>Hunter XP</span><b id="hunterXpText">— / —</b></div>
+              <div class="hunter-xp-meter"><span id="hunterXpFill" style="width:0%"></span></div>
+              <small id="hunterXpNext">— XP to next Hunter Level</small>
             </div>
 
             <div class="compact-scene">
@@ -126,6 +133,9 @@
           <button class="tile" data-nav="eggs"><span>🥚</span><b>Eggs</b><small>Incubate & hatch</small></button>
           <button class="tile" data-nav="inventory"><span>🎒</span><b>Inventory</b><small>Supplies & relics</small></button>
           <button class="tile" data-nav="petdex"><span>📖</span><b>PetDex</b><small id="petdexCount">—</small></button>
+          <button class="tile" data-nav="monsterdex"><span>🐲</span><b>Monster Dex</b><small id="monsterdexCount">— discovered</small></button>
+          <button class="tile" data-nav="players"><span>👥</span><b>Players</b><small>Meet the hunters</small></button>
+          <button class="tile h1066-daily-tile" data-nav="daily"><span>🎯</span><b>Daily</b><small id="dailyHomeStatus">Loading daily…</small></button>
           <button class="tile" data-nav="collection"><span>🏆</span><b>Collection</b><small id="trophyCount">— trophies</small></button>
         </section>
 
@@ -178,8 +188,19 @@
       <section class="screen" data-screen="pets">
         <div class="screen-header">
           <div><p class="eyebrow">COMPANIONS</p><h2>Your Pets</h2></div>
-          <span class="screen-count" id="ownedPetCount">0</span>
+          <div class="pet-header-tools">
+            <div class="pet-header-actions">
+              <button class="secondary compact-action" id="openPetCombine" type="button">🧬 Combine Pets</button>
+              <button class="secondary compact-action h5-fetch-btn" type="button" id="activityFetchBtn">🐾 Send Fetching</button>
+              <button class="secondary compact-action" id="h10614ShareActivePet" type="button">📣 Share Active Pet</button>
+              <span class="screen-count" id="ownedPetCount">0</span>
+            </div>
+            <div class="h5-fetch-status pet-header-fetch-status" id="activityFetchStatus">
+              <span>🐾</span><div><b>Fetch Ready</b><small>Your active companion can search for supplies.</small></div>
+            </div>
+          </div>
         </div>
+        <div class="pet-progression-banner" id="petProgressionBanner"></div>
         <div class="filter-row" id="petFilters"></div>
         <div class="pet-grid" id="petGrid"></div>
       </section>
@@ -189,12 +210,88 @@
           <div><p class="eyebrow">COLLECTION</p><h2>PetDex</h2></div>
           <span class="screen-count" id="dexProgress">0/32</span>
         </div>
-        <p class="muted intro-copy">Known habitats remain the core collection. Distortion companions appear separately as discoveries beyond the known world.</p>
+        <p class="muted intro-copy">Discover all 32 standard companions across the eight new-season habitats. Special companions appear separately beyond the core PetDex.</p>
         <div id="dexHabitats"></div>
         <section class="panel">
-          <p class="eyebrow">BEYOND THE KNOWN HABITATS</p>
-          <h3>🌀 Distortion Companions</h3>
+          <p class="eyebrow">BEYOND THE CORE PETDEX</p>
+          <h3>✨ Special Companions</h3>
           <div class="pet-grid compact-grid" id="beyondGrid"></div>
+        </section>
+      </section>
+
+      <section class="screen" data-screen="monsterdex">
+        <div class="screen-header">
+          <div><p class="eyebrow">MONSTER COLLECTION</p><h2>Monster Dex</h2></div>
+          <span class="screen-count" id="monsterDexProgress">0/0</span>
+        </div>
+        <p class="muted intro-copy">Every monster you capture is permanently recorded here with its artwork, rarity, and where it came from. Undiscovered monsters remain hidden.</p>
+        <div class="filter-row" id="monsterDexFilters"></div>
+        <div id="monsterDexHabitats"></div>
+      </section>
+
+      <section class="screen" data-screen="players">
+        <div class="screen-header">
+          <div><p class="eyebrow">HUNTER COMMUNITY</p><h2>Players</h2></div>
+          <button class="primary h106-share-btn" id="h106ShareHunter">📣 Share My Hunter</button>
+        </div>
+        <p class="muted intro-copy">Meet the hunters playing Monster Hunt. Generated character art appears here after a player equips their Hunter.</p>
+        <div class="h106-share-status" id="h106ShareStatus"></div>
+        <div class="h106-player-grid" id="h106PlayerGrid"><p class="muted">Loading hunters…</p></div>
+      </section>
+
+      <section class="screen" data-screen="daily">
+        <div class="screen-header">
+          <div><p class="eyebrow">DAILY HUNTER ROUTINE</p><h2>🎯 Daily</h2></div>
+          <span class="screen-count" id="h1066DailyResetTop">—</span>
+        </div>
+        <p class="muted intro-copy">Claim a free login item every day and complete three personal quests for bonus rewards. Everything resets at 5:00 AM Mountain Time.</p>
+
+        <section class="h1066-daily-grid">
+          <article class="panel h1066-login-card">
+            <div class="h1066-card-head"><div><p class="eyebrow">FREE DAILY ITEM</p><h3>🎁 Daily Login Reward</h3></div><span class="h1066-status-pill" id="h1066LoginPill">Loading…</span></div>
+            <p class="muted">No quest requirement. Open Monster Hunt each day and claim one free item.</p>
+            <div class="h1066-reset-row"><span>Next reset</span><b id="h1066LoginCountdown">—</b></div>
+            <button class="primary full" type="button" id="h1066ClaimLogin">🎁 Claim Daily Reward</button>
+            <div class="h1066-feedback" id="h1066LoginFeedback"></div>
+          </article>
+
+          <article class="panel h1066-quest-card">
+            <div class="h1066-card-head"><div><p class="eyebrow">PERSONAL CHALLENGES</p><h3>🏹 Daily Quests</h3></div><span class="h1066-status-pill" id="h1066QuestPill">0/3</span></div>
+            <div class="h1066-quest-list" id="h1066QuestList"><p class="muted">Loading quests…</p></div>
+            <div class="h1066-quest-reward"><span>Completion Reward</span><b id="h1066QuestReward">—</b><small>Plus a chance for bonus bait.</small></div>
+            <div class="h1066-daily-actions">
+              <button class="secondary" type="button" id="h1066RerollQuests">🔄 Reroll Unfinished</button>
+              <button class="primary" type="button" id="h1066ClaimQuests">🏆 Claim Quest Rewards</button>
+            </div>
+            <div class="h1066-reroll-note" id="h1066RerollNote">—</div>
+            <div class="h1066-feedback" id="h1066QuestFeedback"></div>
+          </article>
+        </section>
+      </section>
+
+      <section class="screen" data-screen="tutorial">
+  <div class="screen-header"><div><p class="eyebrow">🎓 HUNTER TRAINING</p><h2>Tutorial & Help</h2></div><span class="screen-count">?</span></div>
+  <p class="muted intro-copy">Learn Monster Hunt at your own pace. Your progress is saved automatically.</p>
+  <section class="panel h9-settings-shell">
+    <div class="h9-settings-card"><div><strong>Tutorial Tips</strong><p>Show first-time explanations while you explore Monster Hunt.</p></div><label class="h9-switch"><input id="h9TutorialToggle" type="checkbox" checked><span></span></label></div>
+    <div class="h9-progress-card"><div class="h9-progress-head"><span>Hunter Training Progress</span><strong id="h9ProgressText">1 / 16</strong></div><div class="h9-progress-track"><i id="h9ProgressBar"></i></div><button class="primary" id="h9StartTutorial">🎓 Start / Continue Hunter Training</button></div>
+    <div class="h9-help-grid">
+      <button data-h9-jump="3"><b>🥚 Eggs & Incubators</b><span>Hatching and companions.</span></button><button data-h9-jump="5"><b>🎒 Gear & Items</b><span>Bait and capture items.</span></button><button data-h9-jump="6"><b>🏹 Hunting</b><span>Encounters and rewards.</span></button><button data-h9-jump="9"><b>🐾 Fetch</b><span>Companion adventures.</span></button><button data-h9-jump="10"><b>🧬 Combining</b><span>XP and inheritance.</span></button><button data-h9-jump="13"><b>🌌 Events</b><span>Special hunts and events.</span></button>
+    </div>
+    <div class="h9-settings-actions"><button class="secondary" id="h9RestartTutorial">↻ Restart Full Tutorial</button><button class="secondary" id="h9ResetTips">💡 Reset Tutorial Tips</button></div>
+  </section>
+</section>
+
+<section class="screen" data-screen="notifications">
+        <div class="screen-header">
+          <div><p class="eyebrow">🔔 NOTIFICATIONS</p><h2>Monster Hunt Alerts</h2></div>
+          <span class="h4-notification-route" id="h4NotificationRoute">Loading…</span>
+        </div>
+        <p class="muted intro-copy">Choose personal ready notifications and opt-in Discord event roles.</p>
+        <section class="panel h4-notification-panel" id="h4NotificationPanel">
+          <div class="h4-notification-grid" id="h4NotificationGrid">
+            <div class="empty-state">Loading notification preferences…</div>
+          </div>
         </section>
       </section>
 
@@ -224,17 +321,17 @@
         </div>
 
         <section class="panel">
-          <div class="section-title-row"><div><p class="eyebrow">BOUNTY TROPHIES</p><h3>Monster Trophies</h3></div></div>
+          <div class="section-title-row"><div><p class="eyebrow">NEW-SEASON BOUNTIES</p><h3>Monster Trophies</h3></div></div>
           <div class="trophy-grid" id="trophyGrid"></div>
         </section>
 
         <section class="panel">
-          <div class="section-title-row"><div><p class="eyebrow">IDENTITY</p><h3>Titles</h3></div></div>
+          <div class="section-title-row"><div><p class="eyebrow">IDENTITY</p><h3>Titles</h3><p class="muted">Unlock titles through this season’s hunts, pets, eggs, events, and collections.</p></div></div>
           <div class="title-list" id="titleList"></div>
         </section>
 
         <section class="panel">
-          <div class="section-title-row"><div><p class="eyebrow">PROGRESSION REWARDS</p><h3>Cosmetics</h3></div></div>
+          <div class="section-title-row"><div><p class="eyebrow">PROGRESSION REWARDS</p><h3>Cosmetics</h3><p class="muted">Unlocked options become available in Customize Hunter.</p></div></div>
           <div class="cosmetic-grid" id="cosmeticGrid"></div>
         </section>
       </section>
@@ -673,42 +770,142 @@
       <button data-nav="pets"><span>🐾</span><small>Pets</small></button>
       <button data-nav="eggs"><span>🥚</span><small>Eggs</small></button>
       <button data-nav="petdex"><span>📖</span><small>PetDex</small></button>
+      <button data-nav="monsterdex"><span>🐲</span><small>Monsters</small></button>
       <button data-nav="inventory"><span>🎒</span><small>Gear</small></button>
       <button data-nav="merchant"><span>🛒</span><small>Shop</small></button>
       <button data-nav="collection"><span>🏆</span><small>Collection</small></button>
       <button data-nav="hunt"><span>🏹</span><small>Hunt</small></button>
+      <button data-nav="daily"><span>🎯</span><small>Daily</small></button>
       <button data-nav="events"><span>🌀</span><small>Events</small></button>
+      <button data-nav="notifications"><span>🔔</span><small>Alerts</small></button>
+      <button data-nav="tutorial"><span>🎓</span><small>Tutorial</small></button>
     </nav>
   </div>
 
-  <div class="modal-backdrop hidden" id="customizerModal" role="dialog" aria-modal="true">
-    <section class="customizer-sheet">
+  <div class="h9-tutorial-layer hidden" id="h9TutorialLayer"><div class="h9-tutorial-backdrop"></div><div class="h9-tutorial-card"><div class="h9-tutorial-top"><span id="h9TutorialCounter">1 / 16</span><button id="h9TutorialClose">×</button></div><div class="h9-tutorial-icon" id="h9TutorialIcon">🏹</div><p class="eyebrow">HUNTER TRAINING</p><h2 id="h9TutorialTitle"></h2><div class="h9-tutorial-copy" id="h9TutorialCopy"></div><div class="h9-tutorial-nav"><button class="secondary" id="h9TutorialBack">← Back</button><button class="secondary" id="h9TutorialSkip">Skip Tutorial</button><button class="primary" id="h9TutorialNext">Next →</button></div></div></div>
+<div class="h9-tip-toast hidden" id="h9TipToast"><button id="h9TipClose">×</button><div id="h9TipBody"></div></div>
+<div class="modal-backdrop hidden" id="customizerModal" role="dialog" aria-modal="true">
+    <section class="customizer-sheet h8-creator-sheet">
       <header class="customizer-header">
-        <div><p class="eyebrow">APPEARANCE EDITOR</p><h2>Customize Hunter</h2></div>
+        <div>
+          <p class="eyebrow">✨ AI HUNTER CREATOR</p>
+          <h2>Create Your Hunter</h2>
+        </div>
         <button class="icon-button" id="closeCustomizer" aria-label="Close">✕</button>
       </header>
-      <div class="customizer-body">
-        <div class="editor-preview-card">
-          <div class="mini-stage"><div id="editorAvatarHost"></div></div>
-          <p class="preview-name">Activity Test Hunter</p>
-          <p class="muted mini-note">Progression-locked cosmetics stay visible so players know what they can earn next.</p>
-        </div>
-        <div class="editor-controls">
-          <div class="control-section"><label>Body</label><div class="choice-grid" id="bodyOptions"></div></div>
-          <div class="control-section"><label>Skin Tone</label><div class="swatch-row" id="skinOptions"></div></div>
-          <div class="control-section"><label>Hair Style</label><div class="choice-grid" id="hairOptions"></div></div>
-          <div class="control-section"><label>Hair Color</label><div class="swatch-row" id="hairColorOptions"></div></div>
-          <div class="control-section"><label>Eyes</label><div class="choice-grid compact" id="eyeOptions"></div></div>
-          <div class="control-section"><label>Facial Hair</label><div class="choice-grid" id="beardOptions"></div></div>
-          <div class="control-section"><label>Outfit</label><div class="choice-grid" id="outfitOptions"></div></div>
-          <div class="control-section"><label>Cloak</label><div class="choice-grid" id="cloakOptions"></div></div>
-          <div class="control-section"><label>Headgear</label><div class="choice-grid" id="headgearOptions"></div></div>
-          <div class="control-section"><label>Weapon Display</label><div class="choice-grid" id="weaponOptions"></div></div>
+
+      <div class="h8-creator-body">
+        <aside class="h8-creator-preview">
+          <div class="h8-preview-art" id="h8CreatorArt">
+            <img class="h81-generated-preview hidden" id="h81GeneratedPreview" alt="Generated Monster Hunt hunter" />
+            <div class="h8-preview-placeholder" id="h8PreviewPlaceholder">
+              <div class="h8-preview-sigil">✨</div>
+              <strong id="h8PreviewArchetype">Monster Hunter</strong>
+              <span id="h8PreviewBody">Male</span>
+            </div>
+            <div class="h81-generation-loading hidden" id="h81GenerationLoading">
+              <span class="h81-spinner">✨</span>
+              <strong>Creating Your Hunter…</strong>
+              <small id="h81GenerationLoadingText">Bringing your character to life.</small>
+            </div>
+          </div>
+          <div class="h8-preview-summary">
+            <p class="eyebrow">CURRENT DESIGN</p>
+            <h3 id="h8PreviewName">Your Monster Hunt Hero</h3>
+            <div id="h8PreviewChips" class="h8-preview-chips"></div>
+          </div>
+          <div class="h8-safe-note h81-live-note">
+            <b>✨ AI Character Generation</b>
+            <span>Creating or regenerating a Hunter makes a real image-generation request. Your equipped Hunter is only replaced after you press <b>Use This Hunter</b>.</span>
+          </div>
+          <div class="h81-candidate-actions hidden" id="h81CandidateActions">
+            <button class="primary" type="button" id="h81UseHunter">✅ Use This Hunter</button>
+            <button class="secondary" type="button" id="h81Regenerate">🔄 Generate Again</button>
+          </div>
+        </aside>
+
+        <div class="h8-creator-controls">
+          <div class="h8-progress-row" id="h8CreatorProgress"></div>
+
+          <div class="h8-field">
+            <label for="h8Archetype">Archetype</label>
+            <select id="h8Archetype"></select>
+            <small id="h8ArchetypeHelp"></small>
+          </div>
+
+          <div class="h8-field-grid">
+            <div class="h8-field"><label for="h8Body">Body</label><select id="h8Body"></select></div>
+            <div class="h8-field"><label for="h8SkinTone">Skin Tone</label><select id="h8SkinTone"></select></div>
+            <div class="h8-field"><label for="h8Personality">Personality</label><select id="h8Personality"></select></div>
+          </div>
+
+          <div class="h8-field-grid">
+            <div class="h8-field"><label for="h8Hair">Hair</label><select id="h8Hair"></select></div>
+            <div class="h8-field"><label for="h8HairColor">Hair Color</label><select id="h8HairColor"></select></div>
+          </div>
+
+          <div class="h8-field-grid">
+            <div class="h8-field"><label for="h8Eyes">Eye Color</label><select id="h8Eyes"></select></div>
+            <div class="h8-field"><label for="h8Outfit">Outfit</label><select id="h8Outfit"></select></div>
+          </div>
+
+          <div class="h8-field-grid">
+            <div class="h8-field"><label for="h8Headgear">Headgear</label><select id="h8Headgear"></select></div>
+            <div class="h8-field"><label for="h8Weapon">Weapon</label><select id="h8Weapon"></select></div>
+          </div>
+
+          <div class="h82-section-label">
+            <p class="eyebrow">MORE CUSTOMIZATION</p>
+            <span>Mix unlocked accessories into your generated Hunter.</span>
+          </div>
+
+          <div class="h8-field-grid h82-three">
+            <div class="h8-field"><label for="h82Eyewear">Eyewear</label><select id="h82Eyewear"></select></div>
+            <div class="h8-field"><label for="h82Gloves">Gloves</label><select id="h82Gloves"></select></div>
+            <div class="h8-field"><label for="h82NeckFace">Neck / Face</label><select id="h82NeckFace"></select></div>
+          </div>
+
+          <div class="h8-field-grid h82-three">
+            <div class="h8-field"><label for="h82Cloak">Cloak / Cape</label><select id="h82Cloak"></select></div>
+            <div class="h8-field"><label for="h82BackItem">Back Item</label><select id="h82BackItem"></select></div>
+            <div class="h8-field"><label for="h82BeltItem">Belt / Pouch</label><select id="h82BeltItem"></select></div>
+          </div>
+
+          <div class="h8-field-grid">
+            <div class="h8-field"><label for="h82Offhand">Off-hand Item</label><select id="h82Offhand"></select></div>
+            <div class="h8-field">
+              <label>Optional Details <span class="h82-max-note">Choose up to 4</span></label>
+              <div class="h82-extra-grid" id="h82ExtraGrid"></div>
+            </div>
+          </div>
+
+          <section class="h8-prompt-panel hidden h81-dev-prompt" id="h8PromptPanel">
+            <div class="h8-prompt-heading">
+              <div><p class="eyebrow">GENERATION DETAILS</p><h3>Controlled Character Prompt</h3></div>
+              <span>🔒 Game-controlled</span>
+            </div>
+            <pre id="h8PromptText"></pre>
+          </section>
+
+          <div class="h8-creator-message" id="h8CreatorMessage" aria-live="polite"></div>
         </div>
       </div>
-      <footer class="customizer-footer">
+
+      <div class="h83-generation-guard hidden" id="h83GenerationGuard" role="status" aria-live="assertive">
+        <div class="h83-generation-guard-card">
+          <div class="h83-generation-guard-icon">✨</div>
+          <p class="eyebrow">CHARACTER CREATION IN PROGRESS</p>
+          <h2>Creating Your Hunter…</h2>
+          <p>Your character is being brought to life.</p>
+          <strong>⚠️ Don’t leave or close this page until character creation is finished.</strong>
+          <small>Your finished Hunter will appear automatically when it’s ready.</small>
+        </div>
+      </div>
+
+      <footer class="customizer-footer h8-creator-footer">
         <button class="secondary" id="resetAppearance" type="button">Reset</button>
-        <button class="primary" id="saveAppearance" type="button">Save Appearance</button>
+        <button class="secondary" id="h8ChangeOptions" type="button">Change Options</button>
+        <button class="primary" id="saveAppearance" type="button">✨ Create My Hunter</button>
       </footer>
     </section>
   </div>
@@ -720,6 +917,81 @@
         <button class="icon-button" id="closeDetail" aria-label="Close">✕</button>
       </header>
       <div class="detail-body" id="detailBody"></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop hidden" id="hatchRevealModal" role="dialog" aria-modal="true">
+    <section class="hatch-reveal-sheet">
+      <button class="icon-button hatch-reveal-close" id="closeHatchReveal" aria-label="Close">✕</button>
+      <div class="hatch-reveal-art" id="hatchRevealArt"></div>
+      <p class="eyebrow">NEW COMPANION HATCHED!</p>
+      <h2 id="hatchRevealName">Companion</h2>
+      <div class="hatch-reveal-meta" id="hatchRevealMeta"></div>
+      <p class="hatch-reveal-flavor" id="hatchRevealFlavor"></p>
+      <div class="hatch-ability-card">
+        <span>✨ PET ABILITY</span>
+        <strong id="hatchRevealAbility"></strong>
+        <p id="hatchRevealAbilityEffect"></p>
+      </div>
+      <div class="hatch-reveal-rewards" id="hatchRevealRewards"></div>
+      <div class="hatch-reveal-actions">
+        <button class="secondary" id="hatchRevealLater" type="button">Keep Current Pet</button>
+        <button class="primary" id="hatchRevealEquip" type="button">🐾 Equip New Pet</button>
+      </div>
+    </section>
+  </div>
+
+
+  <div class="modal-backdrop hidden" id="petCombineModal" role="dialog" aria-modal="true">
+    <section class="combine-sheet">
+      <header class="customizer-header">
+        <div><p class="eyebrow">PET FUSION</p><h2>🧬 Combine Pets</h2></div>
+        <button class="icon-button" id="closePetCombine" aria-label="Close">✕</button>
+      </header>
+      <div class="combine-body">
+        <p class="muted combine-warning">The donor pet is permanently sacrificed. Preview the result before confirming.</p>
+        <div class="combine-select-grid">
+          <label><span>Target Pet</span><select id="combineTarget"></select></label>
+          <label><span>Sacrifice Pet</span><select id="combineDonor"></select></label>
+        </div>
+        <label class="combine-ability-select"><span>Ability to Inherit</span><select id="combineAbility"></select></label>
+        <div id="combinePreview" class="combine-preview"><div class="empty-state">Choose two pets to preview the combination.</div></div>
+      </div>
+      <footer class="combine-footer">
+        <button class="secondary" id="combineXpBtn" type="button">⚡ Sacrifice for XP</button>
+        <button class="primary" id="combineInheritBtn" type="button">🧬 Attempt Inheritance</button>
+      </footer>
+    </section>
+  </div>
+
+
+  <div class="modal-backdrop hidden" id="combineConfirmModal" role="dialog" aria-modal="true">
+    <section class="combine-confirm-sheet">
+      <header class="customizer-header">
+        <div><p class="eyebrow">CONFIRM SACRIFICE</p><h2 id="combineConfirmTitle">Combine Pets?</h2></div>
+        <button class="icon-button" id="closeCombineConfirm" aria-label="Close">✕</button>
+      </header>
+      <div class="combine-confirm-body">
+        <div class="combine-confirm-icon" id="combineConfirmIcon">🧬</div>
+        <p id="combineConfirmText"></p>
+        <p class="combine-danger">⚠️ The sacrifice pet will be permanently consumed. This cannot be undone.</p>
+      </div>
+      <footer class="combine-confirm-actions">
+        <button class="secondary" id="cancelCombineAction" type="button">Cancel</button>
+        <button class="primary" id="confirmCombineAction" type="button">Confirm</button>
+      </footer>
+    </section>
+  </div>
+
+  <div class="modal-backdrop hidden" id="combineResultModal" role="dialog" aria-modal="true">
+    <section class="combine-result-sheet">
+      <button class="icon-button combine-result-close" id="closeCombineResult" aria-label="Close">✕</button>
+      <div class="combine-result-icon" id="combineResultIcon">✨</div>
+      <p class="eyebrow" id="combineResultEyebrow">PET FUSION RESULT</p>
+      <h2 id="combineResultTitle">Inheritance Successful!</h2>
+      <p class="combine-result-message" id="combineResultMessage"></p>
+      <div class="combine-result-details" id="combineResultDetails"></div>
+      <button class="primary full" id="combineResultDone" type="button">Continue</button>
     </section>
   </div>
 
@@ -746,6 +1018,7 @@
   </div>
 
   <script src="/activity-auth.js?v=1220"></script>
-  <script src="/app-phase-h2d1.js?v=1510"></script>
+  <script type="module" src="/monster-hunt-d100-real.js?v=10628"></script>
+  <script src="/app-phase-h2d7.js?v=10631"></script>
 </body>
 </html>
