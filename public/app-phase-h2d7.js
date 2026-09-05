@@ -387,11 +387,11 @@ function allKnownPet(key) { return [...(gameData?.petDex || []), ...(gameData?.b
 
 function renderHunterXp() {
   if (!hunter) return;
-  // H10.6.17: derive safely from total Hunter Points if older/cached payloads omit XP fields.
-  const points = Math.max(0, Number(hunter.points || 0));
+  // H10.6.20: Hunter XP is permanent progression, separate from seasonal Hunter Points.
+  const totalHunterXp = Math.max(0, Number(hunter.hunterXp || 0));
   const rawCurrent = Number(hunter.xpCurrent);
   const rawTarget = Number(hunter.xpNeeded);
-  const current = Number.isFinite(rawCurrent) ? Math.max(0, rawCurrent) : (points % 100);
+  const current = Number.isFinite(rawCurrent) ? Math.max(0, rawCurrent) : (totalHunterXp % 100);
   const target = Number.isFinite(rawTarget) && rawTarget > 0 ? rawTarget : 100;
   const remaining = Math.max(0, target - current);
   const pct = Math.min(100, Math.max(0, (current / target) * 100));
@@ -945,10 +945,50 @@ async function h1064CheckCosmeticUnlocks(){
   }catch(_error){}
   finally{h1064CosmeticUnlockBusy=false;}
 }
+
+function h10620ShowTitleUnlock(title){
+  const host=h1064EnsureCosmeticToastHost();
+  const toast=document.createElement("div");
+  toast.className="cosmetic-unlock-toast";
+  const icon={Common:"⚪",Rare:"🔵",Epic:"🟣",Legendary:"🟠",Mythic:"🌈"}[title.rarity]||"🏆";
+  toast.innerHTML=`
+    <div class="cosmetic-unlock-burst">🏆</div>
+    <div class="cosmetic-unlock-icon">${icon}</div>
+    <div class="cosmetic-unlock-copy">
+      <small>NEW TITLE UNLOCKED!</small>
+      <strong>${escapeHtml(title.name||"New Title")}</strong>
+      <span>${escapeHtml(title.rarity||"Title")}${title.requirement?` • ${escapeHtml(title.requirement)}`:""}</span>
+      <em>Equip it from Collection → Titles.</em>
+    </div>
+    <button type="button" class="cosmetic-unlock-close" aria-label="Dismiss">×</button>`;
+  host.appendChild(toast);
+  requestAnimationFrame(()=>toast.classList.add("show"));
+  const dismiss=()=>{toast.classList.remove("show");setTimeout(()=>toast.remove(),300);};
+  toast.querySelector(".cosmetic-unlock-close")?.addEventListener("click",dismiss);
+  setTimeout(dismiss,10000);
+}
+async function h10620CheckTitleUnlocks(){
+  try{
+    const response=await activityFetch("/api/activity/title-unlocks");
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) return;
+    const unlocks=Array.isArray(payload.unlocks)?payload.unlocks:[];
+    unlocks.forEach((title,index)=>setTimeout(()=>h10620ShowTitleUnlock(title),index*700));
+    if(unlocks.length){
+      try{
+        const syncRes=await activityFetch("/api/activity/sync");
+        const sync=await syncRes.json();
+        if(syncRes.ok&&sync.ok){ hunter=sync.hunter; gameData=sync.phaseD; if(currentScreen==="collection") renderCollection(); }
+      }catch(_error){}
+    }
+  }catch(_error){}
+}
+
 function h1064StartCosmeticUnlockWatcher(){
   clearInterval(h1064CosmeticUnlockTimer);
   h1064CheckCosmeticUnlocks();
-  h1064CosmeticUnlockTimer=setInterval(h1064CheckCosmeticUnlocks,5000);
+  h10620CheckTitleUnlocks();
+  h1064CosmeticUnlockTimer=setInterval(()=>{ h1064CheckCosmeticUnlocks(); h10620CheckTitleUnlocks(); },5000);
 }
 
 async function refreshH2BInventory() {
@@ -2515,6 +2555,7 @@ async function livePerformCapture() {
 
     const rewards = [];
     if (payload.rewards.points) rewards.push(`<div><span>⭐ Hunter Points</span><b>+${payload.rewards.points}</b></div>`);
+    if (payload.rewards.hunterXp) rewards.push(`<div><span>🏹 Hunter XP</span><b>+${payload.rewards.hunterXp}${payload.rewards.hunterLevel?` • Lv. ${payload.rewards.hunterLevel}`:""}</b></div>`);
     if (payload.rewards.tokens) rewards.push(`<div><span>🪙 Hunt Tokens</span><b>+${payload.rewards.tokens}</b></div>`);
     if (payload.rewards.petXp) rewards.push(`<div><span>🐾 ${escapeHtml(payload.rewards.petName||"Companion")} XP</span><b>+${payload.rewards.petXp}</b></div>`);
     if (payload.rewards.bondXp) rewards.push(`<div><span>❤️ ${escapeHtml(payload.rewards.petName||"Companion")} Bond XP</span><b>+${payload.rewards.bondXp}${payload.rewards.bond?` • Bond ${payload.rewards.bond}/5`:""}</b></div>`);
