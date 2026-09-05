@@ -2710,15 +2710,28 @@ document.addEventListener("click", event => {
   const btn=event.target?.closest?.("#performCaptureBtn");
   if(!btn) return;
   event.preventDefault();
-  event.stopImmediatePropagation();
   if(btn.dataset.mhD100Busy==="1") return;
-  const status=document.getElementById("status");
-  if(status) status.textContent="🎲 Roll to Catch received — opening Mixer D100...";
-  livePerformCapture();
+  // H10.6.25: invoke directly from the trusted click gesture. Do not use
+  // stopImmediatePropagation; Discord's Activity shell can depend on the same
+  // event finishing normally before canvas/fullscreen-style UI is painted.
+  btn.textContent="🎲 Opening Mixer D100…";
+  livePerformCapture().catch(err => {
+    console.error("[Monster Hunt D100] Roll to Catch failed", err);
+    btn.dataset.mhD100Busy="0"; btn.disabled=false; btn.textContent="🎲 Roll to Catch";
+    const flavor=document.getElementById("attemptFlavor");
+    if(flavor) flavor.textContent=`⚠️ Dice table could not open: ${err?.message || err}`;
+  });
 }, true);
 
 async function livePerformCapture() {
-  if (!currentEncounter || !selectedCaptureTool) return;
+  if (!currentEncounter) throw new Error("No active encounter was found.");
+  // Normal Hunt can arrive here without a selectedCaptureTool object after
+  // Activity re-entry/test-mode rendering. Recover the authoritative no-item
+  // capture method instead of silently returning and making the button look dead.
+  if (!selectedCaptureTool) {
+    const noneTool=(phaseFHunting?.captureTools || []).find(t=>t.key==="none");
+    selectedCaptureTool = noneTool || {key:"none",name:"Normal Hunt",bonus:0,liveChance:Number(currentEncounter.chance ?? currentEncounter.baseChance ?? 0)};
+  }
   const btn = document.getElementById("performCaptureBtn");
   if (!btn || btn.dataset.mhD100Busy === "1") return;
   btn.dataset.mhD100Busy = "1";
