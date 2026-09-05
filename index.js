@@ -4132,13 +4132,13 @@ function calculateCaptureChance(player, monster, itemKey = null, data = null, us
 }
 
 
-function buildCaptureChoices(player, monster) {
+function buildCaptureChoices(player, monster, data = null, userId = null) {
   const choices = [
     {
       number: 1,
       itemKey: null,
       label: "🎯 Normal Throw",
-      chance: calculateCaptureChance(player, monster).total
+      chance: calculateCaptureChance(player, monster, null, data || loadData(), userId).total
     }
   ];
 
@@ -4150,7 +4150,7 @@ function buildCaptureChoices(player, monster) {
       number: choices.length + 1,
       itemKey,
       label: `${item.name} x${player.captureItems[itemKey]}`,
-      chance: calculateCaptureChance(player, monster, itemKey).total
+      chance: calculateCaptureChance(player, monster, itemKey, data || loadData(), userId).total
     });
   }
 
@@ -4207,7 +4207,7 @@ function h83SuccessfulHuntSupplyDrop(player, monster) {
   return `🟣 Hunt Loot: 1 Epic Bait`;
 }
 
-async function performCaptureAttempt(message, userId, itemKey = null) {
+async function performCaptureAttempt(message, userId, itemKey = null, options = {}) {
   const data = loadData();
   const player = getPlayer(data, userId);
 
@@ -4222,7 +4222,9 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
   const monster = player.currentMonster;
   let bountyCaptureResult = null;
   const chanceInfo = calculateCaptureChance(player, monster, itemKey, data, userId);
-  let roll = Math.floor(Math.random() * 100) + 1;
+  const suppliedPhysicalRoll = Number(options?.physicalRoll);
+  const hasPhysicalRoll = Number.isInteger(suppliedPhysicalRoll) && suppliedPhysicalRoll >= 1 && suppliedPhysicalRoll <= 100;
+  let roll = hasPhysicalRoll ? suppliedPhysicalRoll : Math.floor(Math.random() * 100) + 1;
   let criticalCatch = roll === 100;
   let perfectCatch = roll === 1;
   let signatureAttemptText = "";
@@ -4237,10 +4239,27 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
 
   let caught = criticalCatch || chanceInfo.guaranteed || roll <= chanceInfo.total;
   const rimeSig = getSignaturePet(player);
-  if (!caught && chanceInfo.total >= 25 && rimeSig?.definition.signatureAbility === "second_chance") {
+  const physicalRetryAlreadyUsed = Boolean(monster.activityRimeRetried);
+  if (!caught && chanceInfo.total >= 25 && rimeSig?.definition.signatureAbility === "second_chance" && !physicalRetryAlreadyUsed) {
     const procChance = signatureTier(rimeSig.level,15,20,25);
     if (Math.random()*100 < procChance) {
       const firstRoll = roll;
+      if (hasPhysicalRoll && message?.isActivity) {
+        if (itemKey) {
+          player.captureItems[itemKey] = Number(player.captureItems[itemKey] || 0) + 1;
+          player.titleProgress.captureItemsUsed = Math.max(0, Number(player.titleProgress.captureItemsUsed || 0) - 1);
+          if (itemKey === "masterCharm") player.titleProgress.masterCharmUsed = Math.max(0, Number(player.titleProgress.masterCharmUsed || 0) - 1);
+        }
+        player.currentMonster = { ...monster, activityRimeRetried:true };
+        saveData(data);
+        message.activityPhysicalRetry = {
+          type:"rime_second_chance",
+          chance:chanceInfo.total,
+          firstRoll,
+          text:`❄️ Rime Sprite froze the escape! Physical D100 ${firstRoll} failed — roll again.`
+        };
+        return { ok:true, retryRequired:true };
+      }
       roll = Math.floor(Math.random()*100)+1;
       criticalCatch = roll === 100; perfectCatch = roll === 1;
       caught = criticalCatch || chanceInfo.guaranteed || roll <= chanceInfo.total;
@@ -10624,7 +10643,7 @@ ${captureChoicesText(choices)}
     const monster=freshPlayer.currentMonster;
     if(!monster || (!monster.bountyEncounter && !monster.bountyTrailEncounter))return message.reply("The bounty trail vanished before the encounter could begin.");
 
-    const choices=buildCaptureChoices(freshPlayer,monster);
+    const choices=buildCaptureChoices(freshPlayer,monster,freshData,message.author.id);
     const validNumbers=choices.map(choice=>choice.number);
     const chanceInfo=calculateCaptureChance(freshPlayer,monster,null,freshData,message.author.id);
 
@@ -10849,7 +10868,7 @@ ${captureChoicesText(choices)}
     saveData(data);
     await announceTitleUnlocks(message, automaticTitleUnlocks);
 
-    const choices = buildCaptureChoices(player, monster);
+    const choices = buildCaptureChoices(player, monster, data, message.author.id);
     const validNumbers = choices.map(choice => choice.number);
 
     const encounterMessage = await message.reply(
@@ -13671,7 +13690,7 @@ async function performBountyHunt(data,id,ch=null){
  player.currentMonster=monster;
  saveData(data);
 
- const choices=buildCaptureChoices(player,monster).map(choice=>({
+ const choices=buildCaptureChoices(player,monster,data,id).map(choice=>({
    number:choice.number,
    itemKey:choice.itemKey,
    label:choice.label,
@@ -14678,7 +14697,7 @@ async function activityStartNormalHunt(user) {
   checkTitleUnlocks(player);
   saveData(data);
 
-  const choices = buildCaptureChoices(player, monster).map(choice => ({
+  const choices = buildCaptureChoices(player, monster, data, user.id).map(choice => ({
     number: choice.number,
     itemKey: choice.itemKey,
     label: choice.label,
@@ -14695,17 +14714,31 @@ async function activityStartNormalHunt(user) {
     monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
     chance:chanceInfo.total,
     baseChance:Number(monster.chance || 0),
+    chanceBreakdown:{
+      base:Number(chanceInfo.base || monster.chance || 0),
+      knowledge:Number(chanceInfo.knowledgeBonus || 0),
+      event:Number(chanceInfo.eventBonus || 0),
+      pet:Number(chanceInfo.petBonus || 0),
+      comeback:Number(chanceInfo.comebackBonus || 0),
+      item:Number(chanceInfo.itemBonus || 0),
+      total:Number(chanceInfo.total || 0),
+      guaranteed:Boolean(chanceInfo.guaranteed)
+    },
     companion:h10630ActivityCompanionSnapshot(player),
     choices,
     player:activityPlayerPayload(data, user).hunter
   };
 }
 
-async function activityCapture(user, itemKey = null) {
+async function activityCapture(user, itemKey = null, physicalRoll = null) {
   const beforeData = loadData();
   const beforePlayer = getPlayer(beforeData, user.id);
   const monster = beforePlayer.currentMonster ? { ...beforePlayer.currentMonster } : null;
   if (!monster) return { ok:false, message:"No active monster. Start a hunt first." };
+  const normalizedPhysicalRoll = Number(physicalRoll);
+  if (!Number.isInteger(normalizedPhysicalRoll) || normalizedPhysicalRoll < 1 || normalizedPhysicalRoll > 100) {
+    return { ok:false, code:"invalid_physical_roll", message:"The Activity must provide the landed physical D100 result (1–100)." };
+  }
 
   const beforePet=getEquippedPet(beforePlayer);
   const before = {
@@ -14730,7 +14763,18 @@ async function activityCapture(user, itemKey = null) {
     reply:async payload => { sent.push(payload); return { reply:async()=>null }; }
   };
 
-  await performCaptureAttempt(fakeMessage, user.id, itemKey || null);
+  await performCaptureAttempt(fakeMessage, user.id, itemKey || null, { physicalRoll:normalizedPhysicalRoll });
+
+  if (fakeMessage.activityPhysicalRetry) {
+    return {
+      ok:true,
+      retryRequired:true,
+      retry:fakeMessage.activityPhysicalRetry,
+      roll:normalizedPhysicalRoll,
+      chance:Number(fakeMessage.activityPhysicalRetry.chance || calculateCaptureChance(beforePlayer, monster, itemKey || null, beforeData, user.id).total),
+      rollSource:"physical_d100"
+    };
+  }
 
   const afterData = loadData();
   const afterPlayer = getPlayer(afterData, user.id);
@@ -14771,7 +14815,7 @@ async function activityCapture(user, itemKey = null) {
     const text = typeof payload === "string" ? payload : (embed?.data?.description || embed?.description || "");
     if (text) { description = text; break; }
   }
-  const roll = Number((description.match(/\*\*Roll:\*\*\s*(\d+)/i) || [])[1] || 0) || null;
+  const roll = normalizedPhysicalRoll;
   const chance = Number((description.match(/\*\*(?:Final )?Capture Chance:\*\*\s*(\d+)%/i) || [])[1] || 0)
     || calculateCaptureChance(beforePlayer, monster, itemKey || null, beforeData, user.id).total;
 
@@ -14791,7 +14835,9 @@ async function activityCapture(user, itemKey = null) {
     keptEncounter:Boolean(afterPlayer.currentMonster),
     monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
     roll,
+    rollSource:"physical_d100",
     chance,
+    chanceBreakdown:(()=>{const c=calculateCaptureChance(beforePlayer,monster,itemKey||null,beforeData,user.id);return {base:Number(c.base||monster.chance||0),knowledge:Number(c.knowledgeBonus||0),event:Number(c.eventBonus||0),pet:Number(c.petBonus||0),comeback:Number(c.comebackBonus||0),item:Number(c.itemBonus||0),total:Number(c.total||0),guaranteed:Boolean(c.guaranteed)};})(),
     method:itemKey ? CAPTURE_ITEMS[itemKey].name : "Normal Throw",
     rewards:{
       points:after.points - before.points,
@@ -15223,7 +15269,7 @@ const activityServer = http.createServer(async (req, res) => {
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunt/capture") {
         try {
           const body = await readRequestJson(req);
-          const result = await activityCapture(user, body.itemKey == null ? null : String(body.itemKey));
+          const result = await activityCapture(user, body.itemKey == null ? null : String(body.itemKey), Number(body.physicalRoll));
           return activityJson(res, result, result.ok ? 200 : 400);
         } catch (error) {
           console.error("Activity capture failed:", error);
