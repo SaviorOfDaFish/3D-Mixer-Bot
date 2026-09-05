@@ -4236,7 +4236,7 @@ function h83SuccessfulHuntSupplyDrop(player, monster) {
   return `🟣 Hunt Loot: 1 Epic Bait`;
 }
 
-async function performCaptureAttempt(message, userId, itemKey = null) {
+async function performCaptureAttempt(message, userId, itemKey = null, options = {}) {
   const data = loadData();
   const player = getPlayer(data, userId);
 
@@ -4251,7 +4251,9 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
   const monster = player.currentMonster;
   let bountyCaptureResult = null;
   const chanceInfo = calculateCaptureChance(player, monster, itemKey, data, userId);
-  let roll = Math.floor(Math.random() * 100) + 1;
+  const requestedPhysicalRoll = Number(options?.physicalRoll);
+  const hasPhysicalRoll = Number.isInteger(requestedPhysicalRoll) && requestedPhysicalRoll >= 1 && requestedPhysicalRoll <= 100;
+  let roll = hasPhysicalRoll ? requestedPhysicalRoll : (Math.floor(Math.random() * 100) + 1);
   let criticalCatch = roll === 100;
   let perfectCatch = roll === 1;
   let signatureAttemptText = "";
@@ -4266,10 +4268,37 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
 
   let caught = criticalCatch || chanceInfo.guaranteed || roll <= chanceInfo.total;
   const rimeSig = getSignaturePet(player);
-  if (!caught && chanceInfo.total >= 25 && rimeSig?.definition.signatureAbility === "second_chance") {
+  if (!caught && chanceInfo.total >= 25 && rimeSig?.definition.signatureAbility === "second_chance" && !monster.activityRimeRetried) {
     const procChance = signatureTier(rimeSig.level,15,20,25);
     if (Math.random()*100 < procChance) {
       const firstRoll = roll;
+      if (message.isActivity && hasPhysicalRoll) {
+        // H10.6.23 — never replace a player's physical D100 with a hidden server reroll.
+        // Preserve the encounter, refund the selected item so the physical retry does
+        // not consume it twice, and ask the Activity to open the dice table again.
+        monster.activityRimeRetried = true;
+        if (itemKey) {
+          player.captureItems[itemKey] = Number(player.captureItems[itemKey] || 0) + 1;
+          player.titleProgress.captureItemsUsed = Math.max(0, Number(player.titleProgress.captureItemsUsed || 0) - 1);
+          if (itemKey === "masterCharm") player.titleProgress.masterCharmUsed = Math.max(0, Number(player.titleProgress.masterCharmUsed || 0) - 1);
+        }
+        player.currentMonster = monster;
+        message.activityPhysicalRetry = {
+          type:"rime_second_chance",
+          firstRoll,
+          chance:chanceInfo.total,
+          itemKey:itemKey || null,
+          text:"❄️ Rime Sprite froze the escape! Roll the physical D100 again."
+        };
+        saveData(data);
+        return message.reply(
+          buildMonsterEmbed(
+            monster,
+            `❄️ RIME SPRITE — SECOND CHANCE!`,
+            `**First Physical Roll:** ${firstRoll}\n**Capture Chance:** ${chanceInfo.total}%\n\nTime freezes before the creature can escape. **Roll the D100 again.**`
+          )
+        );
+      }
       roll = Math.floor(Math.random()*100)+1;
       criticalCatch = roll === 100; perfectCatch = roll === 1;
       caught = criticalCatch || chanceInfo.guaranteed || roll <= chanceInfo.total;
@@ -14664,7 +14693,7 @@ async function activityStartNormalHunt(user) {
   };
 }
 
-async function activityCapture(user, itemKey = null) {
+async function activityCapture(user, itemKey = null, physicalRoll = null) {
   const beforeData = loadData();
   const beforePlayer = getPlayer(beforeData, user.id);
   const monster = beforePlayer.currentMonster ? { ...beforePlayer.currentMonster } : null;
@@ -14693,7 +14722,24 @@ async function activityCapture(user, itemKey = null) {
     reply:async payload => { sent.push(payload); return { reply:async()=>null }; }
   };
 
-  await performCaptureAttempt(fakeMessage, user.id, itemKey || null);
+  await performCaptureAttempt(fakeMessage, user.id, itemKey || null, { physicalRoll });
+
+  if (fakeMessage.activityPhysicalRetry) {
+    const retryData = loadData();
+    const retryPlayer = getPlayer(retryData, user.id);
+    return {
+      ok:true,
+      retryRequired:true,
+      retry:fakeMessage.activityPhysicalRetry,
+      caught:false,
+      keptEncounter:true,
+      monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
+      roll:Number(physicalRoll),
+      chance:Number(fakeMessage.activityPhysicalRetry.chance || 0),
+      method:itemKey ? CAPTURE_ITEMS[itemKey].name : "Normal Throw",
+      player:activityPlayerPayload(retryData, user).hunter
+    };
+  }
 
   const afterData = loadData();
   const afterPlayer = getPlayer(afterData, user.id);
@@ -14754,6 +14800,7 @@ async function activityCapture(user, itemKey = null) {
     keptEncounter:Boolean(afterPlayer.currentMonster),
     monster:{ ...monster, imageUrl:activityMonsterImageUrl(monster) },
     roll,
+    rollSource:"physical_d100",
     chance,
     method:itemKey ? CAPTURE_ITEMS[itemKey].name : "Normal Throw",
     companionEffects:Array.isArray(fakeMessage.activityPetAbilityMessages)?fakeMessage.activityPetAbilityMessages:[],
@@ -15188,7 +15235,15 @@ const activityServer = http.createServer(async (req, res) => {
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/hunt/capture") {
         try {
           const body = await readRequestJson(req);
-          const result = await activityCapture(user, body.itemKey == null ? null : String(body.itemKey));
+          const physicalRoll = Number(body.physicalRoll);
+          if (!Number.isInteger(physicalRoll) || physicalRoll < 1 || physicalRoll > 100) {
+            return activityJson(res, { ok:false, error:"A physical D100 result from 1-100 is required." }, 400);
+          }
+          const result = await activityCapture(
+            user,
+            body.itemKey == null ? null : String(body.itemKey),
+            physicalRoll
+          );
           return activityJson(res, result, result.ok ? 200 : 400);
         } catch (error) {
           console.error("Activity capture failed:", error);
