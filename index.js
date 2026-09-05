@@ -546,6 +546,8 @@ function activityEggImageUrl(eggKey, image) {
 
 const MAX_INCUBATORS = 5;
 const HUNTER_POINTS_PER_LEVEL = 100;
+const HUNTER_XP_PER_SUCCESS = 5;
+const HUNTER_XP_PER_FAILURE = 2;
 // H10.6.2 — Hatch rewards are intentionally modest so Hunting remains
 // the primary source of competitive Hunter Points.
 const HATCH_POINT_REWARDS = {
@@ -734,7 +736,15 @@ for (const pet of pets) {
 }
 
 function h3HunterLevel(player) {
-  return Math.max(1, 1 + Math.floor(Math.max(0, Number(player?.points || 0)) / HUNTER_POINTS_PER_LEVEL));
+  return Math.max(1, 1 + Math.floor(Math.max(0, Number(player?.hunterXp || 0)) / HUNTER_POINTS_PER_LEVEL));
+}
+function awardHunterXp(player, amount) {
+  const beforeXp = Math.max(0, Number(player?.hunterXp || 0));
+  const beforeLevel = h3HunterLevel(player);
+  const gained = Math.max(0, Math.floor(Number(amount || 0)));
+  player.hunterXp = beforeXp + gained;
+  const afterLevel = h3HunterLevel(player);
+  return { gained, beforeXp, afterXp:player.hunterXp, beforeLevel, afterLevel, leveledUp:afterLevel > beforeLevel };
 }
 function h3InheritedSlotLimit(player) {
   return Math.min(H3_MAX_INHERITED_ABILITIES, 1 + Math.floor((h3HunterLevel(player) - 1) / 2));
@@ -2259,6 +2269,33 @@ function checkTitleUnlocks(player) {
   return newlyUnlocked;
 }
 
+// H10.6.20 — persistent Activity title unlock feed.
+// First poll establishes a quiet baseline so existing historical titles do not spam.
+// After that, any title newly added by hunts, hatches, pets, merchants, events, etc.
+// is surfaced exactly once in the Activity.
+function h10620CollectTitleUnlocks(player) {
+  if (!Array.isArray(player.unlockedTitles)) player.unlockedTitles = [];
+  // Ensure any titles the player's current state now qualifies for are recorded.
+  checkTitleUnlocks(player);
+  const current = [...new Set(player.unlockedTitles)];
+
+  if (!player.titleUnlockNotificationsInitialized || !Array.isArray(player.notifiedTitleUnlocks)) {
+    player.notifiedTitleUnlocks = [...current];
+    player.titleUnlockNotificationsInitialized = true;
+    return [];
+  }
+
+  const seen = new Set(player.notifiedTitleUnlocks);
+  const newNames = current.filter(name => !seen.has(name));
+  if (!newNames.length) return [];
+  for (const name of newNames) seen.add(name);
+  player.notifiedTitleUnlocks = [...seen];
+  return newNames.map(name => {
+    const def = getTitleDefinition(name);
+    return { name, rarity:def.rarity || 'Epic', requirement:def.requirement || null };
+  });
+}
+
 async function announceTitleUnlocks(message, unlocks) {
   if (!unlocks || unlocks.length === 0) return;
 
@@ -2444,6 +2481,7 @@ function getPlayer(data, userId) {
   if (!data.players[userId]) {
     data.players[userId] = {
       points: 0,
+      hunterXp: 0,
       caught: [],
       lifetimeCaught: [],
       currentMonster: null,
@@ -2527,12 +2565,32 @@ function getPlayer(data, userId) {
 
   const player = data.players[userId];
 
+  // H10.6.20: migrate the old points-based Hunter Level into permanent Hunter XP once.
+  // This preserves each hunter's current visible level/progress at deployment, then
+  // future seasonal point changes no longer affect Hunter Level.
+  if (player.hunterXp === undefined || player.hunterXp === null || !Number.isFinite(Number(player.hunterXp))) {
+    player.hunterXp = Math.max(0, Number(player.points || 0));
+  } else {
+    player.hunterXp = Math.max(0, Number(player.hunterXp || 0));
+  }
+
   // Lifetime collection is display-only and never affects seasonal scoring.
   if (!Array.isArray(player.lifetimeCaught)) player.lifetimeCaught = [];
 
   if (player.lastHunt === undefined) player.lastHunt = 0;
   if (player.title === undefined) player.title = null;
   if (!Array.isArray(player.unlockedTitles)) player.unlockedTitles = [];
+  // H10.6.20: establish a quiet title-notification baseline on migration.
+  // Include titles the player already qualifies for so deployment does not flood
+  // longtime hunters with historical unlock popups. New unlocks after this point
+  // are detected by /api/activity/title-unlocks and shown exactly once.
+  if (!player.titleUnlockNotificationsInitialized || !Array.isArray(player.notifiedTitleUnlocks)) {
+    const alreadyEligible = h7AllTitleDefinitions().filter(def => {
+      try { return Boolean(def.check(player)); } catch (_error) { return false; }
+    }).map(def => def.name);
+    player.notifiedTitleUnlocks = [...new Set([...(player.unlockedTitles||[]), ...alreadyEligible])];
+    player.titleUnlockNotificationsInitialized = true;
+  }
   if (!Array.isArray(player.secretAchievements)) player.secretAchievements = [];
   if (!Array.isArray(player.ultraCaughtKeys)) player.ultraCaughtKeys = [];
   if (!Array.isArray(player.ultraSummonedKeys)) player.ultraSummonedKeys = [];
@@ -3383,8 +3441,8 @@ function petPassiveTextForOwned(ownedPet) {
 function getIncubatorSlots(player) {
   return Math.min(MAX_INCUBATORS,h3InheritedSlotLimit(player));
 }
-function getNewIncubatorUnlockText(player, previousPoints) {
-  const fakeBefore={...player,points:previousPoints};
+function getNewIncubatorUnlockText(player, previousHunterXp) {
+  const fakeBefore={...player,hunterXp:previousHunterXp};
   const before=getIncubatorSlots(fakeBefore), after=getIncubatorSlots(player);
   player.lastIncubatorSlots=after;
   if(after<=before) return "";
@@ -4210,7 +4268,9 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
     const comebackExtra = pointsEarned - eventFlatBonus - baseBeforeComeback - (criticalCatch ? CRITICAL_CATCH_BONUS_POINTS : 0);
 
     const previousPoints = player.points;
+    const previousHunterXp = Math.max(0, Number(player.hunterXp || 0));
     player.points += pointsEarned;
+    const hunterXpAward = awardHunterXp(player, HUNTER_XP_PER_SUCCESS);
     addWeeklyProgress(data, player, pointsEarned, monster);
     player.caught.push(monster);
     player.lifetimeCaught.push({ ...monster });
@@ -4301,7 +4361,7 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
       COMPANION_XP_PER_SUCCESSFUL_HUNT + affectionEvent.bonusXp,
       affectionEvent.bonusXp > 0 ? "Successful Hunt + Affection Event" : "Successful Hunt"
     );
-    const incubatorUnlockText = getNewIncubatorUnlockText(player, previousPoints);
+    const incubatorUnlockText = getNewIncubatorUnlockText(player, previousHunterXp);
     const isMixerMonster = cleanMonsterName(monster.name) === "Mixer Monster";
     player.titleProgress.failedCaptureStreak = 0;
     if (isMixerMonster && itemKey !== "masterCharm") {
@@ -4403,6 +4463,8 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
         `${perfectCatch ? `\n🎯 **PERFECT CATCH!** Natural 1 bonus loot: **${perfectLoot}**\n` : ""}` +
         `${comebackExtra > 0 ? `🔥 **Comeback Bonus: +${comebackExtra} points**\n` : ""}` +
         `**+${pointsEarned} points**` +
+        `
+🏹 **Hunter XP: +${hunterXpAward.gained}**${hunterXpAward.leveledUp ? ` • **LEVEL UP! Hunter Level ${hunterXpAward.afterLevel}**` : ''}` +
         `${huntTokenText}` +
         `${h3AbilityMessages.length ? `\n\n🐾 **PET ABILITIES**\n${h3AbilityMessages.join("\n")}` : ""}` +
         `${signatureAttemptText}` +
@@ -4453,6 +4515,8 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
   if (failureSig?.definition.signatureAbility === "kindled_hunt") { ensureSignatureState(failureSig.owned).kindledReady = true; failureMessages.push(`🔥 **KINDLED HUNT!** Your failed catch fuels Ember Imp. Your next capture attempt gains **+${signatureTier(failureSig.level,5,7,10)}%**.`); }
   if (failureSig?.definition.signatureAbility === "veilwalk" && ensureSignatureState(failureSig.owned).veilwalkReady) { ensureSignatureState(failureSig.owned).veilwalkReady=false; keepEncounter=true; failureMessages.push(`👻 **VEILWALK!** The monster starts to escape, but Veilkin pulls it back through the Veil. **The encounter remains active — use \`!catch\` to try again.**`); }
   player.currentMonster = keepEncounter ? monster : null;
+  const hunterXpAward = awardHunterXp(player, HUNTER_XP_PER_FAILURE);
+  checkTitleUnlocks(player);
   saveData(data);
 
   const encounters = getKnowledgeCount(player, monster);
@@ -4465,6 +4529,8 @@ async function performCaptureAttempt(message, userId, itemKey = null) {
       `${itemKey ? `**Item Used:** ${CAPTURE_ITEMS[itemKey].name}\n` : "**Method:** Normal Throw\n"}` +
       `**Final Capture Chance:** ${chanceInfo.total}%\n` +
       `**Roll:** ${roll}` +
+      `
+🏹 **Hunter XP: +${hunterXpAward.gained}**${hunterXpAward.leveledUp ? ` • **LEVEL UP! Hunter Level ${hunterXpAward.afterLevel}**` : ''}` +
       `${signatureAttemptText}` +
       `${failureMessages.length ? `\n\n❖ **SIGNATURE ABILITY**\n${failureMessages.join("\n")}` : ""}` +
       `\n\n📚 You learned from the encounter!\n` +
@@ -8565,6 +8631,8 @@ function hardResetSeasonForNewCompetition(data) {
     // Identity/cosmetic appearance is not a gameplay advantage.
     fresh.discordUsername = oldPlayerData.discordUsername || null;
     fresh.discordDisplayName = oldPlayerData.discordDisplayName || null;
+    // Hunter XP/Level is permanent personal progression and survives seasons.
+    fresh.hunterXp = Math.max(0, Number(oldPlayerData.hunterXp ?? oldPlayerData.points ?? 0));
     if (oldPlayerData.activityProfile) {
       fresh.activityProfile = JSON.parse(JSON.stringify(oldPlayerData.activityProfile));
     }
@@ -11022,7 +11090,7 @@ ${captureChoicesText(choices)}
       };
     }
 
-    const incubatorUnlockText = getNewIncubatorUnlockText(player, previousPoints);
+    const incubatorUnlockText = getNewIncubatorUnlockText(player, previousHunterXp);
     const petCollectionUnlocks = evaluatePetCollectionRewards(data, player);
     const automaticTitleUnlocks = checkTitleUnlocks(player);
 
@@ -14448,9 +14516,10 @@ function activityPlayerPayload(data, user) {
       name: user.global_name || user.username,
       level: h3HunterLevel(player),
       points: Number(player.points || 0),
-      xpCurrent: Math.max(0, Number(player.points || 0)) % HUNTER_POINTS_PER_LEVEL,
+      hunterXp: Math.max(0, Number(player.hunterXp || 0)),
+      xpCurrent: Math.max(0, Number(player.hunterXp || 0)) % HUNTER_POINTS_PER_LEVEL,
       xpNeeded: HUNTER_POINTS_PER_LEVEL,
-      xpPercent: Math.round(((Math.max(0, Number(player.points || 0)) % HUNTER_POINTS_PER_LEVEL) / HUNTER_POINTS_PER_LEVEL) * 100),
+      xpPercent: Math.round(((Math.max(0, Number(player.hunterXp || 0)) % HUNTER_POINTS_PER_LEVEL) / HUNTER_POINTS_PER_LEVEL) * 100),
       tokens: Number(player.huntTokens || 0),
       title: player.title || profile.hunterTitle || "Novice Hunter",
       activePetKey: active?.key || null,
@@ -14557,6 +14626,7 @@ async function activityCapture(user, itemKey = null) {
   const before = {
     caught:(beforePlayer.caught || []).length,
     points:Number(beforePlayer.points || 0),
+    hunterXp:Number(beforePlayer.hunterXp || 0),
     tokens:Number(beforePlayer.huntTokens || 0),
     eggs:(beforePlayer.eggs || []).length,
     captureItems:{...(beforePlayer.captureItems||{})},
@@ -14583,6 +14653,7 @@ async function activityCapture(user, itemKey = null) {
   const after = {
     caught:(afterPlayer.caught || []).length,
     points:Number(afterPlayer.points || 0),
+    hunterXp:Number(afterPlayer.hunterXp || 0),
     tokens:Number(afterPlayer.huntTokens || 0),
     eggs:(afterPlayer.eggs || []).length,
     captureItems:{...(afterPlayer.captureItems||{})},
@@ -14622,6 +14693,8 @@ async function activityCapture(user, itemKey = null) {
   if (after.caught > before.caught) {
     await h4PostSuccessfulActivityCatch(user, monster, {
       points:after.points - before.points,
+      hunterXp:Math.max(0, after.hunterXp - before.hunterXp),
+      hunterLevel:h3HunterLevel(afterPlayer),
       tokens:after.tokens - before.tokens,
       eggs:after.eggs - before.eggs
     });
@@ -14637,6 +14710,8 @@ async function activityCapture(user, itemKey = null) {
     method:itemKey ? CAPTURE_ITEMS[itemKey].name : "Normal Throw",
     rewards:{
       points:after.points - before.points,
+      hunterXp:Math.max(0, after.hunterXp - before.hunterXp),
+      hunterLevel:h3HunterLevel(afterPlayer),
       tokens:after.tokens - before.tokens,
       eggs:after.eggs - before.eggs,
       items:itemRewards,
@@ -14788,6 +14863,15 @@ const activityServer = http.createServer(async (req, res) => {
         const unlocks = h1064CollectCosmeticUnlocks(player,data,user.id);
         saveData(data);
         return activityJson(res, {ok:true,unlocks,build:"H10.6.4"});
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/api/activity/title-unlocks") {
+        const data = loadData();
+        const player = getPlayer(data, user.id);
+        ensureActivityProfile(player, user);
+        const unlocks = h10620CollectTitleUnlocks(player);
+        saveData(data);
+        return activityJson(res, {ok:true,unlocks,build:"H10.6.20"});
       }
 
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/me") {
