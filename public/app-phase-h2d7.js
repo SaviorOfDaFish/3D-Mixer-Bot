@@ -519,6 +519,7 @@ function showPetDetail(key) {
       <div class="detail-actions">
         <button class="secondary" id="renameDetailPet">✏️ Name Pet</button>
         <button class="primary" id="equipDetailPet">${p.key === activePetKey ? "Currently Active" : "Make Active"}</button>
+        <button class="secondary" id="h10614ShareDetailPet">📣 Share Pet</button>
       </div>` : `
       <p class="detail-copy">This companion has not been collected in the test profile.</p>`}
   `;
@@ -538,6 +539,9 @@ function showPetDetail(key) {
 
   const rename = document.getElementById("renameDetailPet");
   if (rename) rename.onclick = () => openRenamePet(p.key);
+
+  const sharePet = document.getElementById("h10614ShareDetailPet");
+  if (sharePet) sharePet.onclick = () => h10614SharePet(p.id, sharePet);
 }
 
 function openRenamePet(key) {
@@ -3601,6 +3605,37 @@ setTimeout(h93LoadAuthoritativeTutorialState,2300);
   });
 })();
 
+
+// ===== H10.6.14 PET SHARING =====
+async function h10614SharePet(petId, button=null){
+  const btn=button||document.getElementById("h10614ShareActivePet");
+  const original=btn?.textContent||"📣 Share Pet";
+  if(btn){btn.disabled=true;btn.textContent="📣 Sharing…";}
+  const status=document.getElementById("status");
+  if(status) status.textContent="Sending companion to the Monster Hunt Discord channel…";
+  try{
+    const response=await activityFetch("/api/activity/pet/share",{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({petId})
+    });
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not share that companion.");
+    if(status) status.textContent=`✅ ${payload.message}`;
+  }catch(error){
+    if(status) status.textContent=`❌ ${error.message}`;
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=original;}
+  }
+}
+
+document.getElementById("h10614ShareActivePet")?.addEventListener("click",()=>{
+  const pet=ownedPet(activePetKey)||gameData?.ownedPets?.find(p=>p.equipped)||gameData?.ownedPets?.[0];
+  if(!pet){
+    const status=document.getElementById("status");
+    if(status) status.textContent="❌ You need to own a companion before you can share one.";
+    return;
+  }
+  h10614SharePet(pet.id,document.getElementById("h10614ShareActivePet"));
+});
 
 // ===== H10.6.1 PLAYERS GALLERY + CHARACTER SHARE FIX =====
 let h106LastGallery=[];
