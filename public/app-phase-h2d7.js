@@ -1213,6 +1213,8 @@ function renderCollection() {
       <div class="cosmetic-body"><h3>${escapeHtml(c.name)}</h3><p class="card-meta">${escapeHtml(c.slot)}</p><p class="card-ability">${c.unlocked ? "Unlocked in Appearance Editor" : escapeHtml(c.requirement)}</p></div>
     </article>
   `).join("");
+
+  h10632RenderDiceLocker();
 }
 
 function cosmeticIcon(slot) {
@@ -1857,6 +1859,51 @@ function h10622AbilityPanelHtml(companion, includeAll=true) {
   </div>`;
 }
 
+
+// ===== H10.6.33 DICE LOCKER: unlocks, themes, test roll =====
+let h10632DiceDraft=null;
+function h10632DiceLocker(){ return gameData?.diceLocker || null; }
+function h10633DicePreviewCosmetic(){
+  const locker=h10632DiceLocker();
+  if(!locker) return {bodyColor:"#17467f",numberColor:"#f3f7ff",theme:{key:"classic"}};
+  const d=h10632DiceDraft||locker.equipped||{};
+  const body=(locker.bodyColors||[]).find(x=>x.key===d.body) || locker.bodyColors?.[0];
+  const numbers=(locker.numberColors||[]).find(x=>x.key===d.numbers) || locker.numberColors?.[0];
+  const theme=(locker.themes||[]).find(x=>x.key===(d.theme||"classic")) || locker.themes?.[0] || {key:"classic",name:"Classic"};
+  return {bodyColor:body?.hex||"#17467f",numberColor:numbers?.hex||"#f3f7ff",theme};
+}
+function h10632RenderDiceLocker(){
+  const locker=h10632DiceLocker(),bodyGrid=document.getElementById("diceBodyColorGrid"),numberGrid=document.getElementById("diceNumberColorGrid"),themeGrid=document.getElementById("diceThemeGrid"),preview=document.getElementById("diceLockerPreview"),label=document.getElementById("diceLockerCurrentName"),status=document.getElementById("diceLockerStatus"),equipBtn=document.getElementById("equipDiceCosmeticBtn"),testBtn=document.getElementById("testDiceCosmeticBtn");
+  if(!locker||!bodyGrid||!numberGrid||!themeGrid||!preview||!label||!equipBtn) return;
+  if(!h10632DiceDraft) h10632DiceDraft={body:locker.equipped?.body||"sapphire",numbers:locker.equipped?.numbers||"white",theme:locker.equipped?.themeKey||locker.equipped?.theme?.key||"classic"};
+  const body=(locker.bodyColors||[]).find(x=>x.key===h10632DiceDraft.body)||locker.bodyColors?.[0],numbers=(locker.numberColors||[]).find(x=>x.key===h10632DiceDraft.numbers)||locker.numberColors?.[0],theme=(locker.themes||[]).find(x=>x.key===h10632DiceDraft.theme)||locker.themes?.[0];
+  if(!body||!numbers||!theme) return;
+  preview.style.setProperty("--dice-body",theme.key==='classic'?body.hex:(theme.primary||body.hex));
+  preview.style.setProperty("--dice-body-2",theme.key==='classic'?body.hex:(theme.secondary||body.hex));
+  preview.style.setProperty("--dice-accent",theme.accent||numbers.hex);
+  preview.style.setProperty("--dice-number",numbers.hex);
+  preview.dataset.theme=theme.key;
+  label.textContent=`${theme.key==='classic'?body.name:theme.name} • ${numbers.name} Numbers`;
+
+  const swatches=(items,type)=>items.map(item=>`<button type="button" class="dice-swatch ${h10632DiceDraft[type]===item.key?"selected":""} ${item.unlocked?"":"locked"}" data-dice-${type}="${escapeHtml(item.key)}" ${item.unlocked?"":'disabled'} title="${escapeHtml(item.unlocked?item.name:`Locked — ${item.unlock||'Achievement required'}`)}"><span class="dice-swatch-chip" style="--swatch:${escapeHtml(item.hex)}"></span><small>${item.unlocked?'':`🔒 `}${escapeHtml(item.name)}</small></button>`).join("");
+  bodyGrid.innerHTML=swatches(locker.bodyColors||[],"body"); numberGrid.innerHTML=swatches(locker.numberColors||[],"numbers");
+  themeGrid.innerHTML=(locker.themes||[]).map(item=>`<button type="button" class="dice-theme-card ${h10632DiceDraft.theme===item.key?"selected":""} ${item.unlocked?"":"locked"}" data-dice-theme="${escapeHtml(item.key)}" ${item.unlocked?"":'disabled'} style="--theme-a:${escapeHtml(item.primary||body.hex)};--theme-b:${escapeHtml(item.secondary||body.hex)};--theme-c:${escapeHtml(item.accent||numbers.hex)}"><span>${escapeHtml(item.icon||'🎲')}</span><b>${item.unlocked?'':`🔒 `}${escapeHtml(item.name)}</b><small>${escapeHtml(item.unlocked?(item.description||'Unlocked cosmetic'):(item.unlock||'Achievement required'))}</small></button>`).join("");
+  bodyGrid.querySelectorAll("[data-dice-body]").forEach(btn=>btn.onclick=()=>{h10632DiceDraft.body=btn.dataset.diceBody;h10632RenderDiceLocker();});
+  numberGrid.querySelectorAll("[data-dice-numbers]").forEach(btn=>btn.onclick=()=>{h10632DiceDraft.numbers=btn.dataset.diceNumbers;h10632RenderDiceLocker();});
+  themeGrid.querySelectorAll("[data-dice-theme]").forEach(btn=>btn.onclick=()=>{h10632DiceDraft.theme=btn.dataset.diceTheme;h10632RenderDiceLocker();});
+
+  const equipped=locker.equipped||{},dirty=h10632DiceDraft.body!==equipped.body||h10632DiceDraft.numbers!==equipped.numbers||h10632DiceDraft.theme!==(equipped.themeKey||equipped.theme?.key||"classic");
+  equipBtn.disabled=!dirty; equipBtn.textContent=dirty?"🎲 Equip Dice Look":"✓ Dice Look Equipped";
+  if(status) status.textContent=dirty?"Previewing a new cosmetic — equip it to use on capture rolls.":"This cosmetic is equipped for every physical D100 roll.";
+  if(testBtn){ testBtn.disabled=false; testBtn.onclick=async()=>{ if(testBtn.dataset.busy==='1') return; testBtn.dataset.busy='1'; testBtn.disabled=true; testBtn.textContent='🎲 Opening Test Table…'; try{ if(!window.MonsterHuntMixerD100?.rollD100) await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('D100 renderer not ready')),8000);window.addEventListener('monster-hunt-d100-ready',()=>{clearTimeout(timer);resolve();},{once:true});}); await window.MonsterHuntMixerD100.rollD100({chance:null,reason:'Dice Locker Test Roll',cosmetic:h10633DicePreviewCosmetic()}); }catch(error){ if(status) status.textContent=`❌ Test roll failed: ${error.message}`; }finally{ testBtn.dataset.busy='0';testBtn.disabled=false;testBtn.textContent='🎲 Test Roll'; } }; }
+  equipBtn.onclick=async()=>{ if(!dirty) return; equipBtn.disabled=true;equipBtn.textContent="Saving…";try{const response=await activityFetch("/api/activity/dice-cosmetic",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(h10632DiceDraft)}),payload=await response.json();if(!response.ok||!payload.ok)throw new Error(payload.error||"Could not equip dice cosmetic.");gameData.diceLocker=payload.diceLocker;if(hunter)hunter.diceCosmetic=payload.diceLocker?.equipped||hunter.diceCosmetic;h10632DiceDraft={body:payload.diceLocker.equipped.body,numbers:payload.diceLocker.equipped.numbers,theme:payload.diceLocker.equipped.themeKey||payload.diceLocker.equipped.theme?.key||"classic"};h10632RenderDiceLocker();showActivityResult("🎲","Dice Locker Updated",payload.message||"Your D100 cosmetic is equipped.");}catch(error){if(status)status.textContent=`❌ ${error.message}`;equipBtn.disabled=false;equipBtn.textContent="🎲 Equip Dice Look";}};
+}
+function h10632CurrentDiceCosmetic(){
+  const equipped=gameData?.diceLocker?.equipped||hunter?.diceCosmetic||null;
+  if(!equipped)return {bodyColor:"#17467f",numberColor:"#f3f7ff",theme:{key:"classic"}};
+  return {bodyColor:equipped.bodyColor||"#17467f",numberColor:equipped.numberColor||"#f3f7ff",theme:equipped.theme||{key:equipped.themeKey||"classic"}};
+}
+
 function h10622RenderEncounterCompanion(companion){
   const rewards=document.getElementById("possibleRewards");
   if(!rewards) return;
@@ -1885,20 +1932,18 @@ function h10631ChanceBreakdownText(breakdown){
   return parts.join(" • ");
 }
 function h10631RenderChanceBreakdown(){
-  const value=document.getElementById("encounterCatchChance");
-  if(!value) return;
-  const row=value.closest(".overlay-stat");
-  if(!row) return;
-  let detail=row.parentElement?.querySelector(".h10631-chance-breakdown");
-  if(!detail){
-    detail=document.createElement("div");
-    detail.className="h10631-chance-breakdown";
-    detail.style.cssText="font-size:11px;line-height:1.35;opacity:.82;padding:2px 0 7px;border-bottom:1px solid rgba(255,255,255,.08);";
-    row.insertAdjacentElement("afterend",detail);
-  }
   const breakdown=currentEncounter?.chanceBreakdown;
-  detail.textContent=breakdown?h10631ChanceBreakdownText(breakdown):"";
-  detail.style.display=breakdown?"block":"none";
+  const text=breakdown?h10631ChanceBreakdownText(breakdown):"";
+  const encounterDetail=document.getElementById("encounterChanceBreakdown");
+  if(encounterDetail){
+    encounterDetail.textContent=text;
+    encounterDetail.classList.toggle("hidden",!text);
+  }
+  const attemptDetail=document.getElementById("attemptChanceBreakdown");
+  if(attemptDetail){
+    attemptDetail.textContent=text;
+    attemptDetail.classList.toggle("hidden",!text);
+  }
 }
 
 function populateEncounterPage() {
@@ -2592,6 +2637,7 @@ populateAttemptPage = function() {
     document.getElementById("rollTargetLabel").textContent = `Need ≤ ${chance}`;
     document.getElementById("rollMeterFill").style.width = `${chance}%`;
   }
+  h10631RenderChanceBreakdown();
   const btn=document.getElementById("performCaptureBtn");
   if(btn){
     btn.disabled=false;
@@ -2740,7 +2786,7 @@ async function h10623RollPhysicalD100(chance,reason='Capture Roll'){
       window.addEventListener('monster-hunt-d100-ready',()=>{clearTimeout(timer);resolve();},{once:true});
     });
   }
-  return window.MonsterHuntMixerD100.rollD100({chance,reason});
+  return window.MonsterHuntMixerD100.rollD100({chance,reason,cosmetic:h10632CurrentDiceCosmetic()});
 }
 
 // Capture-phase delegated click handler. This runs in the capture phase so it
@@ -2863,7 +2909,7 @@ async function livePerformCapture() {
 }
 
 
-console.log("[Monster Hunt] H10.6.27 REAL Mixer v0.6.5 renderer loaded");
+console.log("[Monster Hunt] H10.6.35 WORKING-BASE merge loaded");
 boot();
 
 
@@ -3576,8 +3622,17 @@ async function h81UseHunter(){
 
 function h81ApplyGeneratedHunterToHost(host,imageUrl){
   if(!host) return;
-  let img=host.querySelector(".h81-live-hunter-image");
+  const legacyAvatar=Array.from(host.children||[]).find(el=>el.classList?.contains("avatar"));
+  const legacyShadow=Array.from(host.children||[]).find(el=>el.classList?.contains("avatar-shadow"));
+  let img=Array.from(host.children||[]).find(el=>el.classList?.contains("h81-live-hunter-image")) || null;
+
   if(imageUrl){
+    // Generated Hunter art is the ONLY player figure shown. The legacy CSS
+    // mannequin remains in the DOM for the creator/fallback system, but is
+    // explicitly hidden here so it can never appear behind the real artwork.
+    if(legacyAvatar) legacyAvatar.style.setProperty("display","none","important");
+    if(legacyShadow) legacyShadow.style.setProperty("display","none","important");
+
     if(!img){
       img=document.createElement("img");
       img.className="h81-live-hunter-image";
@@ -3585,10 +3640,39 @@ function h81ApplyGeneratedHunterToHost(host,imageUrl){
       host.appendChild(img);
     }
     img.src=activityProxyUrl(imageUrl);
+    img.style.cssText=[
+      "position:absolute",
+      "left:50%",
+      "bottom:0",
+      "transform:translateX(-50%)",
+      "display:block",
+      "width:auto",
+      "height:auto",
+      "object-fit:contain",
+      "object-position:center bottom",
+      "z-index:7",
+      "pointer-events:none",
+      "filter:drop-shadow(0 12px 12px rgba(0,0,0,.42))"
+    ].join(";");
+
+    const huntClone=host.id==="huntOverviewAvatar" || Boolean(host.closest?.("#huntOverviewAvatarHost"));
+    if(huntClone){
+      host.style.setProperty("width","150px","important");
+      host.style.setProperty("height","210px","important");
+      img.style.maxWidth="140px";
+      img.style.maxHeight="200px";
+    }else{
+      host.style.setProperty("width","138px","important");
+      host.style.setProperty("height","205px","important");
+      img.style.maxWidth="130px";
+      img.style.maxHeight="195px";
+    }
     host.classList.add("h81-generated-active");
   }else{
     img?.remove();
     host.classList.remove("h81-generated-active");
+    if(legacyAvatar) legacyAvatar.style.removeProperty("display");
+    if(legacyShadow) legacyShadow.style.removeProperty("display");
   }
 }
 

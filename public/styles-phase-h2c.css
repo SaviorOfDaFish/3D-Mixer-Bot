@@ -2881,7 +2881,8 @@ body { background:#050a14; }
 }
 
 
-/* ===== H10.6.32 — REWARD SCROLL + VISIBLE CHANCE BREAKDOWN + DICE LOCKER ===== */
+/* ===== H10.6.35 — SAFE WORKING-BASE ADDITIONS ONLY ===== */
+/* Visible chance math */
 .chance-breakdown-line {
   margin:-1px 0 2px;
   padding:4px 0 7px;
@@ -2893,8 +2894,8 @@ body { background:#050a14; }
 }
 .chance-breakdown-line.hidden { display:none; }
 
-/* Possible Rewards can contain rewards + companion abilities. Keep it inside
-   the encounter art rather than allowing it to cover the bottom controls. */
+/* Possible Rewards can grow once companion effects are present. Keep the
+   panel inside the encounter and make only its contents scroll. */
 .encounter-info-overlay.right {
   max-height:390px;
   overflow-y:auto;
@@ -2915,109 +2916,102 @@ body { background:#050a14; }
 .encounter-info-overlay.right::-webkit-scrollbar-track { background:rgba(15,23,42,.3); border-radius:999px; }
 .encounter-info-overlay.right::-webkit-scrollbar-thumb { background:rgba(167,139,250,.65); border-radius:999px; }
 
+/* Generated Hunter replacement. These rules are intentionally narrow: no
+   global page/layout sizing is changed. JS also enforces the same hide/size
+   rules inline so Discord cache/order cannot resurrect the legacy figure. */
+#avatarPreview.h81-generated-active > .avatar,
+#avatarPreview.h81-generated-active > .avatar-shadow,
+#huntOverviewAvatar.h81-generated-active > .avatar,
+#huntOverviewAvatar.h81-generated-active > .avatar-shadow {
+  display:none !important;
+}
+#avatarPreview.h81-generated-active .h81-live-hunter-image,
+#huntOverviewAvatar.h81-generated-active .h81-live-hunter-image {
+  position:absolute !important;
+  left:50% !important;
+  bottom:0 !important;
+  transform:translateX(-50%) !important;
+  width:auto !important;
+  height:auto !important;
+  object-fit:contain !important;
+  object-position:center bottom !important;
+  pointer-events:none !important;
+  z-index:7 !important;
+}
+#avatarPreview.h81-generated-active .h81-live-hunter-image {
+  max-width:130px !important;
+  max-height:195px !important;
+}
+#huntOverviewAvatar.h81-generated-active .h81-live-hunter-image {
+  max-width:140px !important;
+  max-height:200px !important;
+}
+
 /* Dice Locker */
 .dice-locker-panel { overflow:hidden; }
 .dice-locker-current {
-  display:flex;
-  align-items:center;
-  gap:16px;
-  padding:14px;
-  border:1px solid rgba(148,163,184,.16);
-  border-radius:16px;
-  background:rgba(10,17,32,.65);
-  margin-bottom:16px;
+  display:flex; align-items:center; gap:16px; padding:14px;
+  border:1px solid rgba(148,163,184,.16); border-radius:16px;
+  background:rgba(10,17,32,.65); margin-bottom:16px;
 }
-.dice-locker-current > div:last-child {
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-}
-.dice-locker-current small,
-.dice-locker-heading small { color:#94a3b8; }
-.dice-locker-preview {
-  --dice-body:#17467f;
-  --dice-number:#f3f7ff;
-  display:flex;
-  gap:7px;
-  flex:0 0 auto;
-}
+.dice-locker-current > div:last-child { display:flex; flex-direction:column; gap:4px; }
+.dice-locker-current small,.dice-locker-heading small { color:#94a3b8; }
+.dice-locker-preview { --dice-body:#17467f; --dice-body-2:#17467f; --dice-number:#f3f7ff; --dice-accent:#f3f7ff; display:flex; gap:7px; flex:0 0 auto; }
 .dice-locker-preview span {
-  width:48px;
-  height:48px;
-  display:grid;
-  place-items:center;
-  clip-path:polygon(50% 0%, 92% 25%, 82% 78%, 50% 100%, 18% 78%, 8% 25%);
-  background:var(--dice-body);
-  color:var(--dice-number);
-  border:1px solid var(--dice-number);
-  font-family:Georgia,serif;
-  font-weight:900;
-  text-shadow:0 2px 4px rgba(0,0,0,.75);
+  width:48px; height:48px; display:grid; place-items:center;
+  clip-path:polygon(50% 0%,92% 25%,82% 78%,50% 100%,18% 78%,8% 25%);
+  background:var(--dice-body); color:var(--dice-number);
+  border:1px solid var(--dice-number); font-family:Georgia,serif;
+  font-weight:900; text-shadow:0 2px 4px rgba(0,0,0,.75);
   filter:drop-shadow(0 8px 10px rgba(0,0,0,.35));
 }
-.dice-locker-group {
-  margin-top:14px;
-  padding-top:14px;
-  border-top:1px solid rgba(148,163,184,.11);
+.dice-locker-preview[data-theme]:not([data-theme="classic"]) span {
+  background:linear-gradient(135deg,var(--dice-body),var(--dice-body-2));
+  box-shadow:inset 0 0 16px var(--dice-accent),0 8px 12px rgba(0,0,0,.35);
 }
-.dice-locker-heading {
-  display:flex;
-  justify-content:space-between;
-  gap:12px;
-  align-items:baseline;
-  margin-bottom:10px;
-}
-.dice-swatch-grid {
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(108px,1fr));
-  gap:9px;
-}
+.dice-locker-group { margin-top:14px; padding-top:14px; border-top:1px solid rgba(148,163,184,.11); }
+.dice-locker-heading { display:flex; justify-content:space-between; gap:12px; align-items:baseline; margin-bottom:10px; }
+.dice-swatch-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(108px,1fr)); gap:9px; }
 .dice-swatch {
-  appearance:none;
-  border:1px solid rgba(148,163,184,.16);
-  border-radius:12px;
-  background:rgba(8,14,28,.62);
-  color:#e5e7eb;
-  padding:8px;
-  display:flex;
-  align-items:center;
-  gap:8px;
-  cursor:pointer;
-  text-align:left;
-  min-height:44px;
+  appearance:none; border:1px solid rgba(148,163,184,.16); border-radius:12px;
+  background:rgba(8,14,28,.62); color:#e5e7eb; padding:8px; display:flex;
+  align-items:center; gap:8px; cursor:pointer; text-align:left; min-height:44px;
 }
 .dice-swatch:hover { border-color:rgba(167,139,250,.5); transform:translateY(-1px); }
-.dice-swatch.selected {
-  border-color:#8b5cf6;
-  box-shadow:0 0 0 2px rgba(139,92,246,.18);
-  background:rgba(76,29,149,.2);
-}
+.dice-swatch.selected { border-color:#8b5cf6; box-shadow:0 0 0 2px rgba(139,92,246,.18); background:rgba(76,29,149,.2); }
+.dice-swatch.locked { opacity:.46; cursor:not-allowed; filter:saturate(.45); }
+.dice-swatch.locked:hover { transform:none; border-color:rgba(148,163,184,.16); }
 .dice-swatch-chip {
-  --swatch:#fff;
-  width:24px;
-  height:24px;
-  flex:0 0 24px;
-  border-radius:7px;
-  background:var(--swatch);
-  border:1px solid rgba(255,255,255,.35);
+  --swatch:#fff; width:24px; height:24px; flex:0 0 24px; border-radius:7px;
+  background:var(--swatch); border:1px solid rgba(255,255,255,.35);
   box-shadow:inset 0 0 0 1px rgba(0,0,0,.18),0 4px 10px rgba(0,0,0,.25);
 }
-.dice-swatch small {
-  color:#dbe5f4;
-  font-size:.69rem;
-  font-weight:750;
+.dice-swatch small { color:#dbe5f4; font-size:.69rem; font-weight:750; }
+.dice-theme-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(155px,1fr)); gap:10px; }
+.dice-theme-card {
+  position:relative; appearance:none; min-height:92px; padding:12px; border-radius:14px;
+  border:1px solid rgba(148,163,184,.18); background:linear-gradient(135deg,var(--theme-a),var(--theme-b));
+  color:#fff; display:grid; grid-template-columns:auto 1fr; grid-template-rows:auto auto;
+  gap:4px 8px; text-align:left; cursor:pointer; overflow:hidden;
 }
-.dice-locker-actions {
-  display:flex;
-  align-items:center;
-  gap:14px;
-  margin-top:16px;
+.dice-theme-card::after {
+  content:""; position:absolute; inset:0;
+  background:radial-gradient(circle at 72% 24%,var(--theme-c) 0 2px,transparent 3px),radial-gradient(circle at 28% 70%,var(--theme-c) 0 1px,transparent 2px);
+  opacity:.55; pointer-events:none;
 }
+.dice-theme-card > span { grid-row:1/3; font-size:1.55rem; align-self:center; z-index:1; }
+.dice-theme-card b,.dice-theme-card small { position:relative; z-index:1; }
+.dice-theme-card small { color:#e2e8f0; font-size:.65rem; line-height:1.3; }
+.dice-theme-card.selected { border-color:#fff; box-shadow:0 0 0 2px rgba(139,92,246,.5); }
+.dice-theme-card.locked { opacity:.5; cursor:not-allowed; filter:grayscale(.4); }
+.dice-locker-actions { display:flex; align-items:center; gap:14px; margin-top:16px; }
 .dice-locker-actions .muted { font-size:.72rem; }
+#testDiceCosmeticBtn { min-width:130px; }
 
 @media (max-width:760px) {
   .encounter-info-overlay.right { max-height:190px; }
   .dice-locker-current { align-items:flex-start; }
   .dice-swatch-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .dice-theme-grid { grid-template-columns:1fr 1fr; }
   .dice-locker-actions { align-items:stretch; flex-direction:column; }
 }
