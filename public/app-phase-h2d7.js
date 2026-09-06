@@ -160,9 +160,27 @@ function savePetNicknames() {
   localStorage.setItem("monsterHuntDevPetNames", JSON.stringify(localPetNicknames));
 }
 
+const H102_DISTORTION_HABITATS = new Set([
+  "The Mirror Scar","The Black Bloom","The Chrono Tear","The Upside-Down Sea","The Dreaming Gate"
+]);
+const H102_DISTORTION_EGG_KEYS = new Set(["reflected","blightbloom","timelost","tidefall","dreambound"]);
+const H104_MERCHANT_EGG_KEYS = new Set(["common_mystery_egg","rare_mystery_egg","ancient_egg","merchants_egg","black_egg"]);
+
 function petArtPath(pet) {
-  if (!pet || !pet.image) return null;
-  return `/assets/pets/${pet.image}`;
+  if (!pet) return null;
+  if (pet.imageUrl) return pet.imageUrl;
+  if (!pet.image) return null;
+  const folder=String(pet.habitat||"")==="Merchant Collection"?"/assets/pets/merchant":(H102_DISTORTION_HABITATS.has(String(pet.habitat||"")) ? "/assets/distortions" : "/assets/pets");
+  return `${folder}/${pet.image}`;
+}
+
+function eggArtPath(egg) {
+  if (!egg) return null;
+  if (egg.imageUrl) return egg.imageUrl;
+  if (!egg.image) return null;
+  const key=egg.eggKey || egg.key || egg.distortionKey || null;
+  const folder=H102_DISTORTION_EGG_KEYS.has(String(key||""))?"/assets/distortions":(H104_MERCHANT_EGG_KEYS.has(String(key||""))?"/assets/merchant-items":"/assets/eggs");
+  return `${folder}/${egg.image}`;
 }
 
 function assetImage(src, fallback, className="asset-icon") {
@@ -218,9 +236,13 @@ const OPTIONS = {
   hair: [
     { value:"short", label:"Short" }, { value:"long", label:"Long" },
     { value:"messy", label:"Messy" }, { value:"swept", label:"Side Swept" },
-    { value:"ponytail", label:"Ponytail" }, { value:"bald", label:"Bald" },
+    { value:"ponytail", label:"Ponytail" }, { value:"pixie", label:"Pixie Cut" },
+    { value:"undercut", label:"Undercut", unlock:{type:"level",amount:3} },
+    { value:"curls", label:"Curly", unlock:{type:"level",amount:4} },
+    { value:"bun", label:"Hunter Bun", unlock:{type:"level",amount:5} },
     { value:"mohawk", label:"Mohawk", unlock:{type:"level",amount:5} },
-    { value:"braid", label:"Braid", unlock:{type:"level",amount:10} }
+    { value:"braid", label:"Long Braid", unlock:{type:"level",amount:7} },
+    { value:"bald", label:"Bald" }
   ],
   hairColor: [
     { value:"#241b18", label:"Black" }, { value:"#4a2f27", label:"Brown" },
@@ -240,9 +262,15 @@ const OPTIONS = {
   ],
   outfit: [
     { value:"ranger", label:"Ranger" }, { value:"leather", label:"Leather" },
-    { value:"scout", label:"Scout" }, { value:"traveler", label:"Traveler" },
+    { value:"scout", label:"Field Scout" }, { value:"traveler", label:"Traveler" },
+    { value:"storm", label:"Storm Hunter", unlock:{type:"level",amount:5} },
+    { value:"glass", label:"Glasswaste Hunter", unlock:{type:"petdex",amount:12} },
+    { value:"overalls", label:"Overalls", unlock:{type:"level",amount:3} },
+    { value:"ninja", label:"Ninja Robe", unlock:{type:"level",amount:6} },
+    { value:"pirate", label:"Pirate Coat", unlock:{type:"petdex",amount:10} },
+    { value:"wizard", label:"Wizard Robe", unlock:{type:"petdex",amount:18} },
     { value:"rift", label:"Rift Hunter", unlock:{type:"level",amount:10} },
-    { value:"frost", label:"Frost Hunter", unlock:{type:"level",amount:15} },
+    { value:"frost", label:"Frost Hunter", unlock:{type:"level",amount:8} },
     { value:"ember", label:"Ember Hunter", unlock:{type:"petdex",amount:20} }
   ],
   cloak: [
@@ -254,13 +282,23 @@ const OPTIONS = {
   ],
   headgear: [
     { value:"none", label:"None" }, { value:"cap", label:"Hunter Cap" },
-    { value:"band", label:"Headband" },
+    { value:"band", label:"Field Headband" },
+    { value:"army", label:"Army Helmet", unlock:{type:"level",amount:3} },
+    { value:"ninja_mask", label:"Ninja Mask", unlock:{type:"level",amount:6} },
+    { value:"cowboy", label:"Cowboy Hat", unlock:{type:"petdex",amount:8} },
+    { value:"wizard_hat", label:"Wizard Hat", unlock:{type:"petdex",amount:18} },
+    { value:"circlet", label:"Moonfen Circlet", unlock:{type:"petdex",amount:4} },
     { value:"hood", label:"Rift Hood", unlock:{type:"level",amount:10} },
-    { value:"horns", label:"Trophy Horns", unlock:{type:"trophies",amount:5} }
+    { value:"horns", label:"Trophy Horns", unlock:{type:"trophies",amount:3} },
+    { value:"starcrown", label:"Starfall Crown", unlock:{type:"petdex",amount:32} }
   ],
   weapon: [
     { value:"none", label:"None" }, { value:"bow", label:"Hunter Bow" },
-    { value:"spear", label:"Spear" }, { value:"sword", label:"Sword" },
+    { value:"spear", label:"Spear", unlock:{type:"level",amount:3} },
+    { value:"sword", label:"Sword", unlock:{type:"level",amount:4} },
+    { value:"katana", label:"Katana", unlock:{type:"level",amount:6} },
+    { value:"pitchfork", label:"Pitchfork", unlock:{type:"level",amount:3} },
+    { value:"wand", label:"Magic Wand", unlock:{type:"petdex",amount:12} },
     { value:"staff", label:"Rift Staff", unlock:{type:"level",amount:10} }
   ]
 };
@@ -314,8 +352,13 @@ function navTo(screen) {
   document.getElementById("pageScroll").scrollTop = 0;
   if (screen === "eggs") refreshH2AEggData();
   if (screen === "inventory") refreshH2BInventory();
+  if (screen === "monsterdex") refreshMonsterDex();
+  if (screen === "players") h106RefreshPlayers();
+  if (screen === "daily") h1066RefreshDaily();
   if (screen === "merchant") refreshH2BMerchant();
   if (screen === "events") refreshH2CLiveEvents(true);
+  if (screen === "notifications") refreshH4NotificationPrefs();
+  if (screen === "pets") refreshActivityFetch();
   if (screen === "hunt") {
     refreshH2CLiveEvents(false).then(() => renderPhaseFHunting());
   }
@@ -342,6 +385,24 @@ function petAbilitySummaryHtml(pet, compact=false) {
 
 function allKnownPet(key) { return [...(gameData?.petDex || []), ...(gameData?.beyondPets || [])].find(p => p.key === key) || null; }
 
+function renderHunterXp() {
+  if (!hunter) return;
+  // H10.6.20: Hunter XP is permanent progression, separate from seasonal Hunter Points.
+  const totalHunterXp = Math.max(0, Number(hunter.hunterXp || 0));
+  const rawCurrent = Number(hunter.xpCurrent);
+  const rawTarget = Number(hunter.xpNeeded);
+  const current = Number.isFinite(rawCurrent) ? Math.max(0, rawCurrent) : (totalHunterXp % 100);
+  const target = Number.isFinite(rawTarget) && rawTarget > 0 ? rawTarget : 100;
+  const remaining = Math.max(0, target - current);
+  const pct = Math.min(100, Math.max(0, (current / target) * 100));
+  const text = document.getElementById("hunterXpText");
+  const fill = document.getElementById("hunterXpFill");
+  const next = document.getElementById("hunterXpNext");
+  if (text) text.textContent = `${current} / ${target} XP`;
+  if (fill) fill.style.width = `${pct}%`;
+  if (next) next.textContent = `${remaining} XP needed for Hunter Level ${Number(hunter.level||1)+1}`;
+}
+
 function renderActivePet() {
   const pet = ownedPet(activePetKey) || gameData?.ownedPets[0];
   if (!pet) return;
@@ -367,19 +428,50 @@ function renderActivePet() {
   const petAbilityHost=document.getElementById("petAbility");
   if (petAbilityHost) petAbilityHost.innerHTML = petAbilitySummaryHtml(pet, true);
 
-  const xpTarget = Math.max(100, pet.level * 100);
-  const xpCurrent = Math.round((Number(pet.xp || 0) / 100) * xpTarget);
-  const xpNeeded = Math.max(0, xpTarget - xpCurrent);
-  const xpPct = Math.min(100, Math.max(0, Number(pet.xp || 0)));
+  const xpCurrent = Math.max(0, Number(pet.xpCurrent || 0));
+  const xpTarget = Math.max(0, Number(pet.xpNeeded || 0));
+  const isMaxLevel = xpTarget <= 0;
+  const xpRemaining = isMaxLevel ? 0 : Math.max(0, xpTarget - xpCurrent);
+  const xpPct = isMaxLevel ? 100 : Math.min(100, Math.max(0, (xpCurrent / Math.max(1, xpTarget)) * 100));
   const petXpText = document.getElementById("petXpText");
   const petXpFill = document.getElementById("petXpFill");
   const petXpNext = document.getElementById("petXpNext");
-  if (petXpText) petXpText.textContent = `${xpCurrent} / ${xpTarget}`;
+  if (petXpText) petXpText.textContent = isMaxLevel ? "MAX" : `${xpCurrent} / ${xpTarget} XP`;
   if (petXpFill) petXpFill.style.width = `${xpPct}%`;
-  if (petXpNext) petXpNext.textContent = `${xpNeeded} XP to next level`;
+  if (petXpNext) petXpNext.textContent = isMaxLevel ? "Maximum companion level reached" : `${xpRemaining} XP needed for Level ${Number(pet.level || 1) + 1}`;
+
+  const bondCurrent = Math.max(0, Number(pet.bondXpCurrent || 0));
+  const bondTarget = Math.max(0, Number(pet.bondXpNeeded || 0));
+  const bondMax = Boolean(pet.bondMax) || Number(pet.bond || 1) >= 5 || bondTarget <= 0;
+  const bondPct = bondMax ? 100 : Math.min(100, Math.max(0, (bondCurrent / Math.max(1, bondTarget)) * 100));
+  const bondText = document.getElementById("petBondXpText");
+  const bondFill = document.getElementById("petBondXpFill");
+  const bondNext = document.getElementById("petBondXpNext");
+  if (bondText) bondText.textContent = bondMax ? "MAX BOND" : `${bondCurrent} / ${bondTarget}`;
+  if (bondFill) bondFill.style.width = `${bondPct}%`;
+  if (bondNext) bondNext.innerHTML = `${bondMax ? "Maximum Bond reached" : `${Math.max(0,bondTarget-bondCurrent)} Bond XP needed for Bond ${Number(pet.bond||1)+1}`}<br>${h10619BondEffectHtml(pet.bond,true)}`;
   renderPets();
 }
 
+
+
+function h10619BondEffectHtml(bondValue, compact=false) {
+  const bond=Math.max(1,Math.min(5,Number(bondValue||1)));
+  const perks={
+    1:{inheritance:0,fetch:0,xp:0,next:"Bond 2 unlocks +5% inheritance chance."},
+    2:{inheritance:5,fetch:0,xp:0,next:"Bond 3 upgrades inheritance to +10% and unlocks +5% Fetch item chance."},
+    3:{inheritance:10,fetch:5,xp:0,next:"Bond 4 upgrades to +15% inheritance and +10% Fetch item chance."},
+    4:{inheritance:15,fetch:10,xp:0,next:"Bond 5 upgrades to +20% inheritance, +15% Fetch item chance, and +10% Companion XP."},
+    5:{inheritance:20,fetch:15,xp:10,next:"Maximum Bond perks unlocked."}
+  }[bond];
+  const lines=[];
+  if(perks.inheritance) lines.push(`🧬 +${perks.inheritance}% inheritance chance`);
+  if(perks.fetch) lines.push(`🎒 +${perks.fetch}% chance to bring home an extra Fetch reward`);
+  if(perks.xp) lines.push(`⭐ +${perks.xp}% Companion XP`);
+  if(!lines.length) lines.push("No bonus yet — adventure together to strengthen your bond.");
+  if(compact) return `💞 <b>Bond Effect:</b> ${lines.join(" • ")}<br><small><b>Next:</b> ${perks.next}</small>`;
+  return `<div class="bond-effect-box"><b>💞 Bond Effect — Bond ${bond}</b><div>${lines.join("<br>")}</div><small><b>${bond<5?"Next":"Status"}:</b> ${perks.next}</small></div>`;
+}
 
 function h2aAge(ms) {
   const seconds=Math.floor(Number(ms||0)/1000);
@@ -428,7 +520,10 @@ function renderPets() {
         <p class="card-meta">${p.name !== petDisplayName(p) ? `${p.name} • ` : ""}${p.habitat} • Lv. ${p.level}</p>
         <p class="card-ability">${p.abilities?.[0] ? `${p.abilities[0].icon || "✨"} ${p.abilities[0].name} ${p.abilities[0].rankRoman || ""}` : p.ability}</p>
         ${p.inheritedSlotsMax != null ? `<p class="card-slots">🧬 ${p.inheritedSlotsUsed}/${p.inheritedSlotsMax} inherited slots</p>` : ""}
-        <div class="pet-progress"><span style="width:${Math.max(8,p.xp)}%"></span></div>
+        <div class="pet-card-xp"><span>XP</span><b>${Number(p.xpNeeded||0) <= 0 ? "MAX" : `${Number(p.xpCurrent||0)} / ${Number(p.xpNeeded||0)}`}</b></div>
+        <div class="pet-progress"><span style="width:${Number(p.xpNeeded||0) <= 0 ? 100 : Math.max(4,Math.min(100,(Number(p.xpCurrent||0)/Math.max(1,Number(p.xpNeeded||1)))*100))}%"></span></div>
+        <div class="pet-card-xp bond-card-line"><span>❤️ Bond ${Number(p.bond||1)}/5</span><b>${p.bondMax?"MAX":`${Number(p.bondXpCurrent||0)} / ${Number(p.bondXpNeeded||0)}`}</b></div>
+        <div class="pet-progress bond-progress"><span style="width:${p.bondMax?100:Math.max(4,Math.min(100,(Number(p.bondXpCurrent||0)/Math.max(1,Number(p.bondXpNeeded||1)))*100))}%"></span></div>
       </div>
     </article>
   `).join("");
@@ -472,10 +567,21 @@ function showPetDetail(key) {
     </div>
     ${p.description ? `<p class="detail-copy"><b>About this companion</b><br>${p.description}</p>` : ""}
     ${owned ? `
-      <p class="detail-copy">Companion XP: <b>${p.xp}%</b> toward the next level.</p>
+      <div class="detail-xp-block">
+        <div class="detail-xp-head"><span>Companion XP</span><b>${Number(p.xpNeeded||0) <= 0 ? "MAX LEVEL" : `${Number(p.xpCurrent||0)} / ${Number(p.xpNeeded||0)} XP`}</b></div>
+        <div class="pet-xp-meter"><span style="width:${Number(p.xpNeeded||0) <= 0 ? 100 : Math.min(100,(Number(p.xpCurrent||0)/Math.max(1,Number(p.xpNeeded||1)))*100)}%"></span></div>
+        <small>${Number(p.xpNeeded||0) <= 0 ? "Maximum companion level reached" : `${Math.max(0,Number(p.xpNeeded||0)-Number(p.xpCurrent||0))} XP needed for Level ${Number(p.level||1)+1}`}</small>
+      </div>
+      <div class="detail-xp-block bond-detail-block">
+        <div class="detail-xp-head"><span>❤️ Bond XP • Bond ${Number(p.bond||1)}/5</span><b>${p.bondMax?"MAX BOND":`${Number(p.bondXpCurrent||0)} / ${Number(p.bondXpNeeded||0)} XP`}</b></div>
+        <div class="pet-xp-meter bond-xp-meter"><span style="width:${p.bondMax?100:Math.min(100,(Number(p.bondXpCurrent||0)/Math.max(1,Number(p.bondXpNeeded||1)))*100)}%"></span></div>
+        <small>${p.bondMax?"Maximum Bond reached":`${Math.max(0,Number(p.bondXpNeeded||0)-Number(p.bondXpCurrent||0))} Bond XP needed for Bond ${Number(p.bond||1)+1} • Hunt, Fetch, and trigger Affection Events together`}</small>
+        ${h10619BondEffectHtml(p.bond)}
+      </div>
       <div class="detail-actions">
         <button class="secondary" id="renameDetailPet">✏️ Name Pet</button>
         <button class="primary" id="equipDetailPet">${p.key === activePetKey ? "Currently Active" : "Make Active"}</button>
+        <button class="secondary" id="h10614ShareDetailPet" data-pet-id="${p.id}">📣 Share Pet</button>
       </div>` : `
       <p class="detail-copy">This companion has not been collected in the test profile.</p>`}
   `;
@@ -495,6 +601,7 @@ function showPetDetail(key) {
 
   const rename = document.getElementById("renameDetailPet");
   if (rename) rename.onclick = () => openRenamePet(p.key);
+
 }
 
 function openRenamePet(key) {
@@ -667,11 +774,54 @@ document.getElementById("closeCombineResult")?.addEventListener("click",closeCom
 document.getElementById("combineResultDone")?.addEventListener("click",closeCombineResult);
 document.getElementById("combineResultModal")?.addEventListener("click",e=>{if(e.target.id==="combineResultModal") closeCombineResult();});
 
+let monsterDexFilter="All";
+function monsterDexArtPath(monster){ return monster?.imageUrl || (monster?.image ? `/assets/monsters/${monster.image}` : ""); }
+async function refreshMonsterDex(){
+  try{
+    const response=await activityFetch("/api/activity/sync");
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not sync Monster Dex.");
+    hunter=payload.hunter; gameData=payload.phaseD; renderHunterXp(); renderMonsterDex();
+  }catch(error){ const host=document.getElementById("monsterDexHabitats"); if(host) host.innerHTML=`<div class="empty-state">❌ ${escapeHtml(error.message)}</div>`; }
+}
+function renderMonsterDex(){
+  if(!gameData) return;
+  const all=Array.isArray(gameData.monsterDex)?gameData.monsterDex:[];
+  const found=all.filter(m=>m.discovered).length;
+  const progress=document.getElementById("monsterDexProgress"); if(progress) progress.textContent=`${found}/${all.length}`;
+  const homeCount=document.getElementById("monsterdexCount"); if(homeCount) homeCount.textContent=`${found}/${all.length} discovered`;
+  const filters=["All",...new Set(all.map(m=>m.category||"Habitat"))];
+  const filterHost=document.getElementById("monsterDexFilters");
+  if(filterHost) filterHost.innerHTML=filters.map(f=>`<button class="filter-chip ${monsterDexFilter===f?"active":""}" data-monster-dex-filter="${escapeHtml(f)}">${escapeHtml(f)}</button>`).join("");
+  const visible=monsterDexFilter==="All"?all:all.filter(m=>(m.category||"Habitat")===monsterDexFilter);
+  const groups=[];
+  for(const m of visible){ const source=m.source||m.habitat||"Unknown"; let g=groups.find(x=>x.source===source); if(!g){g={source,monsters:[]};groups.push(g)} g.monsters.push(m); }
+  const host=document.getElementById("monsterDexHabitats"); if(!host) return;
+  host.innerHTML=groups.map(g=>{
+    const count=g.monsters.filter(m=>m.discovered).length;
+    return `<section class="habitat-section monster-dex-section"><div class="habitat-heading"><h3>🗺️ ${escapeHtml(g.source)}</h3><span class="level-pill">${count}/${g.monsters.length}</span></div><div class="monster-dex-grid">${g.monsters.map(m=>{
+      const discovered=!!m.discovered, art=monsterDexArtPath(m);
+      return `<article class="monster-dex-card ${discovered?"":"locked"}" data-rarity="${escapeHtml(m.rarity)}"><div class="monster-dex-portrait">${discovered&&art?`<img src="${art}" alt="${escapeHtml(m.name)} art">`:`<span class="monster-dex-question">?</span>`}</div><div class="monster-dex-body"><span class="rarity-pill">${discovered?escapeHtml(m.rarity):"???"}</span><h3>${discovered?escapeHtml(m.name):"Undiscovered"}</h3><p>${discovered?`📍 ${escapeHtml(m.source||m.habitat||"Unknown")}`:"Keep hunting to discover this monster."}</p>${discovered?`<small>Captured ${Number(m.catches||0)} time${Number(m.catches||0)===1?"":"s"}</small>`:""}</div></article>`;
+    }).join("")}</div></section>`;
+  }).join("") || `<div class="empty-state">No monsters in this category.</div>`;
+}
+document.addEventListener("click",e=>{ const btn=e.target.closest("[data-monster-dex-filter]"); if(!btn)return; monsterDexFilter=btn.dataset.monsterDexFilter||"All"; renderMonsterDex(); });
+
 function renderDex() {
   if (!gameData) return;
-  const discovered = new Set(gameData.ownedPets.map(p => p.key));
-  const habitats = ["Forest","Ocean","Mountain","Volcano","Arctic","Void","Sky","Undead"];
-  const habitatIcons = {Forest:"🌲",Ocean:"🌊",Mountain:"🏔️",Volcano:"🌋",Arctic:"❄️",Void:"🌌",Sky:"☁️",Undead:"🪦"};
+  // PetDex discovery is permanent even if a pet is later sacrificed.
+  const discovered = new Set(gameData.petDex.filter(p => p.discovered).map(p => p.key));
+  const habitats = ["Moonfen","Glasswaste","Gloamwood","Stormreach","Emberdeep","Frostgrave","Sporewilds","Starfall Basin"];
+  const habitatIcons = {
+    Moonfen:"🌙",
+    Glasswaste:"🏜️",
+    Gloamwood:"🌲",
+    Stormreach:"⛈️",
+    Emberdeep:"🔥",
+    Frostgrave:"🧊",
+    Sporewilds:"🍄",
+    "Starfall Basin":"🌌"
+  };
   const host = document.getElementById("dexHabitats");
   host.innerHTML = habitats.map(h => {
     const pets = gameData.petDex.filter(p => p.habitat === h);
@@ -694,8 +844,9 @@ function renderDex() {
   }).join("");
 
   const beyond = document.getElementById("beyondGrid");
+  const beyondDiscovered = new Set(gameData.beyondPets.filter(p => p.discovered).map(p => p.key));
   beyond.innerHTML = gameData.beyondPets.map(p => {
-    const found = discovered.has(p.key);
+    const found = beyondDiscovered.has(p.key);
     return `
       <article class="pet-card ${found ? "" : "locked"}" data-rarity="${p.rarity}" ${found ? `data-pet-key="${p.key}"` : ""}>
         <div class="pet-portrait">
@@ -730,6 +881,115 @@ document.getElementById("activityResultClose")?.addEventListener("click",()=>{
   document.getElementById("activityResultPopup")?.classList.add("hidden");
   clearTimeout(activityResultTimer);
 });
+
+
+// H10.6.4 — Cosmetic unlock toast stack.
+let h1064CosmeticUnlockTimer=null;
+let h1064CosmeticUnlockBusy=false;
+function h1064CosmeticIcon(slot){
+  return ({Cloak:"🧥",Headgear:"🪖",Outfit:"🥋",Weapon:"⚔️","Hair Style":"💇"}[slot]||"✨");
+}
+function h1064EnsureCosmeticToastHost(){
+  let host=document.getElementById("cosmeticUnlockToastHost");
+  if(host) return host;
+  host=document.createElement("div");
+  host.id="cosmeticUnlockToastHost";
+  host.className="cosmetic-unlock-toast-host";
+  host.setAttribute("aria-live","polite");
+  document.body.appendChild(host);
+  return host;
+}
+function h1064ShowCosmeticUnlock(cosmetic){
+  const host=h1064EnsureCosmeticToastHost();
+  const toast=document.createElement("div");
+  toast.className="cosmetic-unlock-toast";
+  toast.innerHTML=`
+    <div class="cosmetic-unlock-burst">✨</div>
+    <div class="cosmetic-unlock-icon">${h1064CosmeticIcon(cosmetic.slot)}</div>
+    <div class="cosmetic-unlock-copy">
+      <small>NEW COSMETIC UNLOCKED!</small>
+      <strong>${escapeHtml(cosmetic.name||"New Cosmetic")}</strong>
+      <span>${escapeHtml(cosmetic.slot||"Cosmetic")} • ${escapeHtml(cosmetic.requirement||"Achievement unlocked")}</span>
+      <em>Available now in Character Creation.</em>
+    </div>
+    <button type="button" class="cosmetic-unlock-close" aria-label="Dismiss">×</button>`;
+  host.appendChild(toast);
+  requestAnimationFrame(()=>toast.classList.add("show"));
+  const dismiss=()=>{
+    toast.classList.remove("show");
+    setTimeout(()=>toast.remove(),300);
+  };
+  toast.querySelector(".cosmetic-unlock-close")?.addEventListener("click",dismiss);
+  setTimeout(dismiss,8500);
+}
+async function h1064CheckCosmeticUnlocks(){
+  if(h1064CosmeticUnlockBusy) return;
+  h1064CosmeticUnlockBusy=true;
+  try{
+    const response=await activityFetch("/api/activity/cosmetic-unlocks");
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) return;
+    const unlocks=Array.isArray(payload.unlocks)?payload.unlocks:[];
+    unlocks.forEach((cosmetic,index)=>setTimeout(()=>h1064ShowCosmeticUnlock(cosmetic),index*650));
+    if(unlocks.length){
+      // Refresh the Collection cards so the newly unlocked cosmetic visibly changes immediately.
+      try{
+        const syncRes=await activityFetch("/api/activity/sync");
+        const sync=await syncRes.json();
+        if(syncRes.ok&&sync.ok){
+          hunter=sync.hunter; gameData=sync.phaseD;
+          if(currentScreen==="collection") renderCollection();
+        }
+      }catch(_error){}
+    }
+  }catch(_error){}
+  finally{h1064CosmeticUnlockBusy=false;}
+}
+
+function h10620ShowTitleUnlock(title){
+  const host=h1064EnsureCosmeticToastHost();
+  const toast=document.createElement("div");
+  toast.className="cosmetic-unlock-toast";
+  const icon={Common:"⚪",Rare:"🔵",Epic:"🟣",Legendary:"🟠",Mythic:"🌈"}[title.rarity]||"🏆";
+  toast.innerHTML=`
+    <div class="cosmetic-unlock-burst">🏆</div>
+    <div class="cosmetic-unlock-icon">${icon}</div>
+    <div class="cosmetic-unlock-copy">
+      <small>NEW TITLE UNLOCKED!</small>
+      <strong>${escapeHtml(title.name||"New Title")}</strong>
+      <span>${escapeHtml(title.rarity||"Title")}${title.requirement?` • ${escapeHtml(title.requirement)}`:""}</span>
+      <em>Equip it from Collection → Titles.</em>
+    </div>
+    <button type="button" class="cosmetic-unlock-close" aria-label="Dismiss">×</button>`;
+  host.appendChild(toast);
+  requestAnimationFrame(()=>toast.classList.add("show"));
+  const dismiss=()=>{toast.classList.remove("show");setTimeout(()=>toast.remove(),300);};
+  toast.querySelector(".cosmetic-unlock-close")?.addEventListener("click",dismiss);
+  setTimeout(dismiss,10000);
+}
+async function h10620CheckTitleUnlocks(){
+  try{
+    const response=await activityFetch("/api/activity/title-unlocks");
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) return;
+    const unlocks=Array.isArray(payload.unlocks)?payload.unlocks:[];
+    unlocks.forEach((title,index)=>setTimeout(()=>h10620ShowTitleUnlock(title),index*700));
+    if(unlocks.length){
+      try{
+        const syncRes=await activityFetch("/api/activity/sync");
+        const sync=await syncRes.json();
+        if(syncRes.ok&&sync.ok){ hunter=sync.hunter; gameData=sync.phaseD; if(currentScreen==="collection") renderCollection(); }
+      }catch(_error){}
+    }
+  }catch(_error){}
+}
+
+function h1064StartCosmeticUnlockWatcher(){
+  clearInterval(h1064CosmeticUnlockTimer);
+  h1064CheckCosmeticUnlocks();
+  h10620CheckTitleUnlocks();
+  h1064CosmeticUnlockTimer=setInterval(()=>{ h1064CheckCosmeticUnlocks(); h10620CheckTitleUnlocks(); },5000);
+}
 
 async function refreshH2BInventory() {
   try {
@@ -890,29 +1150,75 @@ function renderInventory() {
 function renderCollection() {
   if (!gameData) return;
 
-  document.getElementById("trophyGrid").innerHTML = gameData.trophies.map(t => `
-    <article class="trophy-card ${t.earned ? "" : "locked"}">
-      <div class="trophy-art">${t.earned ? t.icon : "🔒"}</div>
-      <div class="trophy-body"><h3>${t.earned ? t.name : "Unknown Trophy"}</h3><p class="card-meta">${t.source}</p><p class="card-ability">${t.earned ? t.description : "Complete the matching bounty to reveal this trophy."}</p></div>
-    </article>
-  `).join("");
+  const trophyGrid=document.getElementById("trophyGrid");
+  if (!gameData.trophies.length) {
+    trophyGrid.innerHTML=`
+      <div class="collection-empty-state">
+        <span>🏆</span>
+        <div><b>No new-season bounty trophies yet.</b><small>Trophies will appear here only after you personally complete a bounty during the new season.</small></div>
+      </div>`;
+  } else {
+    trophyGrid.innerHTML = gameData.trophies.map(t => `
+      <article class="trophy-card">
+        <div class="trophy-art">${t.image ? `<img class="collection-trophy-image" src="/assets/big-game-trophies/${escapeHtml(t.image)}" alt="${escapeHtml(t.name)}" onerror="this.replaceWith(document.createTextNode('🏆'))">` : (t.icon || "🏆")}</div>
+        <div class="trophy-body"><h3>${escapeHtml(t.name)}</h3><p class="card-meta">${escapeHtml(t.source)}</p><p class="card-ability">${escapeHtml(t.description)}</p></div>
+      </article>
+    `).join("");
+  }
 
   document.getElementById("titleList").innerHTML = gameData.titles.map(t => `
     <div class="title-row ${t.unlocked ? "" : "locked"} ${hunter?.title === t.name ? "equipped" : ""}">
-      <div><b>${t.secret && !t.unlocked ? "???" : t.name}</b><div class="title-state">${t.unlocked ? (hunter?.title === t.name ? "⭐ Equipped" : "Unlocked") : "Undiscovered"}</div></div>
-      <span>${t.unlocked ? "🎖️" : "🔒"}</span>
+      <div class="title-row-copy">
+        <b>${t.unlocked ? escapeHtml(t.name) : "🔒 Locked Title"}</b>
+        <div class="title-state">${t.unlocked ? (hunter?.title === t.name ? "⭐ Equipped" : (t.legacy ? "Lifetime title" : "Unlocked")) : escapeHtml(t.requirement || "Keep hunting to discover this title.")}</div>
+      </div>
+      ${t.unlocked
+        ? `<button class="secondary title-equip-btn" type="button" data-title-equip="${escapeHtml(t.name)}">${hunter?.title === t.name ? "Unequip" : "Equip"}</button>`
+        : `<span class="title-lock">🔒</span>`}
     </div>
   `).join("");
+
+  document.querySelectorAll("[data-title-equip]").forEach(btn=>{
+    btn.addEventListener("click",async()=>{
+      const title=btn.dataset.titleEquip;
+      const unequip=hunter?.title===title;
+      const original=btn.textContent;
+      btn.disabled=true;
+      btn.textContent="Saving…";
+      try{
+        const response=await activityFetch("/api/activity/title/equip",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({title:unequip?"":title})
+        });
+        const result=await response.json();
+        if(!response.ok||!result.ok) throw new Error(result.error||"Could not equip title.");
+        hunter.title=result.title || "Novice Hunter";
+        document.getElementById("hunterTitle").textContent=hunter.title;
+        const huntTitle=document.getElementById("huntOverviewTitle");
+        if(huntTitle) huntTitle.textContent=hunter.title;
+        renderCollection();
+        showActivityResult("🎖️",result.title?"Title Equipped":"Title Unequipped",result.message);
+      }catch(error){
+        showActivityResult("❌","Could Not Change Title",error.message);
+        btn.disabled=false;
+        btn.textContent=original;
+      }
+    });
+  });
 
   document.getElementById("cosmeticGrid").innerHTML = gameData.cosmetics.map(c => `
     <article class="cosmetic-card ${c.unlocked ? "" : "locked"}">
       <div class="cosmetic-art">${c.unlocked ? cosmeticIcon(c.slot) : "🔒"}</div>
-      <div class="cosmetic-body"><h3>${c.name}</h3><p class="card-meta">${c.slot}</p><p class="card-ability">${c.unlocked ? "Unlocked" : c.requirement}</p></div>
+      <div class="cosmetic-body"><h3>${escapeHtml(c.name)}</h3><p class="card-meta">${escapeHtml(c.slot)}</p><p class="card-ability">${c.unlocked ? "Unlocked in Appearance Editor" : escapeHtml(c.requirement)}</p></div>
     </article>
   `).join("");
+
+  h10632RenderDiceLocker();
 }
+
 function cosmeticIcon(slot) {
-  return ({Cloak:"🧥",Headgear:"🪖",Outfit:"🥋",Weapon:"⚔️"}[slot] || "✨");
+  return ({Cloak:"🧥",Headgear:"🪖",Outfit:"🥋",Weapon:"⚔️","Hair Style":"💇"}[slot] || "✨");
 }
 
 function buildCustomizerControls() {
@@ -968,17 +1274,65 @@ function syncSelectedStates() {
   const map = [["bodyOptions","body"],["skinOptions","skin"],["hairOptions","hair"],["hairColorOptions","hairColor"],["eyeOptions","eyes"],["beardOptions","beard"],["outfitOptions","outfit"],["cloakOptions","cloak"],["headgearOptions","headgear"],["weaponOptions","weapon"]];
   map.forEach(([id,key]) => document.querySelectorAll(`#${id} [data-value]`).forEach(b => b.classList.toggle("selected",b.dataset.value===workingAppearance[key])));
 }
-function cloneAvatarForEditor() {
+function avatarV2Markup(a) {
+  const skin = a.skin || "#d59a72";
+  const hair = a.hairColor || "#3f2a22";
+  const eye = a.eyeColor || "#4a6d84";
+  const female = a.body === "female";
+  const outfits = {
+    ranger:["#49654b","#6f5a3f"], leather:["#754832","#a96d46"], scout:["#526657","#8a7655"], traveler:["#665548","#92785b"],
+    storm:["#40576d","#7890a8"], glass:["#6f6a55","#b7a67a"], overalls:["#315f87","#527fa6"], ninja:["#202733","#343d4c"],
+    pirate:["#71362f","#b98a55"], wizard:["#493c78","#7662b2"], rift:["#3d3475","#6b5cc4"], frost:["#537a8a","#9fc8d5"], ember:["#7b3428","#d36c35"]
+  };
+  const [o1,o2] = outfits[a.outfit] || outfits.ranger;
+  const cloakColors={forest:"#304b3a",brown:"#604838",blue:"#344f73",rift:"#40366f",ember:"#78362c",frost:"#5f8292"};
+  const cloak=cloakColors[a.cloak]||"#304b3a";
+  const hairBack = {
+    long:`<path d="M67 58 Q95 25 123 58 L126 117 Q112 126 102 105 L88 105 Q76 126 64 116Z" fill="${hair}" class="avatar-v2-outline"/>`,
+    ponytail:`<ellipse cx="121" cy="76" rx="16" ry="29" fill="${hair}" class="avatar-v2-outline"/><circle cx="128" cy="103" r="12" fill="${hair}" class="avatar-v2-outline"/>`,
+    braid:`<path d="M121 70 Q139 84 125 101 Q141 115 125 131 Q138 145 122 158" fill="none" stroke="${hair}" stroke-width="13" stroke-linecap="round"/>`,
+    bun:`<circle cx="121" cy="54" r="15" fill="${hair}" class="avatar-v2-outline"/>`
+  }[a.hair] || "";
+  const hairFront = a.hair === "bald" ? "" : a.hair === "mohawk" ? `<path d="M82 54 Q94 18 108 53Z" fill="${hair}" class="avatar-v2-outline"/>` : a.hair === "pixie" ? `<path d="M70 62 Q91 35 121 55 L112 68 Q93 56 72 73Z" fill="${hair}" class="avatar-v2-outline"/>` : a.hair === "undercut" ? `<path d="M72 61 Q91 35 121 55 L108 65 Q91 55 74 69Z" fill="${hair}" class="avatar-v2-outline"/>` : a.hair === "curls" ? `<g fill="${hair}" class="avatar-v2-soft-outline"><circle cx="76" cy="59" r="12"/><circle cx="89" cy="51" r="13"/><circle cx="104" cy="51" r="13"/><circle cx="116" cy="60" r="12"/></g>` : a.hair === "swept" ? `<path d="M69 63 Q82 37 121 51 Q111 69 82 68 Q77 76 70 80Z" fill="${hair}" class="avatar-v2-outline"/>` : a.hair === "messy" ? `<path d="M68 64 L76 43 84 51 94 35 101 50 116 40 121 63 110 68 78 70Z" fill="${hair}" class="avatar-v2-outline"/>` : `<path d="M69 64 Q77 39 96 40 Q116 40 122 63 L112 69 Q95 58 77 70Z" fill="${hair}" class="avatar-v2-outline"/>`;
+  const beard = a.beard === "full" ? `<path d="M78 91 Q95 112 112 91 L108 116 Q95 128 82 116Z" fill="${hair}" class="avatar-v2-soft-outline"/>` : a.beard === "goatee" ? `<path d="M89 101 Q95 113 101 101 L99 118 91 118Z" fill="${hair}"/>` : a.beard === "mustache" ? `<path d="M83 97 Q90 89 95 96 Q100 89 107 97 Q100 103 95 99 Q90 103 83 97Z" fill="${hair}"/>` : a.beard === "stubble" ? `<path d="M78 91 Q95 109 112 91 Q108 113 95 116 Q82 113 78 91Z" fill="${hair}" opacity=".28"/>` : "";
+  const headgear = a.headgear === "army" ? `<path d="M66 61 Q72 30 95 29 Q119 30 125 61Z" fill="#526247" class="avatar-v2-outline"/><rect x="63" y="58" width="64" height="9" rx="4" fill="#43513b" class="avatar-v2-soft-outline"/>` : a.headgear === "cowboy" ? `<ellipse cx="95" cy="57" rx="43" ry="8" fill="#7a5436" class="avatar-v2-outline"/><path d="M73 57 Q76 30 95 34 Q114 30 118 57Z" fill="#8b613e" class="avatar-v2-outline"/>` : a.headgear === "wizard_hat" ? `<path d="M72 57 L101 11 L119 58Z" fill="#55458b" class="avatar-v2-outline"/><ellipse cx="96" cy="59" rx="36" ry="8" fill="#6655a1" class="avatar-v2-outline"/>` : a.headgear === "cap" ? `<path d="M69 59 Q76 38 113 45 L119 61Z" fill="#79573d" class="avatar-v2-outline"/><path d="M110 59 L135 63 L111 68Z" fill="#79573d" class="avatar-v2-outline"/>` : a.headgear === "band" ? `<rect x="69" y="59" width="53" height="8" rx="4" fill="#c55c4c"/>` : a.headgear === "ninja_mask" ? `<path d="M72 78 Q95 67 118 78 L114 102 Q95 109 76 102Z" fill="#202733" class="avatar-v2-soft-outline"/>` : "";
+  const weapon = a.weapon === "none" ? "" : a.weapon === "sword" || a.weapon === "katana" ? `<g transform="rotate(-12 47 142)"><rect x="44" y="76" width="7" height="102" rx="3" fill="#cbd5e1" class="avatar-v2-soft-outline"/><rect x="35" y="162" width="25" height="7" rx="3" fill="#9a6b3f"/><rect x="43" y="168" width="9" height="30" rx="4" fill="#51382d"/></g>` : a.weapon === "spear" || a.weapon === "pitchfork" || a.weapon === "staff" ? `<g transform="rotate(8 43 140)"><rect x="41" y="55" width="7" height="145" rx="3" fill="#755239"/>${a.weapon==='spear'?'<path d="M44 34 L55 60 33 60Z" fill="#cbd5e1" class="avatar-v2-soft-outline"/>':a.weapon==='pitchfork'?'<path d="M30 55 L30 35 M44 55 L44 31 M58 55 L58 35 M30 48 Q44 58 58 48" fill="none" stroke="#b8c0c9" stroke-width="5"/>':'<circle cx="44" cy="43" r="10" fill="#7c5ce0" class="avatar-v2-soft-outline"/>'}</g>` : a.weapon === "wand" ? `<g transform="rotate(-18 45 145)"><rect x="42" y="95" width="6" height="100" rx="3" fill="#674832"/><text x="44" y="91" text-anchor="middle" font-size="25" fill="#fde68a">✦</text></g>` : `<path d="M42 70 Q5 130 42 195" fill="none" stroke="#9b6438" stroke-width="6" class="avatar-v2-soft-outline"/><path d="M42 70 L42 195" stroke="#d6d3d1" stroke-width="2"/>`;
+  return `<svg class="avatar-v2-svg" viewBox="0 0 190 240" role="img" aria-label="Experimental layered cartoon hunter preview">
+    <ellipse cx="95" cy="222" rx="49" ry="10" fill="rgba(0,0,0,.28)"/>
+    ${weapon}
+    ${a.cloak !== 'none' ? `<path d="M58 120 Q95 101 132 120 L142 203 Q95 219 48 203Z" fill="${cloak}" class="avatar-v2-outline"/>` : ''}
+    ${hairBack}
+    <g id="body-layer">
+      <rect x="${female?70:66}" y="117" width="${female?50:58}" height="72" rx="${female?18:14}" fill="${o1}" class="avatar-v2-outline"/>
+      ${a.outfit==='overalls'?`<path d="M76 123 H114 V181 H76Z" fill="#315f87"/><path d="M79 119 V139 M111 119 V139" stroke="#527fa6" stroke-width="8"/>`:''}
+      ${a.outfit==='ninja'?`<path d="M68 130 Q95 143 122 130" fill="none" stroke="#111827" stroke-width="12"/>`:''}
+      <rect x="73" y="174" width="44" height="9" rx="3" fill="#493329"/><rect x="91" y="172" width="9" height="12" rx="2" fill="#d5a93d"/>
+      <rect x="55" y="123" width="18" height="60" rx="9" fill="${o2}" class="avatar-v2-soft-outline"/><circle cx="63" cy="183" r="10" fill="${skin}" class="avatar-v2-soft-outline"/>
+      <rect x="117" y="123" width="18" height="60" rx="9" fill="${o2}" class="avatar-v2-soft-outline"/><circle cx="127" cy="183" r="10" fill="${skin}" class="avatar-v2-soft-outline"/>
+      <rect x="76" y="184" width="17" height="31" rx="5" fill="#344054" class="avatar-v2-soft-outline"/><rect x="98" y="184" width="17" height="31" rx="5" fill="#344054" class="avatar-v2-soft-outline"/>
+      <rect x="72" y="207" width="23" height="14" rx="5" fill="#3b2b25" class="avatar-v2-soft-outline"/><rect x="97" y="207" width="23" height="14" rx="5" fill="#3b2b25" class="avatar-v2-soft-outline"/>
+    </g>
+    <rect x="88" y="105" width="14" height="19" rx="5" fill="${skin}" class="avatar-v2-soft-outline"/>
+    <g id="head-layer">${hairBack}<ellipse cx="95" cy="79" rx="31" ry="36" fill="${skin}" class="avatar-v2-outline"/>${hairFront}
+      <ellipse cx="83" cy="80" rx="5" ry="${a.eyes==='narrow'?3:6}" fill="${eye}" class="avatar-v2-eye"/><ellipse cx="107" cy="80" rx="5" ry="${a.eyes==='narrow'?3:6}" fill="${eye}" class="avatar-v2-eye"/>
+      <circle cx="84" cy="78" r="1.6" fill="white"/><circle cx="108" cy="78" r="1.6" fill="white"/>
+      <path d="M91 91 Q95 94 99 91" fill="none" stroke="#7a4e3d" stroke-width="2" stroke-linecap="round"/><path d="M87 101 Q95 107 103 101" fill="none" stroke="#7a3e42" stroke-width="2.5" stroke-linecap="round"/>
+      ${beard}${headgear}
+    </g>
+  </svg>`;
+}
+
+function renderAvatarV2Editor() {
   const host = document.getElementById("editorAvatarHost");
-  host.innerHTML="";
-  const clone = document.getElementById("avatarPreview").cloneNode(true);
-  clone.id="editorAvatarPreview";
-  clone.querySelectorAll("[id]").forEach(el => el.removeAttribute("id"));
-  host.appendChild(clone);
-  applyAppearanceToAvatar(clone.querySelector(".avatar"),workingAppearance);
+  if (!host) return;
+  host.innerHTML = avatarV2Markup(workingAppearance);
+}
+
+function cloneAvatarForEditor() {
+  renderAvatarV2Editor();
 }
 function updateEditor() {
-  applyAppearanceToAvatar(document.querySelector("#editorAvatarHost .avatar"),workingAppearance);
+  renderAvatarV2Editor();
   syncSelectedStates();
 }
 function openCustomizer() {
@@ -1024,7 +1378,7 @@ async function showHatchReveal(payload){
   const pet=payload?.pet;
   if(!pet) return;
   const modal=document.getElementById("hatchRevealModal");
-  document.getElementById("hatchRevealArt").innerHTML=assetImage(pet.image?`/assets/pets/${pet.image}`:null,pet.icon||"🐾","hatch-pet-image");
+  document.getElementById("hatchRevealArt").innerHTML=assetImage(petArtPath(pet),pet.icon||"🐾","hatch-pet-image");
   document.getElementById("hatchRevealName").textContent=pet.name||"New Companion";
   document.getElementById("hatchRevealMeta").textContent=`${pet.rarity||"Companion"} • ${pet.habitat||"Unknown Habitat"}`;
   document.getElementById("hatchRevealFlavor").textContent=pet.flavor||pet.description||"A new companion joins your hunt.";
@@ -1128,7 +1482,7 @@ function renderEggs() {
   grid.innerHTML=eggs.length?eggs.map((egg,index)=>`
     <button class="egg-card" data-egg-index="${egg.inventoryIndex ?? index}">
       <div class="egg-card-art">
-        ${egg.image?`<img class="egg-live-image" src="/assets/eggs/${egg.image}" onerror="this.replaceWith(document.createTextNode('${egg.icon||"🥚"}'))" alt="${egg.name}">`:(egg.icon||"🥚")}
+        ${egg.image?`<img class="egg-live-image" src="${eggArtPath(egg)}" onerror="this.replaceWith(document.createTextNode('${egg.icon||"🥚"}'))" alt="${egg.name}">`:(egg.icon||"🥚")}
       </div>
       <div class="egg-card-body">
         <span class="rarity-pill">${egg.rarity}</span>
@@ -1154,7 +1508,7 @@ function renderEggs() {
 
   const first=incubations[0];
   document.getElementById("incubatorEggName").textContent=first?first.name:"No Egg Incubating";
-  document.getElementById("incubatorEggIcon").innerHTML=first?assetImage(first.image?`/assets/eggs/${first.image}`:null,first.icon||"🥚","incubator-egg-image"):"🥚";
+  document.getElementById("incubatorEggIcon").innerHTML=first?assetImage(eggArtPath(first),first.icon||"🥚","incubator-egg-image"):"🥚";
   document.getElementById("incubatorStatus").textContent=first
     ? `${incubations.length}/${slots} incubator slot${slots===1?"":"s"} in use`
     : `${incubations.length}/${slots} incubator slots in use`;
@@ -1190,7 +1544,7 @@ function renderEggs() {
   }
   list.innerHTML=incubations.length?incubations.map(x=>`
     <div class="h2a-incubator-row ${x.ready?"ready":""}">
-      <span class="h2a-incubator-row-art">${assetImage(x.image?`/assets/eggs/${x.image}`:null,x.icon||"🥚","incubator-row-image")}</span>
+      <span class="h2a-incubator-row-art">${assetImage(eggArtPath(x),x.icon||"🥚","incubator-row-image")}</span>
       <div><b>Slot ${x.slot}: ${x.name}</b><small>${x.ready?"Ready to hatch":`${formatCountdown(Math.max(0,x.readyAt-Date.now()))} remaining`}</small></div>
       ${x.ready?`<button class="secondary h2a-hatch-slot" data-slot="${x.slot}">Hatch</button>`:""}
     </div>`).join("")
@@ -1481,9 +1835,115 @@ function getDifficulty(chance) {
 
 function getPossibleRewards(encounter) {
   const rewards = [];
-  rewards.push({icon:"⭐", label:"Hunter Points", value:`+${encounter.points || 0}`});
-  // Live tokens/items/eggs/event rewards will only appear when the real game actually generates them.
+  const tokenByRarity={Common:1,Rare:2,Epic:4,Legendary:8,Mythic:15,"Ultra Rare":15,Event:4,Secret:15};
+  const tokenBase=tokenByRarity[encounter?.rarity]||1;
+  rewards.push({icon:"⭐",label:"Hunter Points",value:`+${encounter?.points||0}`});
+  rewards.push({icon:"🪙",label:"Hunt Tokens",value:`+${tokenBase}${h2aLiveEvents?.bigGame?.active?" ×2 Big Game":""}`});
+  if((ownedPet(activePetKey)||gameData?.ownedPets?.[0])) rewards.push({icon:"🐾",label:"Companion XP",value:"+10 minimum"});
+  rewards.push({icon:"🎒",label:"Hunting Supply",value:"Possible"});
+  rewards.push({icon:"🥚",label:"Egg Discovery",value:"Possible"});
   return rewards;
+}
+
+// H10.6.22 — Make companion abilities visible where they actually matter.
+function h10622AbilityPanelHtml(companion, includeAll=true) {
+  if(!companion) return `<div style="padding:10px 12px;border-radius:12px;background:rgba(15,23,42,.72);margin-top:10px"><b>🐾 Companion Effects</b><br><small>No active companion.</small></div>`;
+  const triggered=(companion.triggered||[]).map(m=>`<div style="margin-top:5px"><small>⚡ ${escapeHtml(String(m).replace(/\*\*/g,""))}</small></div>`).join("");
+  const active=(companion.active||[]).map(a=>`<div class="possible-reward-row"><span>${escapeHtml(a.icon||"🐾")} ${escapeHtml(a.label||"Effect")}</span><b>${escapeHtml(String(a.value||""))}</b></div>`).join("");
+  const abilities=includeAll?(companion.abilities||[]).map(a=>`<div style="padding:7px 0;border-top:1px solid rgba(148,163,184,.18)"><b>${escapeHtml(a.icon||"🐾")} ${escapeHtml(a.name||a.key)} • Rank ${escapeHtml(a.rank||"")}</b><br><small>${escapeHtml(a.effect||"")}${a.natural?" • Natural":" • Inherited"}</small></div>`).join(""):"";
+  return `<div style="padding:12px;border-radius:12px;background:rgba(15,23,42,.78);margin-top:10px">
+    <b>🐾 ${escapeHtml(companion.petName||"Companion")} — Ability Effects</b>
+    ${triggered?`<div style="margin-top:7px">${triggered}</div>`:""}
+    ${active?`<div style="margin-top:8px">${active}</div>`:""}
+    ${abilities?`<div style="margin-top:8px">${abilities}</div>`:""}
+  </div>`;
+}
+
+
+// ===== H10.6.33 DICE LOCKER: unlocks, themes, test roll =====
+let h10632DiceDraft=null;
+function h10632DiceLocker(){ return gameData?.diceLocker || null; }
+function h10633DicePreviewCosmetic(){
+  const locker=h10632DiceLocker();
+  if(!locker) return {bodyColor:"#17467f",numberColor:"#f3f7ff",theme:{key:"classic"}};
+  const d=h10632DiceDraft||locker.equipped||{};
+  const body=(locker.bodyColors||[]).find(x=>x.key===d.body) || locker.bodyColors?.[0];
+  const numbers=(locker.numberColors||[]).find(x=>x.key===d.numbers) || locker.numberColors?.[0];
+  const theme=(locker.themes||[]).find(x=>x.key===(d.theme||"classic")) || locker.themes?.[0] || {key:"classic",name:"Classic"};
+  return {bodyColor:body?.hex||"#17467f",numberColor:numbers?.hex||"#f3f7ff",theme};
+}
+function h10632RenderDiceLocker(){
+  const locker=h10632DiceLocker(),bodyGrid=document.getElementById("diceBodyColorGrid"),numberGrid=document.getElementById("diceNumberColorGrid"),themeGrid=document.getElementById("diceThemeGrid"),preview=document.getElementById("diceLockerPreview"),label=document.getElementById("diceLockerCurrentName"),status=document.getElementById("diceLockerStatus"),equipBtn=document.getElementById("equipDiceCosmeticBtn"),testBtn=document.getElementById("testDiceCosmeticBtn");
+  if(!locker||!bodyGrid||!numberGrid||!themeGrid||!preview||!label||!equipBtn) return;
+  if(!h10632DiceDraft) h10632DiceDraft={body:locker.equipped?.body||"sapphire",numbers:locker.equipped?.numbers||"white",theme:locker.equipped?.themeKey||locker.equipped?.theme?.key||"classic"};
+  const body=(locker.bodyColors||[]).find(x=>x.key===h10632DiceDraft.body)||locker.bodyColors?.[0],numbers=(locker.numberColors||[]).find(x=>x.key===h10632DiceDraft.numbers)||locker.numberColors?.[0],theme=(locker.themes||[]).find(x=>x.key===h10632DiceDraft.theme)||locker.themes?.[0];
+  if(!body||!numbers||!theme) return;
+  preview.style.setProperty("--dice-body",theme.key==='classic'?body.hex:(theme.primary||body.hex));
+  preview.style.setProperty("--dice-body-2",theme.key==='classic'?body.hex:(theme.secondary||body.hex));
+  preview.style.setProperty("--dice-accent",theme.accent||numbers.hex);
+  preview.style.setProperty("--dice-number",numbers.hex);
+  preview.dataset.theme=theme.key;
+  label.textContent=`${theme.key==='classic'?body.name:theme.name} • ${numbers.name} Numbers`;
+
+  const swatches=(items,type)=>items.map(item=>`<button type="button" class="dice-swatch ${h10632DiceDraft[type]===item.key?"selected":""} ${item.unlocked?"":"locked"}" data-dice-${type}="${escapeHtml(item.key)}" ${item.unlocked?"":'disabled'} title="${escapeHtml(item.unlocked?item.name:`Locked — ${item.unlock||'Achievement required'}`)}"><span class="dice-swatch-chip" style="--swatch:${escapeHtml(item.hex)}"></span><small>${item.unlocked?'':`🔒 `}${escapeHtml(item.name)}</small></button>`).join("");
+  bodyGrid.innerHTML=swatches(locker.bodyColors||[],"body"); numberGrid.innerHTML=swatches(locker.numberColors||[],"numbers");
+  themeGrid.innerHTML=(locker.themes||[]).map(item=>`<button type="button" class="dice-theme-card ${h10632DiceDraft.theme===item.key?"selected":""} ${item.unlocked?"":"locked"}" data-dice-theme="${escapeHtml(item.key)}" ${item.unlocked?"":'disabled'} style="--theme-a:${escapeHtml(item.primary||body.hex)};--theme-b:${escapeHtml(item.secondary||body.hex)};--theme-c:${escapeHtml(item.accent||numbers.hex)}"><span>${escapeHtml(item.icon||'🎲')}</span><b>${item.unlocked?'':`🔒 `}${escapeHtml(item.name)}</b><small>${escapeHtml(item.unlocked?(item.description||'Unlocked cosmetic'):(item.unlock||'Achievement required'))}</small></button>`).join("");
+  bodyGrid.querySelectorAll("[data-dice-body]").forEach(btn=>btn.onclick=()=>{h10632DiceDraft.body=btn.dataset.diceBody;h10632RenderDiceLocker();});
+  numberGrid.querySelectorAll("[data-dice-numbers]").forEach(btn=>btn.onclick=()=>{h10632DiceDraft.numbers=btn.dataset.diceNumbers;h10632RenderDiceLocker();});
+  themeGrid.querySelectorAll("[data-dice-theme]").forEach(btn=>btn.onclick=()=>{h10632DiceDraft.theme=btn.dataset.diceTheme;h10632RenderDiceLocker();});
+
+  const equipped=locker.equipped||{},dirty=h10632DiceDraft.body!==equipped.body||h10632DiceDraft.numbers!==equipped.numbers||h10632DiceDraft.theme!==(equipped.themeKey||equipped.theme?.key||"classic");
+  equipBtn.disabled=!dirty; equipBtn.textContent=dirty?"🎲 Equip Dice Look":"✓ Dice Look Equipped";
+  if(status) status.textContent=dirty?"Previewing a new cosmetic — equip it to use on capture rolls.":"This cosmetic is equipped for every physical D100 roll.";
+  if(testBtn){ testBtn.disabled=false; testBtn.onclick=async()=>{ if(testBtn.dataset.busy==='1') return; testBtn.dataset.busy='1'; testBtn.disabled=true; testBtn.textContent='🎲 Opening Test Table…'; try{ if(!window.MonsterHuntMixerD100?.rollD100) await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('D100 renderer not ready')),8000);window.addEventListener('monster-hunt-d100-ready',()=>{clearTimeout(timer);resolve();},{once:true});}); await window.MonsterHuntMixerD100.rollD100({chance:null,reason:'Dice Locker Test Roll',cosmetic:h10633DicePreviewCosmetic()}); }catch(error){ if(status) status.textContent=`❌ Test roll failed: ${error.message}`; }finally{ testBtn.dataset.busy='0';testBtn.disabled=false;testBtn.textContent='🎲 Test Roll'; } }; }
+  equipBtn.onclick=async()=>{ if(!dirty) return; equipBtn.disabled=true;equipBtn.textContent="Saving…";try{const response=await activityFetch("/api/activity/dice-cosmetic",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(h10632DiceDraft)}),payload=await response.json();if(!response.ok||!payload.ok)throw new Error(payload.error||"Could not equip dice cosmetic.");gameData.diceLocker=payload.diceLocker;if(hunter)hunter.diceCosmetic=payload.diceLocker?.equipped||hunter.diceCosmetic;h10632DiceDraft={body:payload.diceLocker.equipped.body,numbers:payload.diceLocker.equipped.numbers,theme:payload.diceLocker.equipped.themeKey||payload.diceLocker.equipped.theme?.key||"classic"};h10632RenderDiceLocker();showActivityResult("🎲","Dice Locker Updated",payload.message||"Your D100 cosmetic is equipped.");}catch(error){if(status)status.textContent=`❌ ${error.message}`;equipBtn.disabled=false;equipBtn.textContent="🎲 Equip Dice Look";}};
+}
+function h10632CurrentDiceCosmetic(){
+  const equipped=gameData?.diceLocker?.equipped||hunter?.diceCosmetic||null;
+  if(!equipped)return {bodyColor:"#17467f",numberColor:"#f3f7ff",theme:{key:"classic"}};
+  return {bodyColor:equipped.bodyColor||"#17467f",numberColor:equipped.numberColor||"#f3f7ff",theme:equipped.theme||{key:equipped.themeKey||"classic"}};
+}
+
+function h10622RenderEncounterCompanion(companion){
+  const rewards=document.getElementById("possibleRewards");
+  if(!rewards) return;
+  let panel=document.getElementById("h10622EncounterCompanion");
+  if(!panel){ panel=document.createElement("div"); panel.id="h10622EncounterCompanion"; rewards.insertAdjacentElement("afterend",panel); }
+  panel.innerHTML=h10622AbilityPanelHtml(companion,true);
+}
+
+function h10622RenderResultCompanion(companion,effects=[]){
+  const details=document.getElementById("huntResultDetails");
+  if(!details) return;
+  let panel=document.getElementById("h10622ResultCompanion");
+  if(!panel){ panel=document.createElement("div"); panel.id="h10622ResultCompanion"; details.insertAdjacentElement("afterend",panel); }
+  const copy=companion?{...companion,triggered:[...(effects||[])]}:null;
+  panel.innerHTML=h10622AbilityPanelHtml(copy,false);
+}
+
+function h10631ChanceBreakdownText(breakdown){
+  const b=breakdown||{};
+  const parts=[`Base ${Number(b.base||0)}%`];
+  if(Number(b.knowledge||0)) parts.push(`Knowledge +${Number(b.knowledge)}%`);
+  if(Number(b.event||0)) parts.push(`Event +${Number(b.event)}%`);
+  if(Number(b.pet||0)) parts.push(`🐾 Pet +${Number(b.pet)}%`);
+  if(Number(b.comeback||0)) parts.push(`Comeback +${Number(b.comeback)}%`);
+  if(Number(b.item||0)) parts.push(`Item +${Number(b.item)}%`);
+  return parts.join(" • ");
+}
+function h10631RenderChanceBreakdown(){
+  const breakdown=currentEncounter?.chanceBreakdown;
+  const text=breakdown?h10631ChanceBreakdownText(breakdown):"";
+  const encounterDetail=document.getElementById("encounterChanceBreakdown");
+  if(encounterDetail){
+    encounterDetail.textContent=text;
+    encounterDetail.classList.toggle("hidden",!text);
+  }
+  const attemptDetail=document.getElementById("attemptChanceBreakdown");
+  if(attemptDetail){
+    attemptDetail.textContent=text;
+    attemptDetail.classList.toggle("hidden",!text);
+  }
 }
 
 function populateEncounterPage() {
@@ -1502,7 +1962,8 @@ function populateEncounterPage() {
 
   document.getElementById("encounterMonsterName").textContent = currentEncounter.name;
   document.getElementById("encounterMonsterRarity").textContent = currentEncounter.rarity;
-  document.getElementById("encounterCatchChance").textContent = `${currentEncounter.baseChance}%`;
+  document.getElementById("encounterCatchChance").textContent = `${Number(currentEncounter.chance ?? currentEncounter.baseChance)}%`;
+  h10631RenderChanceBreakdown();
   document.getElementById("encounterHabitat").textContent = activeHuntZone.name;
   document.getElementById("encounterDifficulty").textContent = getDifficulty(currentEncounter.baseChance);
   const encounterPetName=document.getElementById("encounterPetName");
@@ -1525,6 +1986,8 @@ function populateEncounterPage() {
     getPossibleRewards(currentEncounter).map(r => `
       <div class="possible-reward-row"><span>${r.icon} ${r.label}</span><b>${r.value}</b></div>
     `).join("") || `<div class="possible-reward-row"><span>🎒 Rewards</span><b>Varies</b></div>`;
+
+  h10622RenderEncounterCompanion(currentEncounter.companion || null);
 
   document.getElementById("baitPicker").classList.add("hidden");
 }
@@ -1711,7 +2174,7 @@ function showCaptureFailure(roll, chance, secondChance=false) {
   document.getElementById("huntResultDetails").innerHTML = `
     <div><span>Catch Chance</span><b>${chance}%</b></div>
     <div><span>Roll</span><b>${roll}</b></div>
-    <div><span>Method</span><b>${selectedCaptureTool?.name || "Normal Hunt"}</b></div>
+    <div><span>Method</span><b>${selectedCaptureTool?.name || (document.body.classList.contains("h10-distortion-active") ? "Distortion Hunt" : "Normal Hunt")}</b></div>
     <div><span>Rarity</span><b>${currentEncounter.rarity}</b></div>
     ${secondChance ? `<div><span>Companion Effect</span><b>Second Chance used</b></div>` : ""}
   `;
@@ -1791,8 +2254,24 @@ function syncH2CBigGameWallet(){
   if(hunter) hunter.tokens=liveTokens;
 }
 
+
+function applyH10DistortionBackground(){
+  const active = Array.isArray(h2aLiveEvents?.active) ? h2aLiveEvents.active : [];
+  const distortion = active.find(event => event.key === "distortion");
+  if(distortion?.backgroundUrl){
+    document.body.classList.add("h10-distortion-active");
+    document.body.style.setProperty("--h10-distortion-bg", `url("${distortion.backgroundUrl}")`);
+    document.body.dataset.distortionKey = distortion.distortionKey || "active";
+  }else{
+    document.body.classList.remove("h10-distortion-active");
+    document.body.style.removeProperty("--h10-distortion-bg");
+    delete document.body.dataset.distortionKey;
+  }
+}
+
 function renderPhaseEEvents() {
   if(!h2aLiveEvents) return;
+  applyH10DistortionBackground();
   setupEventNavigation();
 
   const active=Array.isArray(h2aLiveEvents.active)?h2aLiveEvents.active:[];
@@ -1950,6 +2429,7 @@ async function boot() {
     document.getElementById("level").textContent=hunter.level;
     document.getElementById("points").textContent=hunter.points;
     document.getElementById("tokens").textContent=hunter.tokens;
+    renderHunterXp();
     document.getElementById("petsCount").textContent=`${gameData.ownedPets.length} owned`;
     document.getElementById("ownedPetCount").textContent=gameData.ownedPets.length;
     document.getElementById("petdexCount").textContent=hunter.stats.petDex;
@@ -1970,10 +2450,15 @@ async function boot() {
     renderPetProgressionBanner();
     renderPets();
     renderDex();
+    renderMonsterDex();
     renderInventoryFilters();
     renderInventory();
     renderCollection();
+    h1066RefreshDaily(false);
+    h1064StartCosmeticUnlockWatcher();
     renderActivePet();
+    renderActivityFetch(hunter.fetch);
+    startH5FetchPolling();
 
     renderHomeLeaderboard();
     renderPhaseEEvents();
@@ -1997,9 +2482,9 @@ renderLureSelector = function() {
   const bait = hunter.bait || {rare:0,epic:0,legendary:0};
   const lures = [
     {key:"none",name:"No Lure",icon:"🏹",count:null,desc:"Use normal encounter odds."},
-    {key:"rare",name:"Rare Bait",icon:"🔵",count:Number(bait.rare||0),desc:"Improves Rare odds."},
-    {key:"epic",name:"Epic Bait",icon:"🟣",count:Number(bait.epic||0),desc:"Improves Epic odds."},
-    {key:"legendary",name:"Legendary Bait",icon:"🟠",count:Number(bait.legendary||0),desc:"Improves Legendary odds."}
+    {key:"rare",name:"Rare Bait",icon:"🔵",count:Number(bait.rare||0),desc:"Select for your next hunt. Consumed when Hunt starts."},
+    {key:"epic",name:"Epic Bait",icon:"🟣",count:Number(bait.epic||0),desc:"Select for your next hunt. Consumed when Hunt starts."},
+    {key:"legendary",name:"Legendary Bait",icon:"🟠",count:Number(bait.legendary||0),desc:"Select for your next hunt. Consumed when Hunt starts."}
   ];
   selectedLureKey = hunter.activeBait || "none";
   grid.innerHTML = lures.map(x => `
@@ -2029,15 +2514,18 @@ renderPhaseFHunting = function() {
   const ready = remaining <= 0;
   const big=h2aLiveEvents?.bigGame;
   const bigActive=Boolean(big?.active && Number(big.endsAt||0)>Date.now());
-  const normalLabel=bigActive?"Normal / Big Game Hunt":"Normal Hunt";
-  const normalEyebrow=bigActive?"🎯 BIG GAME ACTIVE":"NORMAL HUNT";
-  const normalCopy=bigActive
-    ? (ready
-      ? `Big Game is live! Successful catches award Hunt Tokens and count toward the live leaderboard.`
-      : `Big Game is live. Your next event hunt is ready in ${formatCountdown(remaining)}.`)
-    : (ready
-      ? "Track a real monster using your new-season account."
-      : `Ready in ${formatCountdown(remaining)}.`);
+  const distortionActive=Boolean((Array.isArray(h2aLiveEvents?.active)?h2aLiveEvents.active:[]).some(e=>e.key==="distortion"));
+  const normalLabel=distortionActive?"Distortion Hunt":(bigActive?"Normal / Big Game Hunt":"Normal Hunt");
+  const normalEyebrow=distortionActive?"🌀 DISTORTION HUNT":(bigActive?"🎯 BIG GAME ACTIVE":"NORMAL HUNT");
+  const normalCopy=distortionActive
+    ? (ready ? "Enter the active Distortion and hunt its exclusive creatures." : `Your next Distortion Hunt is ready in ${formatCountdown(remaining)}.`)
+    : bigActive
+      ? (ready
+        ? `Big Game is live! Successful catches award Hunt Tokens and count toward the live leaderboard.`
+        : `Big Game is live. Your next event hunt is ready in ${formatCountdown(remaining)}.`)
+      : (ready
+        ? "Track a real monster using your new-season account."
+        : `Ready in ${formatCountdown(remaining)}.`);
 
   grid.innerHTML = `
     ${bigActive?`
@@ -2067,7 +2555,14 @@ renderPhaseFHunting = function() {
   document.getElementById("encounterLeaveBtn").onclick = returnToHuntOverview;
   document.getElementById("attemptBackBtn").onclick = () => showHuntStep("encounter");
   document.getElementById("resultOverviewBtn").onclick = returnToHuntOverview;
-  document.getElementById("normalHuntChoice").onclick = () => chooseHuntMethod("none");
+  const normalChoice=document.getElementById("normalHuntChoice");
+  if(normalChoice){
+    const label=normalChoice.querySelector("b");
+    const small=normalChoice.querySelector("small");
+    if(label) label.textContent=distortionActive?"Distortion Hunt":"Hunt Normally";
+    if(small) small.textContent=distortionActive?"Use your Distortion catch chance":"Use your normal catch chance";
+    normalChoice.onclick = () => chooseHuntMethod("none");
+  }
   document.getElementById("baitHuntChoice").onclick = openBaitPicker;
   showHuntStep("overview");
 };
@@ -2087,26 +2582,35 @@ beginHuntFromZone = async function(zoneKey="normal") {
   }
 
   const bigGameHunt=zoneKey==="biggame" && Boolean(h2aLiveEvents?.bigGame?.active);
+  const distortionHunt=Boolean((Array.isArray(h2aLiveEvents?.active)?h2aLiveEvents.active:[]).some(e=>e.key==="distortion"));
   activeHuntZone = {
-    key:bigGameHunt?"biggame":"normal",
+    key:bigGameHunt?"biggame":(distortionHunt?"distortion":"normal"),
     name:payload.monster.habitat || "Hunting Grounds",
-    subtitle:bigGameHunt?"Big Game Hunt":"Normal Hunt"
+    subtitle:bigGameHunt?"Big Game Hunt":(distortionHunt?"Distortion Hunt":"Normal Hunt")
   };
   huntAttemptNumber = 1;
   currentEncounter = {
     ...payload.monster,
     baseChance:payload.baseChance,
-    image:payload.monster.imageUrl || (payload.monster.image ? `/assets/monsters/${payload.monster.image}` : null)
+    chance:Number(payload.chance ?? payload.baseChance ?? payload.monster.chance ?? 0),
+    chanceBreakdown:payload.chanceBreakdown||null,
+    companion:payload.companion||null,
+    image:payload.monster.imageUrl || (payload.monster.image ? `${H102_DISTORTION_HABITATS.has(String(payload.monster.habitat||""))?"/assets/distortions":"/assets/monsters"}/${payload.monster.image}` : null)
   };
   hunter = {...hunter,...payload.player};
   phaseFHunting.captureTools = payload.choices.map(c => ({
     key:c.itemKey || "none",
-    name:c.itemKey ? c.label : "Normal Hunt",
+    name:c.itemKey ? c.label : (distortionHunt ? "Distortion Hunt" : "Normal Hunt"),
     icon:c.itemKey==="berry"?"🍓":c.itemKey==="honey"?"🍯":c.itemKey==="net"?"🕸️":c.itemKey==="masterCharm"?"🌟":"🏹",
     bonus:0, uses:c.itemKey ? Number(hunter.captureItems?.[c.itemKey]||0) : null, liveChance:c.chance
   }));
   populateEncounterPage();
   document.getElementById("encounterCatchChance").textContent = `${payload.chance}%`;
+  h10631RenderChanceBreakdown();
+  if(payload.companion?.triggered?.length){
+    const status=document.getElementById("status");
+    if(status) status.textContent=`🐾 ${payload.companion.petName}: ${payload.companion.triggered.map(x=>String(x).replace(/\*\*/g,"")).join(" • ")}`;
+  }
   showHuntStep("encounter");
 };
 
@@ -2133,56 +2637,260 @@ populateAttemptPage = function() {
     document.getElementById("rollTargetLabel").textContent = `Need ≤ ${chance}`;
     document.getElementById("rollMeterFill").style.width = `${chance}%`;
   }
+  h10631RenderChanceBreakdown();
   const btn=document.getElementById("performCaptureBtn");
   if(btn){
     btn.disabled=false;
-    btn.textContent="🎲 Roll to Catch";
+    btn.textContent="🎲 Roll to Catch • 3D";
     btn.onclick=livePerformCapture;
   }
 };
 
+
+// ==================== H10.6.24 ROLL-TO-CATCH CLICK HOTFIX ====================
+// Embed the D100 renderer directly into the main Activity bundle so Discord does
+// not need to perform a runtime dynamic-module import when the player clicks.
+const h10624EmbeddedDice = (() => {
+// H10.6.23 — Monster Hunt embedded Mixer D100 table.
+// Self-contained canvas renderer: true kite-face D10 geometry, browser-side roll,
+// containment, overhead result view, and authoritative percentile result returned
+// to the Monster Hunt Activity.
+
+const TAU=Math.PI*2;
+const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const V=(x=0,y=0,z=0)=>({x,y,z});
+const add=(a,b)=>V(a.x+b.x,a.y+b.y,a.z+b.z);
+const sub=(a,b)=>V(a.x-b.x,a.y-b.y,a.z-b.z);
+const mul=(a,s)=>V(a.x*s,a.y*s,a.z*s);
+const dot=(a,b)=>a.x*b.x+a.y*b.y+a.z*b.z;
+const cross=(a,b)=>V(a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x);
+const len=a=>Math.hypot(a.x,a.y,a.z);
+const norm=a=>{const l=len(a)||1;return mul(a,1/l)};
+const qNorm=q=>{const l=Math.hypot(q.x,q.y,q.z,q.w)||1;return {x:q.x/l,y:q.y/l,z:q.z/l,w:q.w/l}};
+const qMul=(a,b)=>({
+  w:a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z,
+  x:a.w*b.x+a.x*b.w+a.y*b.z-a.z*b.y,
+  y:a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x,
+  z:a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w
+});
+const qAxis=(axis,angle)=>{const n=norm(axis),s=Math.sin(angle/2);return qNorm({x:n.x*s,y:n.y*s,z:n.z*s,w:Math.cos(angle/2)})};
+const qRotate=(q,v)=>{
+  const u=V(q.x,q.y,q.z),s=q.w;
+  return add(add(mul(u,2*dot(u,v)),mul(v,s*s-dot(u,u))),mul(cross(u,v),2*s));
+};
+function qFromUnitVectors(a,b){
+  const v1=norm(a),v2=norm(b);let r=dot(v1,v2)+1;
+  if(r<1e-6){const axis=Math.abs(v1.x)>.9?V(0,1,0):V(1,0,0);const c=norm(cross(v1,axis));return {x:c.x,y:c.y,z:c.z,w:0};}
+  const c=cross(v1,v2);return qNorm({x:c.x,y:c.y,z:c.z,w:r});
+}
+function qSlerp(a,b,t){
+  let cos=a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w,bb=b;
+  if(cos<0){cos=-cos;bb={x:-b.x,y:-b.y,z:-b.z,w:-b.w};}
+  if(cos>.9995)return qNorm({x:a.x+(bb.x-a.x)*t,y:a.y+(bb.y-a.y)*t,z:a.z+(bb.z-a.z)*t,w:a.w+(bb.w-a.w)*t});
+  const th=Math.acos(clamp(cos,-1,1)),sin=Math.sin(th);const s0=Math.sin((1-t)*th)/sin,s1=Math.sin(t*th)/sin;
+  return {x:a.x*s0+bb.x*s1,y:a.y*s0+bb.y*s1,z:a.z*s0+bb.z*s1,w:a.w*s0+bb.w*s1};
+}
+function randomQuat(){return qNorm(qMul(qMul(qAxis(V(1,0,0),rnd(0,TAU)),qAxis(V(0,1,0),rnd(0,TAU))),qAxis(V(0,0,1),rnd(0,TAU))));}
+
+function makeD10Geometry(scale=1){
+  const waistY=.16,poleY=waistY*(5+2*Math.sqrt(5)),ringRadius=1,verts=[];
+  for(let i=0;i<5;i++){const a=TAU*i/5;verts.push(V(ringRadius*Math.cos(a)*1.05,waistY,ringRadius*Math.sin(a)*1.05));}
+  for(let i=0;i<5;i++){const a=TAU*i/5+Math.PI/5;verts.push(V(ringRadius*Math.cos(a)*1.05,-waistY,ringRadius*Math.sin(a)*1.05));}
+  verts.push(V(0,poleY,0),V(0,-poleY,0));
+  const faces=[];for(let i=0;i<5;i++){const next=(i+1)%5;faces.push([10,i,5+i,next]);faces.push([11,5+i,next,5+next]);}
+  const center=verts.reduce((a,v)=>add(a,v),V());const c=mul(center,1/verts.length);
+  const oriented=faces.map(face=>{
+    let f=[...face];const a=verts[f[0]],b=verts[f[1]],d=verts[f[2]];let n=cross(sub(b,a),sub(d,a));const fc=f.reduce((s,i)=>add(s,verts[i]),V());const faceCenter=mul(fc,1/f.length);
+    if(dot(n,sub(faceCenter,c))<0)f=f.reverse();return f;
+  });
+  const normals=oriented.map(f=>norm(cross(sub(verts[f[1]],verts[f[0]]),sub(verts[f[2]],verts[f[0]]))));
+  const centers=oriented.map(f=>mul(f.reduce((s,i)=>add(s,verts[i]),V()),1/f.length));
+  return {verts:verts.map(v=>mul(v,scale)),faces:oriented,normals,centers:centers.map(v=>mul(v,scale))};
+}
+const GEO=makeD10Geometry(.88);
+
+function createOverlay(){
+  const root=document.createElement('div');root.id='mh-d100-overlay';
+  root.innerHTML=`<style>
+  #mh-d100-overlay{position:fixed;inset:0;z-index:2147483000;background:#05070c;display:flex;flex-direction:column;color:#f5f7ff;font-family:Inter,system-ui,sans-serif;animation:mhDiceIn .18s ease-out;overflow:hidden}
+  #mh-d100-overlay .mh-dice-bg{position:absolute;inset:0;background:linear-gradient(rgba(3,7,18,.18),rgba(3,7,18,.28)),url('/.proxy/assets/dice/dice-table-background.png') center/cover no-repeat;filter:saturate(.92) brightness(.78)}
+  #mh-d100-overlay .mh-dice-top{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:18px 24px;background:linear-gradient(180deg,rgba(2,5,12,.82),rgba(2,5,12,0));pointer-events:none}
+  #mh-d100-overlay .eyebrow{font-size:11px;letter-spacing:.22em;color:#a8c7f2;font-weight:800}.mh-dice-top h2{margin:3px 0 0;font-size:26px}.mh-dice-badge{border:1px solid rgba(166,203,255,.35);background:rgba(8,24,50,.72);padding:8px 12px;border-radius:999px;font-weight:900;letter-spacing:.08em}
+  #mh-d100-overlay canvas{position:absolute;inset:0;width:100%;height:100%;z-index:1}
+  #mh-d100-overlay .mh-dice-result{position:absolute;z-index:3;left:50%;top:15%;transform:translateX(-50%);min-width:min(360px,86vw);text-align:center;background:rgba(4,10,24,.80);border:1px solid rgba(157,197,255,.28);border-radius:20px;padding:14px 24px;box-shadow:0 20px 70px rgba(0,0,0,.35);backdrop-filter:blur(10px)}
+  #mh-d100-overlay .mh-dice-label{font-size:11px;letter-spacing:.18em;color:#a9c8f7;font-weight:900}.mh-dice-number{font-size:64px;line-height:.98;font-weight:950;margin:5px 0}.mh-dice-sub{font-size:14px;color:#d9e6ff;min-height:20px}.mh-dice-chance{font-size:12px;color:#aab8d2;margin-top:4px}
+  #mh-d100-overlay .mh-dice-footer{position:absolute;z-index:3;bottom:18px;left:50%;transform:translateX(-50%);font-size:12px;color:#c7d6ef;background:rgba(3,8,18,.72);padding:8px 14px;border-radius:999px;white-space:nowrap}
+  @keyframes mhDiceIn{from{opacity:0;transform:scale(1.015)}to{opacity:1;transform:none}}@keyframes mhDiceOut{to{opacity:0;transform:scale(.99)}}
+  </style><div class="mh-dice-bg"></div><div class="mh-dice-top"><div><div class="eyebrow">MONSTER HUNT • MIXER DICE</div><h2>Physical D100 Capture Roll</h2></div><div class="mh-dice-badge" id="mh-dice-state">ROLLING</div></div><canvas></canvas><div class="mh-dice-result"><div class="mh-dice-label">D100 RESULT</div><div class="mh-dice-number" id="mh-dice-number">…</div><div class="mh-dice-sub" id="mh-dice-sub">The percentile dice are in motion.</div><div class="mh-dice-chance" id="mh-dice-chance"></div></div><div class="mh-dice-footer">00–90 percentile die + 0–9 ones die • 00 + 0 = 100</div>`;
+  document.body.appendChild(root);return root;
+}
+
+function makeDie(x,values){
+  return {pos:V(x,4.3,rnd(-.6,.6)),vel:V(x<0?rnd(4.4,6.4):rnd(-6.4,-4.4),rnd(1.2,2.5),rnd(-2.6,2.6)),q:randomQuat(),ang:V(rnd(-9,9),rnd(-12,12),rnd(-9,9)),values,topIndex:0,targetQ:null};
+}
+function updateDie(d,dt,elapsed){
+  if(elapsed<2200){
+    d.vel.y-=10.8*dt;d.pos=add(d.pos,mul(d.vel,dt));
+    if(d.pos.y<1.05){d.pos.y=1.05;d.vel.y=Math.abs(d.vel.y)*.46;d.vel.x*=.86;d.vel.z*=.86;d.ang=mul(d.ang,.84);}
+    const BX=4.3,BZ=2.8;if(Math.abs(d.pos.x)>BX){d.pos.x=clamp(d.pos.x,-BX,BX);d.vel.x*=-.62;d.ang.y*=-.8;}if(Math.abs(d.pos.z)>BZ){d.pos.z=clamp(d.pos.z,-BZ,BZ);d.vel.z*=-.62;}
+    const a=len(d.ang);if(a>.001)d.q=qNorm(qMul(qAxis(d.ang,a*dt),d.q));d.ang=mul(d.ang,Math.pow(.992,dt*60));
+  }else if(!d.targetQ){
+    let best=-Infinity,idx=0;GEO.normals.forEach((n,i)=>{const score=dot(qRotate(d.q,n),V(0,1,0));if(score>best){best=score;idx=i;}});d.topIndex=idx;const worldN=qRotate(d.q,GEO.normals[idx]);d.targetQ=qNorm(qMul(qFromUnitVectors(worldN,V(0,1,0)),d.q));d.pos.y=1.05;d.vel=V();
+  }else{
+    d.q=qSlerp(d.q,d.targetQ,1-Math.pow(.0009,dt));d.pos.y+=(1.05-d.pos.y)*(1-Math.pow(.001,dt));
+  }
+}
+function project(p,w,h,camBlend){
+  const scale=Math.min(w/10.6,h/7.8);const cx=w/2,cy=h*.60;
+  const obliqueY=(-p.y*.52+p.z*.64),topY=p.z*.92;
+  return {x:cx+p.x*scale,y:cy+(obliqueY*(1-camBlend)+topY*camBlend)*scale,depth:p.z*.65-p.y*.15};
+}
+function renderDie(ctx,d,w,h,camBlend){
+  const worldVerts=GEO.verts.map(v=>add(qRotate(d.q,v),d.pos));
+  const worldNormals=GEO.normals.map(n=>qRotate(d.q,n));
+  const faces=GEO.faces.map((f,i)=>({f,i,depth:f.reduce((s,vi)=>s+project(worldVerts[vi],w,h,camBlend).depth,0)/f.length})).sort((a,b)=>a.depth-b.depth);
+  for(const row of faces){
+    const n=worldNormals[row.i];if(n.y<-.45 && camBlend>.7)continue;
+    const pts=row.f.map(vi=>project(worldVerts[vi],w,h,camBlend));
+    const light=clamp(.38+n.y*.34+n.z*.10,.18,.86);const blue=Math.round(105+light*100);ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);ctx.closePath();ctx.fillStyle=`rgba(${Math.round(15+light*18)},${Math.round(48+light*42)},${blue},.96)`;ctx.fill();ctx.strokeStyle='rgba(186,216,255,.58)';ctx.lineWidth=1.5;ctx.stroke();
+    if(n.y>.05 || camBlend<.65){const c=project(add(qRotate(d.q,GEO.centers[row.i]),d.pos),w,h,camBlend);ctx.save();ctx.translate(c.x,c.y);ctx.fillStyle='#f7fbff';ctx.strokeStyle='rgba(0,0,0,.78)';ctx.lineWidth=5;const val=String(d.values[row.i]);ctx.font=`900 ${val.length>1?22:26}px Georgia`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.strokeText(val,0,0);ctx.fillText(val,0,0);ctx.restore();}
+  }
+}
+function resultFor(dice){
+  const tens=dice[0].values[dice[0].topIndex],ones=Number(dice[1].values[dice[1].topIndex]);const tensBase=tens==='00'?0:Number(tens);const result=(tens==='00'&&ones===0)?100:tensBase+ones;return {result,tens:String(tens).padStart(2,'0'),ones};
+}
+
+async function rollD100({chance=null,reason='Capture Roll'}={}){
+  document.getElementById('mh-d100-overlay')?.remove();const root=createOverlay(),canvas=root.querySelector('canvas'),ctx=canvas.getContext('2d'),numberEl=root.querySelector('#mh-dice-number'),subEl=root.querySelector('#mh-dice-sub'),stateEl=root.querySelector('#mh-dice-state'),chanceEl=root.querySelector('#mh-dice-chance');
+  if(chance!=null)chanceEl.textContent=`Catch chance: ${Number(chance)}% • Need ${Number(chance)} or lower (100 is Critical Catch)`;
+  const dice=[makeDie(-2.8,['00',10,20,30,40,50,60,70,80,90]),makeDie(2.8,[0,1,2,3,4,5,6,7,8,9])];let raf,start=performance.now(),last=start,done=false;
+  return await new Promise(resolve=>{
+    function frame(now){const dt=Math.min(.035,(now-last)/1000||.016);last=now;const elapsed=now-start;const dpr=Math.min(devicePixelRatio||1,2),rect=canvas.getBoundingClientRect();const W=Math.max(1,Math.floor(rect.width*dpr)),H=Math.max(1,Math.floor(rect.height*dpr));if(canvas.width!==W||canvas.height!==H){canvas.width=W;canvas.height=H;}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,rect.width,rect.height);dice.forEach(d=>updateDie(d,dt,elapsed));const camBlend=clamp((elapsed-2050)/700,0,1);renderDie(ctx,dice[0],rect.width,rect.height,camBlend);renderDie(ctx,dice[1],rect.width,rect.height,camBlend);
+      if(elapsed>2850&&!done){done=true;const r=resultFor(dice);numberEl.textContent=r.result;subEl.textContent=`${r.tens} + ${r.ones} = ${r.result} • ${reason}`;stateEl.textContent='RESULT';stateEl.style.background='rgba(18,70,45,.82)';setTimeout(()=>{root.style.animation='mhDiceOut .22s ease-in forwards';setTimeout(()=>{cancelAnimationFrame(raf);root.remove();resolve(r);},230);},1250);}
+      if(!done||elapsed<4500)raf=requestAnimationFrame(frame);
+    }raf=requestAnimationFrame(frame);
+  });
+}
+
+
+return { rollD100 };
+})();
+
+async function h10623RollPhysicalD100(chance,reason='Capture Roll'){
+  // H10.6.27: use the actual Mixer v0.6.5 Three.js + cannon-es renderer.
+  // The module is preloaded by index.html so the click path does not depend on a dynamic import.
+  if (!window.MonsterHuntMixerD100?.rollD100) {
+    await new Promise((resolve, reject) => {
+      const timer=setTimeout(()=>reject(new Error('MIXER_D100_RENDERER_NOT_READY')),8000);
+      window.addEventListener('monster-hunt-d100-ready',()=>{clearTimeout(timer);resolve();},{once:true});
+    });
+  }
+  return window.MonsterHuntMixerD100.rollD100({chance,reason,cosmetic:h10632CurrentDiceCosmetic()});
+}
+
+// Capture-phase delegated click handler. This runs in the capture phase so it
+// still works if another renderer later replaces the button's onclick property.
+document.addEventListener("click", event => {
+  const btn=event.target?.closest?.("#performCaptureBtn");
+  if(!btn) return;
+  event.preventDefault();
+  if(btn.dataset.mhD100Busy==="1") return;
+  // H10.6.25: invoke directly from the trusted click gesture. Do not use
+  // stopImmediatePropagation; Discord's Activity shell can depend on the same
+  // event finishing normally before canvas/fullscreen-style UI is painted.
+  btn.textContent="🎲 Opening Mixer D100…";
+  livePerformCapture().catch(err => {
+    console.error("[Monster Hunt D100] Roll to Catch failed", err);
+    btn.dataset.mhD100Busy="0"; btn.disabled=false; btn.textContent="🎲 Roll to Catch • 3D";
+    const flavor=document.getElementById("attemptFlavor");
+    if(flavor) flavor.textContent=`⚠️ Dice table could not open: ${err?.message || err}`;
+  });
+}, true);
+
 async function livePerformCapture() {
-  if (!currentEncounter || !selectedCaptureTool) return;
+  if (!currentEncounter) throw new Error("No active encounter was found.");
+  // Normal Hunt can arrive here without a selectedCaptureTool object after
+  // Activity re-entry/test-mode rendering. Recover the authoritative no-item
+  // capture method instead of silently returning and making the button look dead.
+  if (!selectedCaptureTool) {
+    const noneTool=(phaseFHunting?.captureTools || []).find(t=>t.key==="none");
+    selectedCaptureTool = noneTool || {key:"none",name:"Normal Hunt",bonus:0,liveChance:Number(currentEncounter.chance ?? currentEncounter.baseChance ?? 0)};
+  }
   const btn = document.getElementById("performCaptureBtn");
-  btn.disabled = true; btn.textContent = "🎲 Resolving Hunt…";
+  if (!btn || btn.dataset.mhD100Busy === "1") return;
+  btn.dataset.mhD100Busy = "1";
+  btn.disabled = true; btn.textContent = "🎲 Opening D100 Table…";
   const itemKey = selectedCaptureTool.key === "none" ? null : selectedCaptureTool.key;
   try {
     const status=document.getElementById("status");
-    if(status) status.textContent="🎲 Resolving your live capture...";
-    const response = await activityFetch("/api/activity/hunt/capture", {
-      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({itemKey})
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      document.getElementById("status").textContent = `❌ ${payload.error || payload.message}`;
-      return;
+    if(status) status.textContent="🎲 Opening the Mixer D100 table...";
+
+    let chance=Number(selectedCaptureTool.liveChance ?? currentEncounter.chance ?? 0);
+    let rollInfo=await h10623RollPhysicalD100(chance,`${currentEncounter.name} capture`);
+    let payload=null;
+
+    // The physical landed result is authoritative for Activity captures.
+    // If a signature ability such as Rime Sprite grants an immediate reroll,
+    // the server returns retryRequired and we automatically open the table again.
+    for(let physicalAttempt=1;physicalAttempt<=3;physicalAttempt++){
+      if(status) status.textContent=`🎲 Physical D100: ${rollInfo.result}. Resolving capture...`;
+      const response = await activityFetch("/api/activity/hunt/capture", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({itemKey,physicalRoll:Number(rollInfo.result)})
+      });
+      payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        document.getElementById("status").textContent = `❌ ${payload.error || payload.message}`;
+        return;
+      }
+      if(!payload.retryRequired) break;
+
+      chance=Number(payload.retry?.chance ?? payload.chance ?? chance);
+      if(status) status.textContent=payload.retry?.text || "❄️ Second Chance! Roll the physical D100 again.";
+      await new Promise(resolve=>setTimeout(resolve,450));
+      rollInfo=await h10623RollPhysicalD100(chance,payload.retry?.type==='rime_second_chance'?'Rime Sprite — Second Chance':'Companion Retry');
     }
+
+    if(payload?.retryRequired){
+      throw new Error("The capture requested too many physical rerolls.");
+    }
+
     hunter = {...hunter,...payload.player};
     populateResultArtwork();
     document.getElementById("resultStatusIcon").textContent = payload.caught ? "🏆" : "💨";
     document.getElementById("huntResultTitle").textContent = payload.caught ? `🎉 ${currentEncounter.name} Caught!` : `💨 ${currentEncounter.name} Escaped`;
-    document.getElementById("huntResultText").textContent = `Roll ${payload.roll ?? "—"} • ${payload.chance}% catch chance • ${payload.method}`;
+    document.getElementById("huntResultText").textContent = `Physical D100 ${payload.roll ?? "—"} • ${payload.chance}% catch chance • ${payload.method}`;
 
     const rewards = [];
     if (payload.rewards.points) rewards.push(`<div><span>⭐ Hunter Points</span><b>+${payload.rewards.points}</b></div>`);
+    if (payload.rewards.hunterXp) rewards.push(`<div><span>🏹 Hunter XP</span><b>+${payload.rewards.hunterXp}${payload.rewards.hunterLevel?` • Lv. ${payload.rewards.hunterLevel}`:""}</b></div>`);
     if (payload.rewards.tokens) rewards.push(`<div><span>🪙 Hunt Tokens</span><b>+${payload.rewards.tokens}</b></div>`);
+    if (payload.rewards.petXp) rewards.push(`<div><span>🐾 ${escapeHtml(payload.rewards.petName||"Companion")} XP</span><b>+${payload.rewards.petXp}</b></div>`);
+    if (payload.rewards.bondXp) rewards.push(`<div><span>❤️ ${escapeHtml(payload.rewards.petName||"Companion")} Bond XP</span><b>+${payload.rewards.bondXp}${payload.rewards.bond?` • Bond ${payload.rewards.bond}/5`:""}</b></div>`);
     if (payload.rewards.eggs) rewards.push(`<div><span>🥚 Eggs Found</span><b>+${payload.rewards.eggs}</b></div>`);
+    for(const item of (payload.rewards.items||[])){
+      rewards.push(`<div><span>${item.icon||"🎒"} ${escapeHtml(item.label||"Item")}</span><b>+${Number(item.amount||1)}</b></div>`);
+    }
     if (!rewards.length) rewards.push(`<div><span>${payload.caught?"✅ Capture":"📚 Encounter"}</span><b>${payload.caught?"Recorded":"Knowledge gained"}</b></div>`);
     document.getElementById("huntResultRewards").innerHTML = rewards.join("");
     document.getElementById("huntResultDetails").innerHTML = `
       <div><span>Catch Chance</span><b>${payload.chance}%</b></div>
-      <div><span>Roll</span><b>${payload.roll ?? "—"}</b></div>
+      <div><span>🎲 Physical D100</span><b>${payload.roll ?? "—"}</b></div>
       <div><span>Method</span><b>${payload.method}</b></div>
       <div><span>Rarity</span><b>${currentEncounter.rarity}</b></div>
       <div><span>Discord Update</span><b>Sent</b></div>`;
+    h10622RenderResultCompanion(payload.companion||currentEncounter.companion||null,payload.companionEffects||[]);
     document.getElementById("huntAgainBtn").textContent = "🏹 Hunting Grounds";
     document.getElementById("huntAgainBtn").onclick = () => { returnToHuntOverview(); renderPhaseFHunting(); };
     showHuntStep("result");
+    if(status) status.textContent=`🎲 D100 ${payload.roll} • ${payload.caught?'CAPTURED':'ESCAPED'}`;
     if(currentEncounter?.bountyEncounter || currentEncounter?.bountyTrailEncounter){
       await refreshH2CLiveEvents(false);
       if(payload.caught && currentEncounter?.bountyEncounter){
         showActivityResult("🏆","Bounty Target Captured",
-          `${currentEncounter.name} was captured with the normal Roll to Catch system. Return the trophy to complete the bounty.`);
+          `${currentEncounter.name} was captured with the physical D100 Roll to Catch system. Return the trophy to complete the bounty.`);
       } else if(payload.caught && currentEncounter?.bountyTrailEncounter){
         const b=h2aLiveEvents?.bounty;
         showActivityResult("🔎","Bounty Clue Found",
@@ -2190,15 +2898,18 @@ async function livePerformCapture() {
       }
     }
   } catch(error) {
-    console.error("Activity capture request failed:",error);
+    console.error("Activity physical capture request failed:",error);
     const status=document.getElementById("status");
     if(status) status.textContent=`❌ Capture connection failed: ${error.message}`;
   } finally {
+    btn.dataset.mhD100Busy = "0";
     btn.disabled = false;
-    btn.textContent = "🎲 Roll to Catch";
+    btn.textContent = "🎲 Roll to Catch • 3D";
   }
 }
 
+
+console.log("[Monster Hunt] H10.6.27 REAL Mixer v0.6.5 renderer loaded");
 boot();
 
 
@@ -2292,17 +3003,25 @@ async function h2dDoHunt(){
     activeHuntZone={
       key:"bounty",
       name:payload.isTarget ? "Bounty Target" : "Bounty Trail",
-      subtitle:payload.isTarget ? "Bounty Target Found" : "Bounty Trail Encounter"
+      subtitle:payload.isTarget
+        ? "Bounty Target Found"
+        : `🔎 Clue ${Number(payload.clues||1)} found • Target chance now ${Number(payload.trackingChance||20)}%`
     };
     huntAttemptNumber=1;
     currentEncounter={
       ...payload.monster,
       baseChance:Number(payload.baseChance||payload.monster.chance||30),
-      image:payload.monster.imageUrl || (payload.monster.image ? `/assets/monsters/${payload.monster.image}` : null)
+      companion:payload.companion||null,
+      image:payload.monster.imageUrl || (payload.monster.image ? `${H102_DISTORTION_HABITATS.has(String(payload.monster.habitat||""))?"/assets/distortions":"/assets/monsters"}/${payload.monster.image}` : null)
     };
     selectedHuntMethod=null;
     selectedCaptureTool=null;
     currentRoll=null;
+
+    // The failed target-tracking roll already awards the clue/+10%. Refresh the
+    // shared event payload immediately so the Bounty card shows the new chance
+    // even before the decoy monster is captured.
+    if(!payload.isTarget) await refreshH2CLiveEvents(false);
 
     phaseFHunting.captureTools=(payload.choices||[]).map(c=>({
       key:c.itemKey||"none",
@@ -2375,3 +3094,1152 @@ setInterval(()=>{
     h2dMountBountyCard();
   }
 },1000);
+
+// ===== H.4 PLAYER NOTIFICATION PREFERENCES =====
+const H4_NOTIFICATION_META = [
+  {key:"huntReady",icon:"🏹",name:"Hunt Ready",detail:"Notify me in Discord when my normal Hunt cooldown ends.",kind:"Personal Alert"},
+  {key:"eggReady",icon:"🥚",name:"Egg Ready",detail:"Notify me in Discord when one of my incubated eggs is ready to hatch.",kind:"Personal Alert"},
+  {key:"fetchReady",icon:"🐾",name:"Fetch Alerts",detail:"Notify me when my companion is ready to use !fetch again.",kind:"Personal Alert"},
+  {key:"huntAlerts",icon:"🏹",name:"Hunt Alerts",detail:"Give me the Discord Hunt Alerts role for general hunt announcements.",kind:"Role"},
+  {key:"merchantAlerts",icon:"🛒",name:"Merchant Alerts",detail:"Ping me when a traveling merchant arrives.",kind:"Role"},
+  {key:"bigHuntAlerts",icon:"👑",name:"Big Hunt Alerts",detail:"Ping me for Big Game warnings and starts.",kind:"Role"},
+  {key:"bountyAlerts",icon:"🎯",name:"Bounty Alerts",detail:"Ping me when a new bounty is posted.",kind:"Role"},
+  {key:"worldEventAlerts",icon:"🌌",name:"World Event Alerts",detail:"Ping me when major world events begin.",kind:"Role"}
+];
+let h4NotificationState=null;
+
+function ensureH4NotificationPanel(){
+  // H.6: Notifications now live on their own Activity screen.
+  return Boolean(document.getElementById("h4NotificationPanel"));
+}
+
+function renderH4NotificationPanel(){
+  ensureH4NotificationPanel();
+  const grid=document.getElementById("h4NotificationGrid");
+  const route=document.getElementById("h4NotificationRoute");
+  if(!grid||!h4NotificationState) return;
+  route.textContent=h4NotificationState.testing?"🧪 Test channel active":"✅ Live channels active";
+  const prefs=h4NotificationState.preferences||{};
+  grid.innerHTML=H4_NOTIFICATION_META.map(item=>`
+    <label class="h4-notification-row">
+      <span class="h4-notification-icon">${item.icon}</span>
+      <span class="h4-notification-copy"><b>${item.name}</b><small>${item.detail}</small><em>${item.kind}</em></span>
+      <input class="h4-notification-toggle" type="checkbox" data-h4-notification="${item.key}" ${prefs[item.key]?"checked":""} />
+      <span class="h4-toggle-visual" aria-hidden="true"></span>
+    </label>`).join("");
+  grid.querySelectorAll("[data-h4-notification]").forEach(input=>{
+    input.addEventListener("change",async()=>{
+      const key=input.dataset.h4Notification, enabled=input.checked;
+      input.disabled=true;
+      try{
+        const response=await activityFetch("/api/activity/notifications",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({key,enabled})
+        });
+        const result=await response.json();
+        if(!response.ok||!result.ok) throw new Error(result.error||"Could not update notification.");
+        h4NotificationState.preferences={...(h4NotificationState.preferences||{}),...(result.preferences||{})};
+        showActivityResult("🔔","Notifications Updated",enabled?"Alert enabled.":"Alert disabled.");
+      }catch(error){
+        input.checked=!enabled;
+        showActivityResult("❌","Notification Update Failed",error.message);
+      }finally{
+        input.disabled=false;
+      }
+    });
+  });
+}
+
+async function refreshH4NotificationPrefs(){
+  ensureH4NotificationPanel();
+  try{
+    const response=await activityFetch("/api/activity/notifications");
+    const result=await response.json();
+    if(!response.ok||!result.ok) throw new Error(result.error||"Could not load notifications.");
+    h4NotificationState=result;
+    renderH4NotificationPanel();
+  }catch(error){
+    const grid=document.getElementById("h4NotificationGrid");
+    if(grid) grid.innerHTML=`<div class="empty-state">❌ ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+setTimeout(()=>refreshH4NotificationPrefs().catch(()=>null),250);
+
+// ===== H.5 ACTIVITY FETCH =====
+let h5FetchPollTimer=null;
+let h5LastFetchReveal=0;
+
+function h5FetchCountdown(ms){
+  ms=Math.max(0,Number(ms||0));
+  const s=Math.ceil(ms/1000), m=Math.floor(s/60), sec=s%60;
+  if(m>=60){const h=Math.floor(m/60), rm=m%60; return `${h}h ${rm}m`;}
+  return `${m}:${String(sec).padStart(2,"0")}`;
+}
+
+function renderActivityFetch(fetchState=hunter?.fetch){
+  const btn=document.getElementById("activityFetchBtn");
+  const status=document.getElementById("activityFetchStatus");
+  if(!btn||!status) return;
+  const f=fetchState||{};
+  const now=Date.now();
+
+  if(!f.pet){
+    btn.disabled=true;
+    btn.textContent="🐾 Equip a Pet First";
+    status.innerHTML=`<span>🐾</span><div><b>No active companion</b><small>Equip a pet before using Fetch.</small></div>`;
+    return;
+  }
+
+  if(f.active || f.returning){
+    const left=Math.max(0,Number(f.readyAt||0)-now);
+    btn.disabled=true;
+    btn.textContent=left>0?`🐾 Fetching • ${h5FetchCountdown(left)}`:"🐾 Returning…";
+    status.innerHTML=`<span>🐾</span><div><b>${escapeHtml(f.pet.name)} is Fetching</b><small>${left>0?`Returns in ${h5FetchCountdown(left)}`:"Resolving the Fetch adventure…"}</small></div>`;
+    return;
+  }
+
+  const cooldownLeft=Math.max(0,Number(f.cooldownReadyAt||0)-now);
+  if(cooldownLeft>0){
+    btn.disabled=true;
+    btn.textContent=`⏳ Fetch Ready in ${h5FetchCountdown(cooldownLeft)}`;
+    const result=f.result;
+    status.innerHTML=result
+      ? `<span>${result.petIcon||"🐾"}</span><div><b>${escapeHtml(result.petName||f.pet.name)} returned!</b><small>🎒 ${(result.rewards||[]).map(escapeHtml).join(" • ")||"Fetch complete."}${result.companionXpGained?` • ⭐ +${Number(result.companionXpGained)} XP`:""}${result.bondXpGained?` • ❤️ +${Number(result.bondXpGained)} Bond XP`:""}</small></div>`
+      : `<span>🐾</span><div><b>Fetch Resting</b><small>Ready again in ${h5FetchCountdown(cooldownLeft)}</small></div>`;
+
+    const completedAt=Number(f.completedAt||0);
+    if(result && f.revealResult && completedAt && completedAt>h5LastFetchReveal){
+      h5LastFetchReveal=completedAt;
+      showActivityResult(
+        result.petIcon||"🐾",
+        `${result.petName||f.pet.name} Returned!`,
+        `${result.flavor||"Fetch complete."}${result.rewards?.length?` 🎒 Brought back: ${result.rewards.join(" • ")}`:""}${result.companionXpGained?` ⭐ +${Number(result.companionXpGained)} Companion XP.`:""}${result.bondXpGained?` ❤️ +${Number(result.bondXpGained)} Bond XP${result.bond?` (Bond ${result.bond}/5)`:""}.`:""}`
+      );
+      activityFetch("/api/activity/fetch/ack",{method:"POST"}).catch(()=>null);
+      if(hunter?.fetch) hunter.fetch.revealResult=false;
+      refreshH2BInventory().catch(()=>null);
+    }
+    return;
+  }
+
+  btn.disabled=false;
+  btn.textContent=`🐾 Send ${f.pet.name} Fetching`;
+  status.innerHTML=`<span>🐾</span><div><b>Fetch Ready</b><small>Send ${escapeHtml(f.pet.name)} adventuring for 10 minutes to search for rewards.</small></div>`;
+}
+
+async function refreshActivityFetch(){
+  try{
+    const response=await activityFetch("/api/activity/fetch");
+    const result=await response.json();
+    if(!response.ok||!result.ok) throw new Error(result.error||"Could not load Fetch.");
+    if(hunter) hunter.fetch=result.fetch;
+    renderActivityFetch(result.fetch);
+  }catch(error){
+    const status=document.getElementById("activityFetchStatus");
+    if(status) status.innerHTML=`<span>❌</span><div><b>Fetch unavailable</b><small>${escapeHtml(error.message)}</small></div>`;
+  }
+}
+
+async function startActivityFetch(){
+  const btn=document.getElementById("activityFetchBtn");
+  if(btn) btn.disabled=true;
+  try{
+    const response=await activityFetch("/api/activity/fetch/start",{method:"POST"});
+    const result=await response.json();
+    if(!response.ok||!result.ok) throw new Error(result.error||"Could not start Fetch.");
+    if(hunter) hunter.fetch=result.fetch;
+    renderActivityFetch(result.fetch);
+    showActivityResult("🐾",result.message||"Fetch Started!",`${result.flavor||""} Your companion will return in 10 minutes.`);
+  }catch(error){
+    showActivityResult("❌","Fetch Could Not Start",error.message);
+    await refreshActivityFetch();
+  }
+}
+
+document.getElementById("activityFetchBtn")?.addEventListener("click",startActivityFetch);
+
+function startH5FetchPolling(){
+  clearInterval(h5FetchPollTimer);
+  h5FetchPollTimer=setInterval(()=>{
+    if(currentScreen==="pets") refreshActivityFetch().catch(()=>null);
+    else if(hunter?.fetch?.active || hunter?.fetch?.returning) renderActivityFetch(hunter.fetch);
+  },5000);
+}
+
+
+// ===== H.8 AI HUNTER CREATOR — SAFE PHASE 1 =====
+let h8CreatorData=null;
+let h8CreatorSelection=null;
+const H8_SELECT_IDS={
+  archetype:"h8Archetype",
+  body:"h8Body",
+  skinTone:"h8SkinTone",
+  hair:"h8Hair",
+  hairColor:"h8HairColor",
+  eyes:"h8Eyes",
+  outfit:"h8Outfit",
+  headgear:"h8Headgear",
+  weapon:"h8Weapon",
+  personality:"h8Personality",
+  eyewear:"h82Eyewear",
+  gloves:"h82Gloves",
+  neckFace:"h82NeckFace",
+  cloak:"h82Cloak",
+  backItem:"h82BackItem",
+  beltItem:"h82BeltItem",
+  offhand:"h82Offhand"
+};
+
+function h8CreatorOptionLabel(option){
+  return option.unlocked ? option.label : `🔒 ${option.label} — ${option.requirement||"Locked"}`;
+}
+
+function h8BuildSelect(category){
+  const select=document.getElementById(H8_SELECT_IDS[category]);
+  let options=h8CreatorData?.categories?.[category]||[];
+  if(category==="skinTone" && !options.length){
+    options=[
+      {value:"very_fair",label:"Very Fair",unlocked:true},{value:"fair",label:"Fair",unlocked:true},{value:"light",label:"Light",unlocked:true},
+      {value:"light_medium",label:"Light-Medium",unlocked:true},{value:"medium",label:"Medium",unlocked:true},{value:"tan",label:"Tan",unlocked:true},
+      {value:"medium_deep",label:"Medium-Deep",unlocked:true},{value:"deep",label:"Deep",unlocked:true},{value:"very_deep",label:"Very Deep",unlocked:true},
+      {value:"ash_gray",label:"Fantasy — Ash Gray",unlocked:true},{value:"crimson",label:"Fantasy — Crimson",unlocked:true},
+      {value:"emerald",label:"Fantasy — Emerald Green",unlocked:true},{value:"azure",label:"Fantasy — Azure Blue",unlocked:true},
+      {value:"violet_skin",label:"Fantasy — Violet",unlocked:true},{value:"obsidian",label:"Fantasy — Obsidian",unlocked:true},
+      {value:"moonlight",label:"Fantasy — Pale Moonlight",unlocked:true},{value:"golden_skin",label:"Fantasy — Golden",unlocked:true},
+      {value:"copper_skin",label:"Fantasy — Copper",unlocked:true}
+    ];
+    h8CreatorData.categories.skinTone=options;
+  }
+  if(!select) return;
+  select.innerHTML=options.map(option=>
+    `<option value="${escapeHtml(option.value)}" ${option.unlocked?"":"disabled"}>${escapeHtml(h8CreatorOptionLabel(option))}</option>`
+  ).join("");
+  const desired=h8CreatorSelection?.[category];
+  const valid=options.find(x=>x.value===desired && x.unlocked) || options.find(x=>x.unlocked);
+  if(valid){
+    select.value=valid.value;
+    h8CreatorSelection[category]=valid.value;
+  }
+}
+
+function h8CurrentOption(category){
+  const value=h8CreatorSelection?.[category];
+  return h8CreatorData?.categories?.[category]?.find(x=>x.value===value)||null;
+}
+
+function h8RenderCreatorPreview(){
+  if(!h8CreatorData||!h8CreatorSelection) return;
+  const archetype=h8CurrentOption("archetype");
+  const body=h8CurrentOption("body");
+  const personality=h8CurrentOption("personality");
+  document.getElementById("h8PreviewArchetype").textContent=`${archetype?.icon||"✨"} ${archetype?.label||"Hunter"}`;
+  document.getElementById("h8PreviewBody").textContent=body?.label||"";
+  document.getElementById("h8PreviewName").textContent=`${personality?.label||"Custom"} ${archetype?.label||"Hunter"}`;
+
+  const chipCategories=["skinTone","hair","hairColor","eyes","outfit","headgear","eyewear","cloak","weapon","offhand"];
+  const standardChips=chipCategories.map(category=>{
+    const option=h8CurrentOption(category);
+    return `<span>${escapeHtml(option?.label||"—")}</span>`;
+  });
+  const extraChips=(h8CreatorSelection?.extras||[]).map(value=>{
+    const option=(h8CreatorData?.extras||[]).find(x=>x.value===value);
+    return `<span>${escapeHtml(option?.label||value)}</span>`;
+  });
+  document.getElementById("h8PreviewChips").innerHTML=[...standardChips,...extraChips].join("");
+
+  document.getElementById("h8ArchetypeHelp").textContent=archetype?.description||"";
+  const p=h8CreatorData.progress||{};
+  document.getElementById("h8CreatorProgress").innerHTML=
+    `<span>🏹 Level <b>${Number(p.level||1)}</b></span>`+
+    `<span>📖 PetDex <b>${Number(p.petdex||0)}/32</b></span>`+
+    `<span>🏆 Bounty Trophies <b>${Number(p.trophies||0)}</b></span>`;
+}
+
+
+function h82RenderExtras(){
+  const grid=document.getElementById("h82ExtraGrid");
+  if(!grid) return;
+  const selected=new Set(h8CreatorSelection?.extras||[]);
+  grid.innerHTML=(h8CreatorData?.extras||[]).map(option=>`
+    <button type="button"
+      class="h82-extra-chip ${selected.has(option.value)?"selected":""} ${option.unlocked?"":"locked"}"
+      data-extra="${escapeHtml(option.value)}"
+      ${option.unlocked?"":"disabled"}
+      title="${escapeHtml(option.unlocked?option.label:(option.requirement||"Locked"))}">
+      <span>${option.icon||"✨"}</span>
+      <b>${escapeHtml(option.unlocked?option.label:"Locked")}</b>
+      ${option.unlocked?"":`<small>${escapeHtml(option.requirement||"Locked")}</small>`}
+    </button>`).join("");
+
+  grid.querySelectorAll("[data-extra]:not(:disabled)").forEach(btn=>{
+    btn.onclick=()=>{
+      const value=btn.dataset.extra;
+      const current=new Set(h8CreatorSelection?.extras||[]);
+      if(current.has(value)) current.delete(value);
+      else {
+        if(current.size>=4){
+          document.getElementById("h8CreatorMessage").textContent="Choose up to 4 optional details.";
+          return;
+        }
+        current.add(value);
+      }
+      h8CreatorSelection.extras=[...current];
+      h82RenderExtras();
+      h8RenderCreatorPreview();
+      h8SaveCreatorDraft();
+    };
+  });
+}
+
+function h8ReadSelectionFromControls(){
+  const next={extras:[...(h8CreatorSelection?.extras||[])]};
+  for(const [category,id] of Object.entries(H8_SELECT_IDS)){
+    next[category]=document.getElementById(id)?.value||"";
+  }
+  h8CreatorSelection=next;
+  h8RenderCreatorPreview();
+  document.getElementById("h8PromptPanel")?.classList.add("hidden");
+}
+
+async function h8SaveCreatorDraft(){
+  try{
+    await activityFetch("/api/activity/hunter-creator/draft",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({selection:h8CreatorSelection})
+    });
+  }catch{}
+}
+
+async function h8OpenCreator(){
+  const modal=document.getElementById("customizerModal");
+  modal.classList.remove("hidden");
+  const message=document.getElementById("h8CreatorMessage");
+  message.textContent="Loading your unlocked character options…";
+  try{
+    const response=await activityFetch("/api/activity/hunter-creator/options");
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not load Hunter Creator.");
+    h8CreatorData=payload;
+    if(!h8CreatorData.categories) h8CreatorData.categories={};
+    h8CreatorSelection={...payload.draft,extras:Array.isArray(payload.draft?.extras)?payload.draft.extras:[]};
+    if(!h8CreatorSelection.skinTone) h8CreatorSelection.skinTone="medium";
+    Object.keys(H8_SELECT_IDS).forEach(h8BuildSelect);
+    h82RenderExtras();
+    Object.values(H8_SELECT_IDS).forEach(id=>{
+      const el=document.getElementById(id);
+      el.onchange=()=>{h8ReadSelectionFromControls();h8SaveCreatorDraft();};
+    });
+    h8RenderCreatorPreview();
+    document.getElementById("h8PromptPanel").classList.add("hidden");
+    message.textContent="Choose from your unlocked options, then create a safe preview.";
+  }catch(error){
+    message.textContent=`❌ ${error.message}`;
+  }
+}
+
+async function h8CreateHunterPreview(){
+  h8ReadSelectionFromControls();
+  const btn=document.getElementById("saveAppearance");
+  const message=document.getElementById("h8CreatorMessage");
+  btn.disabled=true;
+  btn.textContent="✨ Building Preview…";
+  message.textContent="Validating unlocks and building the controlled image prompt…";
+  try{
+    const response=await activityFetch("/api/activity/hunter-creator/preview",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({selection:h8CreatorSelection})
+    });
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not create preview.");
+    document.getElementById("h8PromptText").textContent=payload.prompt||"";
+    document.getElementById("h8PromptPanel").classList.remove("hidden");
+    message.textContent="✅ Hunter design is valid. No AI image was generated or charged in this safe preview.";
+    document.getElementById("h8PromptPanel").scrollIntoView({behavior:"smooth",block:"nearest"});
+  }catch(error){
+    message.textContent=`❌ ${error.message}`;
+  }finally{
+    btn.disabled=false;
+    btn.textContent="✨ Create Hunter Preview";
+  }
+}
+
+function h8ResetCreator(){
+  if(!h8CreatorData) return;
+  h8CreatorSelection={
+    archetype:"hunter",body:"male",skinTone:"medium",hair:"messy",hairColor:"dark_brown",
+    eyes:"blue",outfit:"hunter_armor",headgear:"none",weapon:"hunter_bow",personality:"friendly",
+    eyewear:"none",gloves:"leather",neckFace:"none",cloak:"blue",backItem:"quiver",
+    beltItem:"tool_pouch",offhand:"none",extras:[]
+  };
+  Object.keys(H8_SELECT_IDS).forEach(h8BuildSelect);
+  h82RenderExtras();
+  h8RenderCreatorPreview();
+  document.getElementById("h8PromptPanel").classList.add("hidden");
+  document.getElementById("h8CreatorMessage").textContent="Reset to the starter Monster Hunter design.";
+  h8SaveCreatorDraft();
+}
+
+function h8CloseCreator(){
+  document.getElementById("customizerModal")?.classList.add("hidden");
+}
+
+// Override the old CSS-avatar editor entry points without touching Home/Hunt.
+document.getElementById("customizeBtn").onclick=h8OpenCreator;
+document.getElementById("closeCustomizer").onclick=h8CloseCreator;
+document.getElementById("saveAppearance").onclick=h8CreateHunterPreview;
+document.getElementById("resetAppearance").onclick=h8ResetCreator;
+document.getElementById("h8ChangeOptions").onclick=()=>{
+  document.getElementById("h8PromptPanel")?.classList.add("hidden");
+  document.getElementById("h8CreatorMessage").textContent="Change any unlocked option, then build another preview.";
+};
+document.getElementById("customizerModal").onclick=e=>{if(e.target.id==="customizerModal")h8CloseCreator();};
+
+
+// ===== H.8.1 LIVE AI HUNTER GENERATION =====
+let h81Candidate=null;
+
+function h81SetCreatorImage(record){
+  const img=document.getElementById("h81GeneratedPreview");
+  const placeholder=document.getElementById("h8PreviewPlaceholder");
+  const loading=document.getElementById("h81GenerationLoading");
+  const actions=document.getElementById("h81CandidateActions");
+  loading?.classList.add("hidden");
+
+  if(record?.imageUrl){
+    img.src=activityProxyUrl(record.imageUrl);
+    img.classList.remove("hidden");
+    placeholder?.classList.add("hidden");
+    actions?.classList.remove("hidden");
+  }else{
+    img.removeAttribute("src");
+    img.classList.add("hidden");
+    placeholder?.classList.remove("hidden");
+    actions?.classList.add("hidden");
+  }
+}
+
+function h81ShowGenerating(){
+  document.getElementById("h81GeneratedPreview")?.classList.add("hidden");
+  document.getElementById("h8PreviewPlaceholder")?.classList.add("hidden");
+  document.getElementById("h81CandidateActions")?.classList.add("hidden");
+  document.getElementById("h81GenerationLoading")?.classList.remove("hidden");
+}
+
+function h81UpdateGenerationCount(){
+  const message=document.getElementById("h8CreatorMessage");
+  const remaining=Number(h8CreatorData?.generationsRemaining??0);
+  if(message && h8CreatorData?.generationEnabled){
+    message.textContent=`${remaining} AI Hunter generation${remaining===1?"":"s"} remaining in your current 24-hour window.`;
+  }
+}
+
+let h83GenerationInProgress=false;
+function h83SetGenerationGuard(active){
+  h83GenerationInProgress=Boolean(active);
+  document.getElementById("h83GenerationGuard")?.classList.toggle("hidden",!active);
+  const close=document.getElementById("closeCustomizer");
+  if(close) close.disabled=active;
+  document.querySelectorAll(".h8-creator-controls select,.h82-extra-chip,#resetAppearance,#h8ChangeOptions,#h81Regenerate,#h81UseHunter")
+    .forEach(el=>el.disabled=active);
+}
+async function h81GenerateHunter({regenerate=false}={}){
+  h8ReadSelectionFromControls();
+  if(!h8CreatorData?.generationEnabled){
+    document.getElementById("h8CreatorMessage").textContent="❌ AI generation is not configured yet. The server needs OPENAI_API_KEY.";
+    return;
+  }
+  if(regenerate){
+    const ok=window.confirm("Generate a new version? This uses another AI Hunter generation.");
+    if(!ok) return;
+  }
+
+  const btn=document.getElementById("saveAppearance");
+  const message=document.getElementById("h8CreatorMessage");
+  btn.disabled=true;
+  document.getElementById("h81Regenerate").disabled=true;
+  h83SetGenerationGuard(true);
+  h81ShowGenerating();
+  document.getElementById("h81GenerationLoadingText").textContent=
+    `Creating your ${h8CurrentOption("personality")?.label||""} ${h8CurrentOption("archetype")?.label||"Hunter"}…`;
+  message.textContent="✨ Generating a transparent 1024×1024 Hunter. This can take a little while.";
+
+  try{
+    const response=await activityFetch("/api/activity/hunter-creator/generate",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({selection:h8CreatorSelection})
+    });
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Hunter generation failed.");
+    h81Candidate=payload.candidate;
+    h8CreatorData.candidate=payload.candidate;
+    h8CreatorData.generationsRemaining=payload.generationsRemaining;
+    h81SetCreatorImage(payload.candidate);
+    message.textContent=`✅ ${payload.message} ${payload.generationsRemaining} generation${payload.generationsRemaining===1?"":"s"} remaining.`;
+    document.getElementById("saveAppearance").textContent="✨ Generate Another";
+  }catch(error){
+    document.getElementById("h81GenerationLoading")?.classList.add("hidden");
+    if(h81Candidate) h81SetCreatorImage(h81Candidate);
+    else document.getElementById("h8PreviewPlaceholder")?.classList.remove("hidden");
+    message.textContent=`❌ ${error.message}`;
+  }finally{
+    h83SetGenerationGuard(false);
+    btn.disabled=false;
+    document.getElementById("h81Regenerate").disabled=false;
+  }
+}
+
+async function h81UseHunter(){
+  const btn=document.getElementById("h81UseHunter");
+  const message=document.getElementById("h8CreatorMessage");
+  btn.disabled=true;btn.textContent="Equipping…";
+  try{
+    const response=await activityFetch("/api/activity/hunter-creator/approve",{method:"POST"});
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not equip Hunter.");
+    if(hunter){
+      hunter.generatedHunterImage=payload.hunter?.imageUrl||null;
+      hunter.generatedHunter=payload.hunter||null;
+    }
+    renderMainAvatar();
+    updateHuntOverviewProfile();
+    h81Candidate=null;
+    h8CreatorData.activeHunter=payload.hunter;
+    h8CreatorData.candidate=null;
+    document.getElementById("h81CandidateActions")?.classList.add("hidden");
+    message.innerHTML="✅ Your new Hunter is equipped! Open <b>Players</b> from Home to share your character with Discord.";
+    btn.textContent="✅ Equipped!";
+    setTimeout(()=>h8CloseCreator(),700);
+  }catch(error){
+    message.textContent=`❌ ${error.message}`;
+    btn.disabled=false;btn.textContent="✅ Use This Hunter";
+  }
+}
+
+function h81ApplyGeneratedHunterToHost(host,imageUrl){
+  if(!host) return;
+  let img=host.querySelector(".h81-live-hunter-image");
+  if(imageUrl){
+    if(!img){
+      img=document.createElement("img");
+      img.className="h81-live-hunter-image";
+      img.alt="Your generated Monster Hunt hunter";
+      host.appendChild(img);
+    }
+    img.src=activityProxyUrl(imageUrl);
+    host.classList.add("h81-generated-active");
+  }else{
+    img?.remove();
+    host.classList.remove("h81-generated-active");
+  }
+}
+
+// Replace the old CSS avatar visually only when the player has approved generated art.
+const h81OriginalRenderMainAvatar=renderMainAvatar;
+renderMainAvatar=function(){
+  h81OriginalRenderMainAvatar();
+  h81ApplyGeneratedHunterToHost(document.getElementById("avatarPreview"),hunter?.generatedHunterImage||null);
+};
+
+const h81OriginalCloneHunterForHuntOverview=cloneHunterForHuntOverview;
+cloneHunterForHuntOverview=function(){
+  h81OriginalCloneHunterForHuntOverview();
+  const host=document.getElementById("huntOverviewAvatarHost");
+  const clone=host?.querySelector("#huntOverviewAvatar") || host?.firstElementChild;
+  if(clone) h81ApplyGeneratedHunterToHost(clone,hunter?.generatedHunterImage||null);
+};
+
+// Upgrade safe-preview opener after it loads server options.
+const h81SafeOpenCreator=h8OpenCreator;
+h8OpenCreator=async function(){
+  await h81SafeOpenCreator();
+  if(!h8CreatorData) return;
+  h81Candidate=h8CreatorData.candidate||null;
+  if(h81Candidate) h81SetCreatorImage(h81Candidate);
+  else h81SetCreatorImage(null);
+  document.getElementById("h8PromptPanel")?.classList.add("hidden");
+  const createBtn=document.getElementById("saveAppearance");
+  createBtn.textContent=h81Candidate?"✨ Generate Another":"✨ Create My Hunter";
+  if(!h8CreatorData.generationEnabled){
+    createBtn.disabled=true;
+    document.getElementById("h8CreatorMessage").textContent=
+      "⚠️ Character Creator is ready, but OPENAI_API_KEY must be added to Railway before images can be generated.";
+  }else{
+    createBtn.disabled=Number(h8CreatorData.generationsRemaining||0)<=0;
+    h81UpdateGenerationCount();
+  }
+};
+document.getElementById("customizeBtn").onclick=()=>h8OpenCreator();
+
+// Replace safe preview button behavior with real image generation.
+document.getElementById("saveAppearance").onclick=()=>h81GenerateHunter({regenerate:Boolean(h81Candidate)});
+document.getElementById("h81Regenerate").onclick=()=>h81GenerateHunter({regenerate:true});
+document.getElementById("h81UseHunter").onclick=h81UseHunter;
+
+// Changing options returns to the design placeholder; the existing candidate remains safe
+// until a new image is actually generated.
+document.getElementById("h8ChangeOptions").onclick=()=>{
+  document.getElementById("h8PromptPanel")?.classList.add("hidden");
+  if(!h81Candidate) h81SetCreatorImage(null);
+  document.getElementById("h8CreatorMessage").textContent="Change any unlocked option, then create your Hunter.";
+};
+
+
+window.setTimeout(()=>{ if(window.hunter || typeof hunter!=="undefined") { try{ renderMainAvatar(); }catch{} } },1200);
+
+// H.8.3: Do not allow the creator to close while an image request is in flight.
+const h83OriginalCloseCreator=h8CloseCreator;
+h8CloseCreator=function(){
+  if(h83GenerationInProgress) return;
+  h83OriginalCloseCreator();
+};
+document.getElementById("closeCustomizer").onclick=()=>h8CloseCreator();
+document.getElementById("customizerModal").onclick=e=>{
+  if(e.target.id==="customizerModal") h8CloseCreator();
+};
+
+
+
+// ==================== H.9 HUNTER TRAINING ====================
+let h9Tutorial={enabled:true,completed:false,skipped:false,step:0,seenTips:{}};
+const H9_STEPS=[
+["🏹","Welcome to Monster Hunt!",null,"Become a Hunter, catch monsters, raise companions and compete through the season.<br><br><b>⭐ Hunter Points</b> drive the leaderboard. <b>🪙 Hunt Tokens</b> are spendable currency."],
+["🧑‍🎨","Your Hunter","home","Hunter levels unlock incubators, inherited ability slots and customization. Use <b>Customize</b> to create your AI-generated Hunter."],
+["🐾","Your Active Companion","pets","Companions adventure beside you. Their abilities improve hunts and rewards. They gain <b>Companion XP</b>, Bond and ability progress."],
+["🥚","Eggs & Incubators","eggs","Put eggs into incubators and return when they are ready. Higher Hunter levels unlock more incubator slots. Hatching discovers new companions."],
+["📖","The PetDex","petdex","Explore <b>8 habitats</b> and discover all <b>32 standard companions</b>. PetDex milestones unlock progression rewards."],
+["🎒","Gear & Inventory","inventory","<b>Bait/Lures</b> affect the monster you encounter. <b>Capture Items</b> are chosen after the monster appears to improve catch chance."],
+["🏹","Choose a Hunting Ground","hunt","Pick a lure, choose an available habitat and begin hunting. Each habitat has its own monster roster."],
+["🎯","Monster Encounters","hunt","Check rarity and catch chance, then choose a Capture Item if desired. Rarer monsters award more Hunter Points and Hunt Tokens."],
+["🎁","Hunt Rewards","hunt","Successful catches can award <b>Hunter Points, Hunt Tokens, Companion XP, eggs and hunting supplies</b>. Companion abilities can add more."],
+["🐾","Fetch Adventures","pets","Send your equipped companion on <b>Fetch</b>. It returns later with Companion XP and may find useful items."],
+["🧬","Combining Companions","pets","Combining permanently sacrifices one companion. Sacrifice for distributed Ability XP or attempt <b>Inheritance</b> using the displayed chance meter."],
+["🛒","Traveling Merchants","merchant","Limited-time merchants sell unusual goods for Hunt Tokens or trades. Merchant Alerts can notify you when one arrives."],
+["🏆","Your Collection","collection","Collection tracks accomplishments, titles, trophies and progression cosmetics."],
+["🌌","Events & Special Hunts","events","Watch for <b>Big Game Hunts, Bounties and World Events</b>, with special rules and rewards."],
+["🔔","Alerts & Notifications","notifications","Choose Hunt Ready, Egg Ready and Fetch Ready alerts plus Discord roles for Merchants, Big Hunts, Bounties and World Events."],
+["🎓","Hunter Training Complete!",null,"You know the essentials! Explore habitats, strengthen companions, build your collection and climb the leaderboard.<br><br>Replay training anytime from <b>Tutorial</b>.<br><br><b>Good hunting!</b>"]
+];
+async function h9Save(action,extra={}){
+  try{
+    const r=await activityFetch("/api/activity/tutorial",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,...extra})});
+    if(!r.ok) throw new Error(`Tutorial save failed (${r.status})`);
+    const p=await r.json();
+    if(p?.tutorial){
+      h9Tutorial={...p.tutorial,seenTips:{...(p.tutorial.seenTips||{})}};
+      if(hunter) hunter.tutorial={...h9Tutorial,seenTips:{...(h9Tutorial.seenTips||{})}};
+    }
+    h9RenderSettings();
+    return true;
+  }catch(e){
+    console.error("Tutorial save failed",e);
+    h9RenderSettings();
+    return false;
+  }
+}
+function h9RenderSettings(){const t=document.getElementById("h9TutorialToggle");if(t)t.checked=!!h9Tutorial.enabled;const n=h9Tutorial.completed?16:Math.min(16,(+h9Tutorial.step||0)+1);const x=document.getElementById("h9ProgressText");if(x)x.textContent=`${n} / 16`;const b=document.getElementById("h9ProgressBar");if(b)b.style.width=`${h9Tutorial.completed?100:Math.round(n/16*100)}%`}
+function h9ShowStep(n,persist=true){n=Math.max(0,Math.min(15,+n||0));const s=H9_STEPS[n];h9Tutorial.step=n;if(s[2])document.querySelector(`[data-nav="${s[2]}"]`)?.click();document.getElementById("h9TutorialLayer").classList.remove("hidden");document.getElementById("h9TutorialCounter").textContent=`${n+1} / 16`;document.getElementById("h9TutorialIcon").textContent=s[0];document.getElementById("h9TutorialTitle").textContent=s[1];document.getElementById("h9TutorialCopy").innerHTML=s[3];document.getElementById("h9TutorialBack").disabled=n===0;document.getElementById("h9TutorialNext").textContent=n===15?"🏹 Finish Training":"Next →";if(persist)h9Save("progress",{step:n})}
+function h9Close(){document.getElementById("h9TutorialLayer").classList.add("hidden");}
+document.getElementById("h9TutorialNext").onclick=()=>{if(h9Tutorial.step>=15){h9Tutorial.completed=true;h9Save("complete");h9Close();document.querySelector('[data-nav="home"]')?.click()}else h9ShowStep(h9Tutorial.step+1)};
+document.getElementById("h9TutorialBack").onclick=()=>h9Tutorial.step>0&&h9ShowStep(h9Tutorial.step-1);
+const h9Skip=()=>{if(confirm("Skip Hunter Training? You can restart it anytime from the Tutorial menu.")){h9Tutorial.enabled=false;h9Save("skip");h9Close()}};
+document.getElementById("h9TutorialSkip").onclick=h9Skip;document.getElementById("h9TutorialClose").onclick=h9Skip;
+document.getElementById("h9StartTutorial").onclick=()=>h9ShowStep(h9Tutorial.completed?0:h9Tutorial.step||0);
+document.getElementById("h9RestartTutorial").onclick=async()=>{await h9Save("restart");h9Tutorial={...h9Tutorial,enabled:true,completed:false,skipped:false,step:0};h9ShowStep(0)};
+document.getElementById("h9ResetTips").onclick=async()=>{await h9Save("reset-tips");h9Tutorial.seenTips={}};
+document.getElementById("h9TutorialToggle").onchange=e=>{h9Tutorial.enabled=!!e.target.checked;h9Save("toggle",{enabled:h9Tutorial.enabled})};
+document.querySelectorAll("[data-h9-jump]").forEach(b=>b.onclick=()=>h9ShowStep(+b.dataset.h9Jump));
+document.getElementById("h9TipClose").onclick=()=>document.getElementById("h9TipToast").classList.add("hidden");
+async function h9Tip(k,body){if(!h9Tutorial.enabled||h9Tutorial.seenTips?.[k])return;h9Tutorial.seenTips={...h9Tutorial.seenTips,[k]:true};document.getElementById("h9TipBody").innerHTML=body;document.getElementById("h9TipToast").classList.remove("hidden");await h9Save("tip",{key:k})}
+document.getElementById("combinePetsBtn")?.addEventListener("click",()=>h9Tip("combine","<b>🧬 Combining Companions</b><br>The sacrificed companion is permanently lost. Review XP distribution or inheritance chance before committing."));
+document.getElementById("fetchPetBtn")?.addEventListener("click",()=>h9Tip("fetch","<b>🐾 Fetch</b><br>Your active companion returns later with Companion XP and possible item finds."));
+setTimeout(()=>{const s=hunter?.tutorial||gameData?.hunter?.tutorial||gameData?.player?.tutorial;if(s)h9Tutorial={...h9Tutorial,...s,seenTips:{...(s.seenTips||{})}};h9RenderSettings();if(h9Tutorial.enabled&&!h9Tutorial.completed&&!h9Tutorial.skipped)h9ShowStep(h9Tutorial.step||0,false)},1600);
+
+// ==================== H.9.1 SPOTLIGHT TUTORIAL ====================
+// Upgrades H.9 from a full-screen blocking modal into a compact corner coach
+// that keeps the actual Monster Hunt interface visible and highlights the
+// control or area being explained.
+
+const H91_TARGETS = [
+  '[data-nav="home"]',
+  '#customizeBtn',
+  '[data-nav="pets"]',
+  '[data-nav="eggs"]',
+  '[data-nav="petdex"]',
+  '[data-nav="inventory"]',
+  '[data-nav="hunt"]',
+  '.hunt-zone-card:not([disabled]), #huntZoneGrid',
+  '.hunt-flow-page.active .possible-rewards, #huntResultRewards, .possible-rewards',
+  '#activityFetchBtn, #fetchPetBtn',
+  '#openPetCombine, #combinePetsBtn',
+  '[data-nav="merchant"]',
+  '[data-nav="collection"]',
+  '[data-nav="events"]',
+  '[data-nav="notifications"]',
+  '[data-nav="tutorial"]'
+];
+
+let h91HighlightedElement = null;
+
+function h91ClearHighlight(){
+  if(h91HighlightedElement){
+    h91HighlightedElement.classList.remove("h91-tutorial-highlight");
+    h91HighlightedElement.removeAttribute("data-h91-tutorial-target");
+  }
+  h91HighlightedElement = null;
+  document.querySelectorAll(".h91-tutorial-highlight").forEach(el=>{
+    el.classList.remove("h91-tutorial-highlight");
+    el.removeAttribute("data-h91-tutorial-target");
+  });
+}
+
+function h91FindTarget(step){
+  const selector = H91_TARGETS[step];
+  if(!selector) return null;
+  const candidates = [...document.querySelectorAll(selector)];
+  return candidates.find(el => {
+    const style = window.getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+  }) || candidates[0] || null;
+}
+
+function h91HighlightStep(step){
+  h91ClearHighlight();
+  const target = h91FindTarget(step);
+  if(!target) return;
+
+  h91HighlightedElement = target;
+  target.classList.add("h91-tutorial-highlight");
+  target.setAttribute("data-h91-tutorial-target","true");
+
+  // Bring the highlighted feature into view without throwing the user to an
+  // awkward edge of the page.
+  try{
+    target.scrollIntoView({behavior:"smooth",block:"center",inline:"nearest"});
+  }catch{
+    target.scrollIntoView();
+  }
+}
+
+function h91PositionCoach(step){
+  const card = document.querySelector("#h9TutorialLayer .h9-tutorial-card");
+  const target = h91FindTarget(step);
+  if(!card) return;
+
+  card.classList.remove("h91-left","h91-right","h91-bottom","h91-top");
+
+  // Desktop: place the coach on the opposite side of the highlighted item.
+  if(window.innerWidth >= 760 && target){
+    const rect = target.getBoundingClientRect();
+    const center = rect.left + rect.width/2;
+    card.classList.add(center > window.innerWidth/2 ? "h91-left" : "h91-right");
+  }else{
+    // Mobile: keep the coach above the bottom nav so the menu stays visible.
+    card.classList.add("h91-bottom");
+  }
+}
+
+function h91ApplySpotlight(step){
+  requestAnimationFrame(()=>{
+    h91HighlightStep(step);
+    h91PositionCoach(step);
+  });
+}
+
+// Wrap the working H.9 step renderer.
+const h91OriginalShowStep = h9ShowStep;
+h9ShowStep = function(n,persist=true){
+  h91OriginalShowStep(n,persist);
+  h91ApplySpotlight(Math.max(0,Math.min(15,+n||0)));
+};
+
+// Clear spotlight whenever the tutorial closes.
+const h91OriginalClose = h9Close;
+h9Close = function(){
+  h91ClearHighlight();
+  h91OriginalClose();
+};
+
+// Rebind controls because the original callbacks captured the old h9Close / h9ShowStep.
+document.getElementById("h9TutorialNext").onclick = ()=>{
+  if(h9Tutorial.step>=15){
+    h9Tutorial.completed=true;
+    h9Save("complete");
+    h9Close();
+    document.querySelector('[data-nav="home"]')?.click();
+  }else{
+    h9ShowStep(h9Tutorial.step+1);
+  }
+};
+document.getElementById("h9TutorialBack").onclick = ()=>{
+  if(h9Tutorial.step>0) h9ShowStep(h9Tutorial.step-1);
+};
+const h91Skip = ()=>{
+  if(confirm("Skip Hunter Training? You can restart it anytime from the Tutorial menu.")){
+    h9Tutorial.enabled=false;
+    h9Save("skip");
+    h9Close();
+  }
+};
+document.getElementById("h9TutorialSkip").onclick = h91Skip;
+document.getElementById("h9TutorialClose").onclick = h91Skip;
+document.getElementById("h9StartTutorial").onclick = ()=>{
+  h9ShowStep(h9Tutorial.completed ? 0 : (h9Tutorial.step||0));
+};
+document.getElementById("h9RestartTutorial").onclick = async ()=>{
+  await h9Save("restart");
+  h9Tutorial={...h9Tutorial,enabled:true,completed:false,skipped:false,step:0};
+  h9ShowStep(0);
+};
+document.querySelectorAll("[data-h9-jump]").forEach(btn=>{
+  btn.onclick=()=>h9ShowStep(+btn.dataset.h9Jump);
+});
+
+// Keep the coach in the correct corner if the Activity window changes size.
+window.addEventListener("resize",()=>{
+  if(!document.getElementById("h9TutorialLayer")?.classList.contains("hidden")){
+    h91PositionCoach(h9Tutorial.step||0);
+  }
+});
+
+// H.9's first-login timer may already open the tutorial; apply spotlight shortly after.
+setTimeout(()=>{
+  const layer=document.getElementById("h9TutorialLayer");
+  if(layer && !layer.classList.contains("hidden")){
+    h91ApplySpotlight(h9Tutorial.step||0);
+  }
+},1900);
+
+// ==================== H.9.3 TUTORIAL COMPLETION/PERSISTENCE FIX ====================
+function h93SetTutorialNavCompleteState(){
+  const nav=document.querySelector('[data-nav="tutorial"]');
+  if(!nav) return;
+  nav.classList.toggle("h93-tutorial-complete",!!h9Tutorial.completed);
+  nav.classList.toggle("h93-tutorial-skipped",!!h9Tutorial.skipped && !h9Tutorial.completed);
+  if(h9Tutorial.completed || h9Tutorial.skipped){
+    nav.classList.remove("h91-tutorial-highlight");
+    nav.removeAttribute("data-h91-tutorial-target");
+  }
+}
+
+async function h93FinishTutorial(){
+  h9Tutorial.completed=true;
+  h9Tutorial.skipped=false;
+  h9Tutorial.enabled=true;
+  h9Tutorial.step=15;
+  h91ClearHighlight?.();
+  h9Close();
+  document.querySelector('[data-nav="home"]')?.click();
+
+  const ok=await h9Save("complete");
+  h93SetTutorialNavCompleteState();
+  if(ok && typeof showToast==="function") showToast("🎓 Hunter Training Complete!");
+}
+
+async function h93SkipTutorial(){
+  if(!confirm("Skip Hunter Training? You can restart it anytime from the Tutorial menu.")) return;
+  h9Tutorial.enabled=false;
+  h9Tutorial.skipped=true;
+  h9Tutorial.completed=false;
+  h91ClearHighlight?.();
+  h9Close();
+
+  const ok=await h9Save("skip");
+  h93SetTutorialNavCompleteState();
+  if(ok && typeof showToast==="function") showToast("Tutorial skipped. You can restart it anytime.");
+}
+
+document.getElementById("h9TutorialNext").onclick=async()=>{
+  if(h9Tutorial.step>=15) await h93FinishTutorial();
+  else h9ShowStep(h9Tutorial.step+1);
+};
+document.getElementById("h9TutorialSkip").onclick=h93SkipTutorial;
+document.getElementById("h9TutorialClose").onclick=h93SkipTutorial;
+
+const h93OldRenderSettings=h9RenderSettings;
+h9RenderSettings=function(){
+  h93OldRenderSettings();
+  h93SetTutorialNavCompleteState();
+  const start=document.getElementById("h9StartTutorial");
+  if(start){
+    start.textContent=h9Tutorial.completed
+      ? "🎓 Replay Hunter Training"
+      : h9Tutorial.skipped
+        ? "🎓 Start Hunter Training"
+        : "🎓 Start / Continue Hunter Training";
+  }
+};
+
+// Fetch the authoritative tutorial state after normal boot has populated hunter.
+// This avoids relying on timing between the original 1.6s tutorial timer and Discord auth/data loading.
+async function h93LoadAuthoritativeTutorialState(){
+  try{
+    const r=await activityFetch("/api/test-hunter");
+    if(!r.ok) return;
+    const fresh=await r.json();
+    if(fresh?.tutorial){
+      if(hunter) hunter.tutorial=fresh.tutorial;
+      h9Tutorial={...h9Tutorial,...fresh.tutorial,seenTips:{...(fresh.tutorial.seenTips||{})}};
+      h9RenderSettings();
+
+      // Persisted completion/skip always wins over an old locally-open tutorial.
+      if(h9Tutorial.completed || h9Tutorial.skipped || !h9Tutorial.enabled){
+        h91ClearHighlight?.();
+        h9Close();
+      }else{
+        const layer=document.getElementById("h9TutorialLayer");
+        if(layer?.classList.contains("hidden")) h9ShowStep(h9Tutorial.step||0,false);
+      }
+    }
+  }catch(e){
+    console.warn("Tutorial state refresh failed",e);
+  }
+}
+setTimeout(h93LoadAuthoritativeTutorialState,2300);
+
+
+
+// H10.3 — Background showcase mode. Keeps a small top-left restore control visible.
+(function initBackgroundViewToggle(){
+  const button=document.getElementById("backgroundViewToggle");
+  if(!button) return;
+  const setMode=(enabled)=>{
+    document.body.classList.toggle("background-view-only",enabled);
+    button.setAttribute("aria-pressed",enabled?"true":"false");
+    button.textContent=enabled?"↩️ Show Menus":"👁️ Hide Menus";
+    button.title=enabled?"Restore Monster Hunt menus":"Hide menus and view the background";
+  };
+  let enabled=false;
+  try{ enabled=localStorage.getItem("monsterHuntBackgroundViewOnly")==="1"; }catch{}
+  setMode(enabled);
+  button.addEventListener("click",()=>{
+    const next=!document.body.classList.contains("background-view-only");
+    setMode(next);
+    try{ localStorage.setItem("monsterHuntBackgroundViewOnly",next?"1":"0"); }catch{}
+  });
+})();
+
+
+// ===== H10.6.14 PET SHARING =====
+async function h10614SharePet(petOrId, button=null){
+  const pet = (petOrId && typeof petOrId === "object") ? petOrId : (gameData?.ownedPets||[]).find(p=>String(p.id)===String(petOrId));
+  const petId = pet?.id ?? petOrId ?? null;
+  const petKey = pet?.key ?? null;
+  const btn=button||document.getElementById("h10614ShareActivePet");
+  const original=btn?.textContent||"📣 Share Pet";
+  if(btn){btn.disabled=true;btn.textContent="📣 Sharing…";}
+  const status=document.getElementById("status");
+  if(status) status.textContent="📣 Sending companion to the Monster Hunt Discord channel…";
+  try{
+    const response=await activityFetch("/api/activity/pet/share",{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({petId,petKey})
+    });
+    let payload={};
+    try{ payload=await response.json(); }catch{ throw new Error(`Share Pet returned HTTP ${response.status}.`); }
+    if(!response.ok||!payload.ok) throw new Error(payload.error||`Could not share that companion (HTTP ${response.status}).`);
+    if(status) status.textContent=`✅ ${payload.message}`;
+  }catch(error){
+    console.error("Share Pet failed",error);
+    if(status) status.textContent=`❌ ${error.message}`;
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=original;}
+  }
+}
+
+function h10616ActivePetForShare(){
+  return ownedPet(activePetKey)||gameData?.ownedPets?.find(p=>p.equipped)||gameData?.ownedPets?.[0]||null;
+}
+
+// H10.6.16 — Delegated click handling keeps both the static Pets header button
+// and the dynamically-created pet-detail button reliable after rerenders.
+document.addEventListener("click",event=>{
+  const activeButton=event.target.closest?.("#h10614ShareActivePet");
+  if(activeButton){
+    event.preventDefault();
+    const pet=h10616ActivePetForShare();
+    if(!pet){
+      const status=document.getElementById("status");
+      if(status) status.textContent="❌ You need to own a companion before you can share one.";
+      return;
+    }
+    h10614SharePet(pet,activeButton);
+    return;
+  }
+  const detailButton=event.target.closest?.("#h10614ShareDetailPet");
+  if(detailButton){
+    event.preventDefault();
+    const petId=detailButton.dataset.petId;
+    const pet=(gameData?.ownedPets||[]).find(p=>String(p.id)===String(petId));
+    if(pet) h10614SharePet(pet,detailButton);
+  }
+});
+
+// ===== H10.6.1 PLAYERS GALLERY + CHARACTER SHARE FIX =====
+let h106LastGallery=[];
+async function h106ShareHunter(){
+  const btn=document.getElementById("h106ShareHunter");
+  const status=document.getElementById("h106ShareStatus");
+  if(btn){btn.disabled=true;btn.textContent="📣 Sharing…";}
+  if(status) status.textContent="Sending your equipped Hunter to Discord…";
+  try{
+    const response=await activityFetch("/api/activity/hunter/share",{method:"POST"});
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not share your Hunter.");
+    if(status) status.textContent=`✅ ${payload.message}`;
+  }catch(error){if(status)status.textContent=`❌ ${error.message}`;}
+  finally{if(btn){btn.disabled=false;btn.textContent="📣 Share My Hunter";}}
+}
+function h106RenderPlayers(players){
+  const grid=document.getElementById("h106PlayerGrid"); if(!grid)return;
+  h106LastGallery=Array.isArray(players)?players:[];
+  grid.innerHTML=h106LastGallery.length?h106LastGallery.map(p=>`<article class="h106-player-card ${p.isYou?'is-you':''}">
+    <div class="h106-player-art"><img src="${escapeHtml(activityProxyUrl(p.imageUrl))}" alt="${escapeHtml(p.name)}'s Hunter" loading="lazy"></div>
+    <div class="h106-player-copy"><p class="eyebrow">${p.isYou?'YOU':'MONSTER HUNTER'}</p><h3>${escapeHtml(p.name)}</h3>
+    <p><b>Level ${Number(p.level||1)}</b> • ${escapeHtml(p.title||'Novice Hunter')}</p>
+    <small>${escapeHtml([p.labels?.archetype,p.labels?.outfit,p.labels?.weapon].filter(Boolean).join(' • ')||'Custom Hunter')}</small></div>
+  </article>`).join(''):'<div class="panel"><h3>No Hunters Shared Yet</h3><p class="muted">Create and equip an AI Hunter to appear in the Players gallery.</p></div>';
+}
+async function h106RefreshPlayers(){
+  const grid=document.getElementById("h106PlayerGrid"); if(!grid)return;
+  if(h106LastGallery.length) h106RenderPlayers(h106LastGallery);
+  else grid.innerHTML='<p class="muted">Loading hunters…</p>';
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),8000);
+  try{
+    const response=await activityFetch("/api/activity/players",{signal:controller.signal,cache:"no-store"});
+    const text=await response.text();
+    let payload={}; try{payload=JSON.parse(text);}catch{throw new Error(`Gallery API returned HTTP ${response.status}. Deploy the complete H10.6.1 patch, including index.js.`);}
+    if(!response.ok||!payload.ok)throw new Error(payload.error||`Could not load players (HTTP ${response.status}).`);
+    h106RenderPlayers(payload.players||[]);
+    const status=document.getElementById("h106ShareStatus");
+    if(status && !status.textContent) status.textContent=`Gallery connected • ${payload.build||"server"}`;
+  }catch(error){
+    const message=error?.name==="AbortError"?"Player gallery timed out. Make sure the H10.6.1 index.js was deployed with the Activity files.":error.message;
+    grid.innerHTML=`<div class="panel"><h3>Gallery couldn't connect</h3><p class="muted">❌ ${escapeHtml(message)}</p><button class="secondary" type="button" id="h106RetryPlayers">↻ Retry</button></div>`;
+    document.getElementById("h106RetryPlayers")?.addEventListener("click",h106RefreshPlayers);
+  }finally{clearTimeout(timeout);}
+}
+document.getElementById("h106ShareHunter")?.addEventListener("click",h106ShareHunter);
+
+
+// ==================== H10.6.6 ACTIVITY DAILY HUB ====================
+let h1066DailyState=null;
+let h1066DailyTimer=null;
+let h1066DailyBusy=false;
+
+function h1066Countdown(ms){
+  const total=Math.max(0,Math.ceil(ms/1000));
+  const h=Math.floor(total/3600);
+  const m=Math.floor((total%3600)/60);
+  const s=total%60;
+  return h>0?`${h}h ${m}m`:`${m}m ${s}s`;
+}
+function h1066SetFeedback(id,text,kind=""){
+  const el=document.getElementById(id); if(!el)return;
+  el.className=`h1066-feedback ${kind}`.trim();
+  el.textContent=text||"";
+}
+function h1066RenderDaily(){
+  const daily=h1066DailyState;
+  if(!daily) return;
+  const now=Date.now();
+  const resetIn=Math.max(0,Number(daily.resetAt||0)-now);
+  const countdown=h1066Countdown(resetIn);
+  const top=document.getElementById("h1066DailyResetTop"); if(top) top.textContent=countdown;
+  const loginCountdown=document.getElementById("h1066LoginCountdown"); if(loginCountdown) loginCountdown.textContent=countdown;
+
+  const loginPill=document.getElementById("h1066LoginPill");
+  const loginBtn=document.getElementById("h1066ClaimLogin");
+  if(loginPill){loginPill.textContent=daily.login?.claimed?"✅ Claimed":"🎁 Ready";loginPill.classList.toggle("done",!!daily.login?.claimed);}
+  if(loginBtn){loginBtn.disabled=h1066DailyBusy||!daily.login?.canClaim;loginBtn.textContent=daily.login?.claimed?"✅ Daily Reward Claimed":"🎁 Claim Daily Reward";}
+
+  const quests=daily.quests||{};
+  const entries=Array.isArray(quests.entries)?quests.entries:[];
+  const questPill=document.getElementById("h1066QuestPill");
+  if(questPill){questPill.textContent=quests.claimed?"✅ Claimed":`${Number(quests.completeCount||0)}/${Number(quests.total||entries.length||3)}`;questPill.classList.toggle("done",!!quests.claimed);}
+  const list=document.getElementById("h1066QuestList");
+  if(list) list.innerHTML=entries.map(q=>{
+    const pct=Math.max(0,Math.min(100,(Number(q.progress||0)/Math.max(1,Number(q.goal||1)))*100));
+    return `<article class="h1066-quest-row ${q.complete?"complete":""}"><div class="h1066-quest-icon">${q.complete?"✅":"🎯"}</div><div class="h1066-quest-copy"><div><b>${escapeHtml(q.text)}</b><span>${Number(q.progress||0)}/${Number(q.goal||0)}</span></div><div class="h1066-progress"><i style="width:${pct}%"></i></div><small>+${Number(q.reward||0)} Hunter Points toward the completion reward</small></div></article>`;
+  }).join("")||'<div class="empty-state">No Daily Quests loaded.</div>';
+  const reward=document.getElementById("h1066QuestReward"); if(reward) reward.textContent=`⭐ +${Number(quests.totalReward||0)} Hunter Points`;
+  const claim=document.getElementById("h1066ClaimQuests");
+  if(claim){claim.disabled=h1066DailyBusy||!quests.canClaim;claim.textContent=quests.claimed?"✅ Quest Rewards Claimed":"🏆 Claim Quest Rewards";}
+  const reroll=document.getElementById("h1066RerollQuests");
+  if(reroll){reroll.disabled=h1066DailyBusy||!quests.reroll?.available;reroll.textContent=quests.reroll?.costType==="berry"?`🍓 Reroll (${Number(quests.reroll.berryCost||1)} Berry)`:"🔄 Reroll Unfinished";}
+  const note=document.getElementById("h1066RerollNote"); if(note) note.textContent=quests.reroll?.text||"No rerolls remaining today.";
+
+  const home=document.getElementById("dailyHomeStatus");
+  if(home){
+    if(!daily.login?.claimed) home.textContent="🎁 Daily reward ready!";
+    else if(quests.canClaim) home.textContent="🏆 Quest rewards ready!";
+    else if(quests.claimed) home.textContent="✅ Daily complete";
+    else home.textContent=`🎯 ${Number(quests.completeCount||0)}/${Number(quests.total||3)} quests complete`;
+  }
+}
+function h1066StartDailyTimer(){
+  clearInterval(h1066DailyTimer);
+  h1066DailyTimer=setInterval(()=>{
+    if(h1066DailyState){
+      if(Number(h1066DailyState.resetAt||0)<=Date.now()) h1066RefreshDaily(false);
+      else h1066RenderDaily();
+    }
+  },1000);
+}
+async function h1066RefreshDaily(showLoading=true){
+  if(h1066DailyBusy && showLoading) return;
+  if(showLoading){
+    const list=document.getElementById("h1066QuestList"); if(list&&!h1066DailyState) list.innerHTML='<p class="muted">Loading quests…</p>';
+  }
+  try{
+    const response=await activityFetch("/api/activity/daily",{cache:"no-store"});
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not load Daily rewards.");
+    h1066DailyState=payload.daily;
+    h1066RenderDaily();
+    h1066StartDailyTimer();
+  }catch(error){
+    const list=document.getElementById("h1066QuestList"); if(list) list.innerHTML=`<div class="empty-state">❌ ${escapeHtml(error.message)}</div>`;
+    const home=document.getElementById("dailyHomeStatus"); if(home) home.textContent="Daily unavailable";
+  }
+}
+async function h1066DailyAction(endpoint,buttonId,feedbackId,successTitle){
+  if(h1066DailyBusy) return;
+  h1066DailyBusy=true; h1066RenderDaily();
+  const btn=document.getElementById(buttonId); const original=btn?.textContent;
+  if(btn) btn.textContent="Working…";
+  h1066SetFeedback(feedbackId,"");
+  try{
+    const response=await activityFetch(endpoint,{method:"POST"});
+    const payload=await response.json();
+    if(!response.ok||!payload.ok) throw new Error(payload.error||"Daily action failed.");
+    if(payload.daily) h1066DailyState=payload.daily;
+    if(payload.hunter){
+      hunter=payload.hunter;
+      const points=document.getElementById("points"); if(points) points.textContent=hunter.points;
+      const tokens=document.getElementById("tokens"); if(tokens) tokens.textContent=hunter.tokens;
+    }
+    if(gameData&&Array.isArray(payload.inventory)) gameData.inventory=payload.inventory;
+    h1066RenderDaily();
+    let detail="";
+    if(payload.reward) detail=payload.reward;
+    else if(payload.points!=null) detail=`+${Number(payload.points)} Hunter Points${payload.bonusRewards?.length?` • ${payload.bonusRewards.join(" • ")}`:""}`;
+    else if(payload.costType) detail=payload.costType==="berry"?`Spent ${Number(payload.cost||1)} Hunter Berry.`:"Free reroll used.";
+    h1066SetFeedback(feedbackId,`✅ ${detail||successTitle}`,"success");
+    if(typeof showActivityResult==="function") showActivityResult("🎯",successTitle,detail||"Daily updated.");
+  }catch(error){
+    h1066SetFeedback(feedbackId,`❌ ${error.message}`,"error");
+  }finally{
+    h1066DailyBusy=false;
+    if(btn&&original) btn.textContent=original;
+    if(h1066DailyState) h1066RenderDaily();
+  }
+}
+document.getElementById("h1066ClaimLogin")?.addEventListener("click",()=>h1066DailyAction("/api/activity/daily/claim-login","h1066ClaimLogin","h1066LoginFeedback","Daily Reward Claimed!"));
+document.getElementById("h1066ClaimQuests")?.addEventListener("click",()=>h1066DailyAction("/api/activity/daily/claim-quests","h1066ClaimQuests","h1066QuestFeedback","Daily Quests Complete!"));
+document.getElementById("h1066RerollQuests")?.addEventListener("click",()=>h1066DailyAction("/api/activity/daily/reroll","h1066RerollQuests","h1066QuestFeedback","Daily Quests Rerolled!"));
