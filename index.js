@@ -2477,62 +2477,107 @@ function recordPointMilestoneMoments(data, playerId, previousPoints, currentPoin
   }
 }
 
-// H10.6.32 — Permanent Dice Locker cosmetics.
+// H10.6.33 — Permanent Dice Locker cosmetics + achievement/theme unlocks.
 // Cosmetics never influence physics, face mapping, or capture odds.
-const H10632_DICE_BODY_COLORS = Object.freeze({
-  sapphire:{name:"Hunter's Sapphire",hex:"#17467f"},
-  crimson:{name:"Crimson",hex:"#8f1f32"},
-  ember:{name:"Ember",hex:"#c24d16"},
-  gold:{name:"Gold",hex:"#b88716"},
-  emerald:{name:"Emerald",hex:"#15734c"},
-  teal:{name:"Teal",hex:"#11747a"},
-  cyan:{name:"Cyan",hex:"#1686a8"},
-  royal:{name:"Royal Blue",hex:"#244eb6"},
-  amethyst:{name:"Amethyst",hex:"#6336a5"},
-  violet:{name:"Violet",hex:"#7c3fb0"},
-  magenta:{name:"Magenta",hex:"#9c2d78"},
-  rose:{name:"Rose",hex:"#b43f65"},
-  obsidian:{name:"Obsidian",hex:"#161922"},
-  slate:{name:"Slate",hex:"#3d4b5d"},
-  silver:{name:"Silver",hex:"#7f8c9b"},
-  ivory:{name:"Ivory",hex:"#d6d1c4"}
+const H10633_DICE_BODY_COLORS = Object.freeze({
+  sapphire:{name:"Hunter's Sapphire",hex:"#17467f",free:true},
+  crimson:{name:"Crimson",hex:"#8f1f32",free:true},
+  emerald:{name:"Emerald",hex:"#15734c",free:true},
+  royal:{name:"Royal Blue",hex:"#244eb6",free:true},
+  amethyst:{name:"Amethyst",hex:"#6336a5",free:true},
+  obsidian:{name:"Obsidian",hex:"#161922",free:true},
+  ivory:{name:"Ivory",hex:"#d6d1c4",free:true},
+  slate:{name:"Slate",hex:"#3d4b5d",unlock:"Monster Collector"},
+  ember:{name:"Ember",hex:"#c24d16",unlock:"Catch a monster in Emberdeep"},
+  gold:{name:"Gold",hex:"#b88716",unlock:"Legend Seeker"},
+  teal:{name:"Teal",hex:"#11747a",unlock:"Habitat Explorer"},
+  cyan:{name:"Cyan",hex:"#1686a8",unlock:"Shiny Hunter"},
+  violet:{name:"Violet",hex:"#7c3fb0",unlock:"Epic Tamer"},
+  magenta:{name:"Magenta",hex:"#9c2d78",unlock:"Event Hunter"},
+  rose:{name:"Rose",hex:"#b43f65",unlock:"Event Hunter"},
+  silver:{name:"Silver",hex:"#7f8c9b",unlock:"Shiny Hunter"}
 });
-const H10632_DICE_NUMBER_COLORS = Object.freeze({
-  white:{name:"White",hex:"#f3f7ff"},
-  ice:{name:"Ice Blue",hex:"#a9d9ff"},
-  gold:{name:"Gold",hex:"#ffd66b"},
-  orange:{name:"Orange",hex:"#ff9f43"},
-  red:{name:"Red",hex:"#ff657a"},
-  pink:{name:"Pink",hex:"#ff9ad5"},
-  violet:{name:"Violet",hex:"#c7a4ff"},
-  green:{name:"Green",hex:"#8ff0b7"},
-  cyan:{name:"Cyan",hex:"#79e8ff"},
-  black:{name:"Black",hex:"#111318"}
+const H10633_DICE_NUMBER_COLORS = Object.freeze({
+  white:{name:"White",hex:"#f3f7ff",free:true},
+  red:{name:"Red",hex:"#ff657a",free:true},
+  violet:{name:"Violet",hex:"#c7a4ff",free:true},
+  green:{name:"Green",hex:"#8ff0b7",free:true},
+  ice:{name:"Ice Blue",hex:"#a9d9ff",unlock:"Catch a monster in Frostgrave"},
+  gold:{name:"Gold",hex:"#ffd66b",unlock:"Legend Seeker"},
+  orange:{name:"Orange",hex:"#ff9f43",unlock:"Catch a monster in Emberdeep"},
+  pink:{name:"Pink",hex:"#ff9ad5",unlock:"Event Hunter"},
+  cyan:{name:"Cyan",hex:"#79e8ff",unlock:"Shiny Hunter"},
+  black:{name:"Black",hex:"#111318",unlock:"Beyond the Rift"}
 });
+const H10633_DICE_THEMES = Object.freeze({
+  classic:{name:"Classic",icon:"🎲",primary:null,secondary:null,accent:null,free:true,description:"Your selected solid body color."},
+  galaxy:{name:"Mixer Galaxy",icon:"🌌",primary:"#0b1028",secondary:"#5b21b6",accent:"#38bdf8",unlock:"Beyond the Rift or discover Starfall Basin",description:"A cosmic violet-blue finish with star-like highlights."},
+  mirror_scar:{name:"Mirror Scar",icon:"🪞",primary:"#c7d2fe",secondary:"#334155",accent:"#a78bfa",unlock:"Catch a creature in The Mirror Scar",description:"Cold mirrored facets split by violet fracture-light."},
+  black_bloom:{name:"Black Bloom",icon:"🌑",primary:"#09070d",secondary:"#4c1d5f",accent:"#84cc16",unlock:"Catch a creature in The Black Bloom",description:"Void-black petals with poisonous violet-green glow."},
+  chrono_tear:{name:"Chrono Tear",icon:"⏳",primary:"#082f49",secondary:"#0f766e",accent:"#fbbf24",unlock:"Catch a creature in The Chrono Tear",description:"Timeworn teal facets streaked with golden chronal light."},
+  upside_down_sea:{name:"Upside-Down Sea",icon:"🌊",primary:"#082f49",secondary:"#1d4ed8",accent:"#67e8f9",unlock:"Catch a creature in The Upside-Down Sea",description:"Deep ocean blue with impossible cyan tide-light."},
+  dreaming_gate:{name:"Dreaming Gate",icon:"🌙",primary:"#312e81",secondary:"#7e22ce",accent:"#f0abfc",unlock:"Catch a creature in The Dreaming Gate",description:"Dream-violet facets glowing with soft astral pink."}
+});
+
+function h10633HasLifetimeHabitat(player, habitat){
+  return (player.lifetimeCaught||[]).some(m=>String(m?.habitat||"")===String(habitat));
+}
+function h10633EarnedAchievement(player,name){
+  return unlockedAchievements(player).includes(name) || (player.secretAchievements||[]).includes(name) || (player.unlockedTitles||[]).includes(name);
+}
+function h10633EnsureDiceUnlocks(player){
+  if(!player.diceUnlocks || typeof player.diceUnlocks!=="object") player.diceUnlocks={body:[],numbers:[],themes:[]};
+  for(const key of ["body","numbers","themes"]) if(!Array.isArray(player.diceUnlocks[key])) player.diceUnlocks[key]=[];
+  const add=(type,key)=>{ if(!player.diceUnlocks[type].includes(key)) player.diceUnlocks[type].push(key); };
+  Object.entries(H10633_DICE_BODY_COLORS).forEach(([k,v])=>{ if(v.free) add("body",k); });
+  Object.entries(H10633_DICE_NUMBER_COLORS).forEach(([k,v])=>{ if(v.free) add("numbers",k); });
+  Object.entries(H10633_DICE_THEMES).forEach(([k,v])=>{ if(v.free) add("themes",k); });
+
+  if(h10633EarnedAchievement(player,"Monster Collector")) add("body","slate");
+  if(h10633EarnedAchievement(player,"Legend Seeker")){ add("body","gold"); add("numbers","gold"); }
+  if(h10633EarnedAchievement(player,"Habitat Explorer")) add("body","teal");
+  if(h10633EarnedAchievement(player,"Shiny Hunter")){ add("body","cyan"); add("body","silver"); add("numbers","cyan"); }
+  if(h10633EarnedAchievement(player,"Epic Tamer")) add("body","violet");
+  if(h10633EarnedAchievement(player,"Event Hunter")){ add("body","magenta"); add("body","rose"); add("numbers","pink"); }
+  if(h10633EarnedAchievement(player,"Beyond the Rift")){ add("numbers","black"); add("themes","galaxy"); }
+  if(h10633HasLifetimeHabitat(player,"Emberdeep")){ add("body","ember"); add("numbers","orange"); }
+  if(h10633HasLifetimeHabitat(player,"Frostgrave")) add("numbers","ice");
+  if(h10633HasLifetimeHabitat(player,"Starfall Basin")) add("themes","galaxy");
+  for(const key of ["mirror_scar","black_bloom","chrono_tear","upside_down_sea","dreaming_gate"]){
+    const def=DISTORTIONS[key]; if(def && h10633HasLifetimeHabitat(player,def.name)) add("themes",key);
+  }
+  return player.diceUnlocks;
+}
 function h10632EnsureDiceCosmetic(player){
-  if(!player.diceCosmetic || typeof player.diceCosmetic!=="object") player.diceCosmetic={body:"sapphire",numbers:"white"};
-  if(!H10632_DICE_BODY_COLORS[player.diceCosmetic.body]) player.diceCosmetic.body="sapphire";
-  if(!H10632_DICE_NUMBER_COLORS[player.diceCosmetic.numbers]) player.diceCosmetic.numbers="white";
+  const unlocks=h10633EnsureDiceUnlocks(player);
+  if(!player.diceCosmetic || typeof player.diceCosmetic!=="object") player.diceCosmetic={body:"sapphire",numbers:"white",theme:"classic"};
+  if(!H10633_DICE_BODY_COLORS[player.diceCosmetic.body] || !unlocks.body.includes(player.diceCosmetic.body)) player.diceCosmetic.body="sapphire";
+  if(!H10633_DICE_NUMBER_COLORS[player.diceCosmetic.numbers] || !unlocks.numbers.includes(player.diceCosmetic.numbers)) player.diceCosmetic.numbers="white";
+  if(!H10633_DICE_THEMES[player.diceCosmetic.theme] || !unlocks.themes.includes(player.diceCosmetic.theme)) player.diceCosmetic.theme="classic";
   return player.diceCosmetic;
 }
 function h10632DiceLockerPayload(player){
-  const equipped=h10632EnsureDiceCosmetic(player);
-  const body=H10632_DICE_BODY_COLORS[equipped.body];
-  const numbers=H10632_DICE_NUMBER_COLORS[equipped.numbers];
+  const equipped=h10632EnsureDiceCosmetic(player), unlocks=h10633EnsureDiceUnlocks(player);
+  const body=H10633_DICE_BODY_COLORS[equipped.body], numbers=H10633_DICE_NUMBER_COLORS[equipped.numbers], theme=H10633_DICE_THEMES[equipped.theme];
+  const decorate=(type,obj)=>Object.entries(obj).map(([key,value])=>({key,...value,unlocked:unlocks[type].includes(key)}));
   return {
-    equipped:{body:equipped.body,numbers:equipped.numbers,bodyColor:body.hex,numberColor:numbers.hex,bodyName:body.name,numberName:numbers.name},
-    bodyColors:Object.entries(H10632_DICE_BODY_COLORS).map(([key,value])=>({key,...value})),
-    numberColors:Object.entries(H10632_DICE_NUMBER_COLORS).map(([key,value])=>({key,...value}))
+    equipped:{body:equipped.body,numbers:equipped.numbers,themeKey:equipped.theme,bodyColor:body.hex,numberColor:numbers.hex,bodyName:body.name,numberName:numbers.name,themeName:theme.name,theme:{key:equipped.theme,...theme}},
+    bodyColors:decorate("body",H10633_DICE_BODY_COLORS),
+    numberColors:decorate("numbers",H10633_DICE_NUMBER_COLORS),
+    themes:decorate("themes",H10633_DICE_THEMES)
   };
 }
-async function h10632EquipDiceCosmetic(user,bodyKey,numberKey){
-  const data=loadData(), player=getPlayer(data,user.id);
-  const body=String(bodyKey||"").toLowerCase(), numbers=String(numberKey||"").toLowerCase();
-  if(!H10632_DICE_BODY_COLORS[body]) return {ok:false,error:"That dice body color is not available."};
-  if(!H10632_DICE_NUMBER_COLORS[numbers]) return {ok:false,error:"That dice number color is not available."};
-  player.diceCosmetic={body,numbers};
-  saveData(data);
-  return {ok:true,diceLocker:h10632DiceLockerPayload(player),message:`Dice equipped: ${H10632_DICE_BODY_COLORS[body].name} with ${H10632_DICE_NUMBER_COLORS[numbers].name} numbers.`};
+async function h10632EquipDiceCosmetic(user,bodyKey,numberKey,themeKey="classic"){
+  const data=loadData(), player=getPlayer(data,user.id), unlocks=h10633EnsureDiceUnlocks(player);
+  const body=String(bodyKey||"").toLowerCase(), numbers=String(numberKey||"").toLowerCase(), theme=String(themeKey||"classic").toLowerCase();
+  if(!H10633_DICE_BODY_COLORS[body]) return {ok:false,error:"That dice body color is not available."};
+  if(!H10633_DICE_NUMBER_COLORS[numbers]) return {ok:false,error:"That dice number color is not available."};
+  if(!H10633_DICE_THEMES[theme]) return {ok:false,error:"That dice theme is not available."};
+  if(!unlocks.body.includes(body)) return {ok:false,error:`${H10633_DICE_BODY_COLORS[body].name} is still locked.`};
+  if(!unlocks.numbers.includes(numbers)) return {ok:false,error:`${H10633_DICE_NUMBER_COLORS[numbers].name} numbers are still locked.`};
+  if(!unlocks.themes.includes(theme)) return {ok:false,error:`${H10633_DICE_THEMES[theme].name} is still locked.`};
+  player.diceCosmetic={body,numbers,theme}; saveData(data);
+  return {ok:true,diceLocker:h10632DiceLockerPayload(player),message:`Dice equipped: ${theme==='classic'?H10633_DICE_BODY_COLORS[body].name:H10633_DICE_THEMES[theme].name} with ${H10633_DICE_NUMBER_COLORS[numbers].name} numbers.`};
 }
 
 function getPlayer(data, userId) {
@@ -8757,7 +8802,10 @@ function hardResetSeasonForNewCompetition(data) {
     // Dice Locker is permanent collection/cosmetic progress.
     fresh.diceCosmetic = oldPlayerData.diceCosmetic
       ? JSON.parse(JSON.stringify(oldPlayerData.diceCosmetic))
-      : {body:"sapphire",numbers:"white"};
+      : {body:"sapphire",numbers:"white",theme:"classic"};
+    fresh.diceUnlocks = oldPlayerData.diceUnlocks
+      ? JSON.parse(JSON.stringify(oldPlayerData.diceUnlocks))
+      : {body:[],numbers:[],themes:[]};
     h10632EnsureDiceCosmetic(fresh);
 
     // Permanent collection history.
@@ -15288,7 +15336,7 @@ const activityServer = http.createServer(async (req, res) => {
 
       if (req.method === "POST" && requestUrl.pathname === "/api/activity/dice-cosmetic") {
         const body=await readRequestJson(req);
-        const result=await h10632EquipDiceCosmetic(user,body.body,body.numbers);
+        const result=await h10632EquipDiceCosmetic(user,body.body,body.numbers,body.theme);
         return activityJson(res,result,result.ok?200:400);
       }
 
