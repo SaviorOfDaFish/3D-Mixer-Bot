@@ -3523,3 +3523,97 @@ img { max-width:100%; }
   box-shadow: inset 3px 0 0 rgba(52,211,153,.8);
 }
 
+
+/* =====================================================================
+   H10.6.40 PET ABILITY READABILITY
+   Each active-companion ability is now a separate visual card/row.
+   ===================================================================== */
+.pet-ability-line{
+  display:block !important;
+  margin:10px 0 12px !important;
+  color:#dbeafe;
+  font-size:.78rem;
+}
+.pet-ability-line > #petAbility,
+#petAbility{
+  display:block;
+  width:100%;
+}
+#petAbility .pet-ability-stack,
+.pet-ability-line .pet-ability-stack{
+  display:grid !important;
+  grid-template-columns:1fr !important;
+  gap:8px !important;
+  width:100%;
+  margin:0 !important;
+}
+#petAbility .pet-ability-chip,
+.pet-ability-line .pet-ability-chip{
+  width:100%;
+  min-width:0;
+  display:grid !important;
+  grid-template-columns:auto minmax(0,1fr) auto !important;
+  align-items:center;
+  justify-content:stretch !important;
+  gap:3px 8px !important;
+  padding:9px 11px !important;
+  border:1px solid rgba(248,250,252,.42);
+  border-radius:12px;
+  background:rgba(2,6,23,.34);
+  line-height:1.25;
+}
+#petAbility .pet-ability-chip.natural,
+.pet-ability-line .pet-ability-chip.natural{
+  border-color:rgba(250,204,21,.52);
+}
+#petAbility .pet-ability-chip.inherited,
+.pet-ability-line .pet-ability-chip.inherited{
+  border-color:rgba(192,132,252,.52);
+}
+#petAbility .pet-ability-chip b,
+.pet-ability-line .pet-ability-chip b{
+  font-size:.82rem;
+  font-weight:900;
+  min-width:0;
+}
+#petAbility .pet-ability-chip small,
+.pet-ability-line .pet-ability-chip small{
+  justify-self:end;
+  font-size:.64rem;
+  opacity:.78;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+  white-space:nowrap;
+}
+#petAbility .pet-ability-chip em,
+.pet-ability-line .pet-ability-chip em{
+  grid-column:1/-1 !important;
+  display:block;
+  padding:3px 0 0 !important;
+  font-style:normal;
+  font-size:.72rem;
+  line-height:1.35;
+  color:#cbd5e1;
+  opacity:1;
+}
+#petAbility .pet-ability-chip.inherited:before,
+.pet-ability-line .pet-ability-chip.inherited:before{
+  align-self:center;
+}
+@media(max-width:520px){
+  #petAbility .pet-ability-chip,
+  .pet-ability-line .pet-ability-chip{
+    grid-template-columns:auto minmax(0,1fr) !important;
+  }
+  #petAbility .pet-ability-chip small,
+  .pet-ability-line .pet-ability-chip small{
+    grid-column:2;
+    justify-self:start;
+  }
+  #petAbility .pet-ability-chip em,
+  .pet-ability-line .pet-ability-chip em{
+    grid-column:1/-1 !important;
+  }
+}
+
