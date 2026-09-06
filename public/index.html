@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-h2c.css?v=10635" />
+  <link rel="stylesheet" href="/styles-phase-h2c.css?v=20617" />
 </head>
 <body>
   <button id="backgroundViewToggle" class="background-view-toggle" type="button" aria-pressed="false" title="Hide menus and view the Distortion background">👁️ Hide Menus</button>
@@ -334,31 +334,6 @@
           <div class="section-title-row"><div><p class="eyebrow">PROGRESSION REWARDS</p><h3>Cosmetics</h3><p class="muted">Unlocked options become available in Customize Hunter.</p></div></div>
           <div class="cosmetic-grid" id="cosmeticGrid"></div>
         </section>
-
-        <section class="panel dice-locker-panel">
-          <div class="section-title-row"><div><p class="eyebrow">D100 COSMETICS</p><h3>🎲 Dice Locker</h3><p class="muted">Choose your physical D100 body and number colors. Cosmetics never change the dice shape, physics, or roll result.</p></div></div>
-          <div class="dice-locker-current">
-            <div class="dice-locker-preview" id="diceLockerPreview"><span>00</span><span>7</span></div>
-            <div><b id="diceLockerCurrentName">Hunter's Sapphire • White Numbers</b><small>Your equipped colors load automatically on every physical capture roll.</small></div>
-          </div>
-          <div class="dice-locker-group">
-            <div class="dice-locker-heading"><b>Dice Color</b><small>Choose the body color.</small></div>
-            <div class="dice-swatch-grid" id="diceBodyColorGrid"></div>
-          </div>
-          <div class="dice-locker-group">
-            <div class="dice-locker-heading"><b>Number Color</b><small>Choose the face-number and edge accent color.</small></div>
-            <div class="dice-swatch-grid" id="diceNumberColorGrid"></div>
-          </div>
-          <div class="dice-locker-group">
-            <div class="dice-locker-heading"><b>Prestige Themes</b><small>Galaxy and Distortion finishes unlock through accomplishments.</small></div>
-            <div class="dice-theme-grid" id="diceThemeGrid"></div>
-          </div>
-          <div class="dice-locker-actions">
-            <button class="primary" id="equipDiceCosmeticBtn" type="button">🎲 Equip Dice Look</button>
-            <button class="secondary" id="testDiceCosmeticBtn" type="button">🎲 Test Roll</button>
-            <span class="muted" id="diceLockerStatus">Dice cosmetics are permanent and never alter physics or results.</span>
-          </div>
-        </section>
       </section>
 
 
@@ -461,7 +436,6 @@
               <div class="encounter-info-overlay left">
                 <h4>Encounter Info</h4>
                 <div class="overlay-stat"><span>Catch Chance</span><b id="encounterCatchChance">—%</b></div>
-                <div class="chance-breakdown-line" id="encounterChanceBreakdown">Base —%</div>
                 <div class="overlay-stat"><span>Habitat</span><b id="encounterHabitat">—</b></div>
                 <div class="overlay-stat"><span>Difficulty</span><b id="encounterDifficulty">—</b></div>
                 <div class="overlay-stat"><span>Active Pet</span><b id="encounterPetName">—</b></div>
@@ -522,7 +496,6 @@
               <div class="attempt-info-overlay left">
                 <h4>Your Stats</h4>
                 <div class="overlay-stat"><span>Catch Chance</span><b id="attemptCatchChance">—%</b></div>
-                <div class="chance-breakdown-line" id="attemptChanceBreakdown">Base —%</div>
                 <div class="overlay-stat"><span>Hunter Level</span><b id="attemptHunterLevel">—</b></div>
                 <div class="overlay-stat"><span>Active Pet</span><b id="attemptPetName">—</b></div>
                 <div class="overlay-stat"><span>Method</span><b id="attemptMethodName">—</b></div>
@@ -1045,7 +1018,7 @@
   </div>
 
   <script src="/activity-auth.js?v=1220"></script>
-  <script type="module" src="/monster-hunt-d100-real.js?v=10635"></script>
-  <script src="/app-phase-h2d7.js?v=10635"></script>
+  <script type="module" src="/monster-hunt-d100-real.js?v=10627"></script>
+  <script src="/app-phase-h2d7.js?v=10627"></script>
 </body>
 </html>
