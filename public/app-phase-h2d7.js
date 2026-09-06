@@ -1860,86 +1860,48 @@ function h10622AbilityPanelHtml(companion, includeAll=true) {
 }
 
 
-// ===== H10.6.32 DICE LOCKER =====
+// ===== H10.6.33 DICE LOCKER: unlocks, themes, test roll =====
 let h10632DiceDraft=null;
-function h10632DiceLocker(){
-  return gameData?.diceLocker || null;
+function h10632DiceLocker(){ return gameData?.diceLocker || null; }
+function h10633DicePreviewCosmetic(){
+  const locker=h10632DiceLocker();
+  if(!locker) return {bodyColor:"#17467f",numberColor:"#f3f7ff",theme:{key:"classic"}};
+  const d=h10632DiceDraft||locker.equipped||{};
+  const body=(locker.bodyColors||[]).find(x=>x.key===d.body) || locker.bodyColors?.[0];
+  const numbers=(locker.numberColors||[]).find(x=>x.key===d.numbers) || locker.numberColors?.[0];
+  const theme=(locker.themes||[]).find(x=>x.key===(d.theme||"classic")) || locker.themes?.[0] || {key:"classic",name:"Classic"};
+  return {bodyColor:body?.hex||"#17467f",numberColor:numbers?.hex||"#f3f7ff",theme};
 }
 function h10632RenderDiceLocker(){
-  const locker=h10632DiceLocker();
-  const bodyGrid=document.getElementById("diceBodyColorGrid");
-  const numberGrid=document.getElementById("diceNumberColorGrid");
-  const preview=document.getElementById("diceLockerPreview");
-  const label=document.getElementById("diceLockerCurrentName");
-  const status=document.getElementById("diceLockerStatus");
-  const equipBtn=document.getElementById("equipDiceCosmeticBtn");
-  if(!locker||!bodyGrid||!numberGrid||!preview||!label||!equipBtn) return;
-
-  if(!h10632DiceDraft){
-    h10632DiceDraft={body:locker.equipped?.body||"sapphire",numbers:locker.equipped?.numbers||"white"};
-  }
-  const body=(locker.bodyColors||[]).find(x=>x.key===h10632DiceDraft.body) || locker.bodyColors?.[0];
-  const numbers=(locker.numberColors||[]).find(x=>x.key===h10632DiceDraft.numbers) || locker.numberColors?.[0];
-  if(!body||!numbers) return;
-
-  preview.style.setProperty("--dice-body",body.hex);
+  const locker=h10632DiceLocker(),bodyGrid=document.getElementById("diceBodyColorGrid"),numberGrid=document.getElementById("diceNumberColorGrid"),themeGrid=document.getElementById("diceThemeGrid"),preview=document.getElementById("diceLockerPreview"),label=document.getElementById("diceLockerCurrentName"),status=document.getElementById("diceLockerStatus"),equipBtn=document.getElementById("equipDiceCosmeticBtn"),testBtn=document.getElementById("testDiceCosmeticBtn");
+  if(!locker||!bodyGrid||!numberGrid||!themeGrid||!preview||!label||!equipBtn) return;
+  if(!h10632DiceDraft) h10632DiceDraft={body:locker.equipped?.body||"sapphire",numbers:locker.equipped?.numbers||"white",theme:locker.equipped?.themeKey||locker.equipped?.theme?.key||"classic"};
+  const body=(locker.bodyColors||[]).find(x=>x.key===h10632DiceDraft.body)||locker.bodyColors?.[0],numbers=(locker.numberColors||[]).find(x=>x.key===h10632DiceDraft.numbers)||locker.numberColors?.[0],theme=(locker.themes||[]).find(x=>x.key===h10632DiceDraft.theme)||locker.themes?.[0];
+  if(!body||!numbers||!theme) return;
+  preview.style.setProperty("--dice-body",theme.key==='classic'?body.hex:(theme.primary||body.hex));
+  preview.style.setProperty("--dice-body-2",theme.key==='classic'?body.hex:(theme.secondary||body.hex));
+  preview.style.setProperty("--dice-accent",theme.accent||numbers.hex);
   preview.style.setProperty("--dice-number",numbers.hex);
-  label.textContent=`${body.name} • ${numbers.name} Numbers`;
+  preview.dataset.theme=theme.key;
+  label.textContent=`${theme.key==='classic'?body.name:theme.name} • ${numbers.name} Numbers`;
 
-  const makeSwatches=(items,type)=>items.map(item=>`
-    <button type="button" class="dice-swatch ${h10632DiceDraft[type]===item.key?"selected":""}"
-      data-dice-${type}="${escapeHtml(item.key)}" title="${escapeHtml(item.name)}">
-      <span class="dice-swatch-chip" style="--swatch:${escapeHtml(item.hex)}"></span>
-      <small>${escapeHtml(item.name)}</small>
-    </button>`).join("");
+  const swatches=(items,type)=>items.map(item=>`<button type="button" class="dice-swatch ${h10632DiceDraft[type]===item.key?"selected":""} ${item.unlocked?"":"locked"}" data-dice-${type}="${escapeHtml(item.key)}" ${item.unlocked?"":'disabled'} title="${escapeHtml(item.unlocked?item.name:`Locked — ${item.unlock||'Achievement required'}`)}"><span class="dice-swatch-chip" style="--swatch:${escapeHtml(item.hex)}"></span><small>${item.unlocked?'':`🔒 `}${escapeHtml(item.name)}</small></button>`).join("");
+  bodyGrid.innerHTML=swatches(locker.bodyColors||[],"body"); numberGrid.innerHTML=swatches(locker.numberColors||[],"numbers");
+  themeGrid.innerHTML=(locker.themes||[]).map(item=>`<button type="button" class="dice-theme-card ${h10632DiceDraft.theme===item.key?"selected":""} ${item.unlocked?"":"locked"}" data-dice-theme="${escapeHtml(item.key)}" ${item.unlocked?"":'disabled'} style="--theme-a:${escapeHtml(item.primary||body.hex)};--theme-b:${escapeHtml(item.secondary||body.hex)};--theme-c:${escapeHtml(item.accent||numbers.hex)}"><span>${escapeHtml(item.icon||'🎲')}</span><b>${item.unlocked?'':`🔒 `}${escapeHtml(item.name)}</b><small>${escapeHtml(item.unlocked?(item.description||'Unlocked cosmetic'):(item.unlock||'Achievement required'))}</small></button>`).join("");
+  bodyGrid.querySelectorAll("[data-dice-body]").forEach(btn=>btn.onclick=()=>{h10632DiceDraft.body=btn.dataset.diceBody;h10632RenderDiceLocker();});
+  numberGrid.querySelectorAll("[data-dice-numbers]").forEach(btn=>btn.onclick=()=>{h10632DiceDraft.numbers=btn.dataset.diceNumbers;h10632RenderDiceLocker();});
+  themeGrid.querySelectorAll("[data-dice-theme]").forEach(btn=>btn.onclick=()=>{h10632DiceDraft.theme=btn.dataset.diceTheme;h10632RenderDiceLocker();});
 
-  bodyGrid.innerHTML=makeSwatches(locker.bodyColors||[],"body");
-  numberGrid.innerHTML=makeSwatches(locker.numberColors||[],"numbers");
-
-  bodyGrid.querySelectorAll("[data-dice-body]").forEach(btn=>btn.onclick=()=>{
-    h10632DiceDraft.body=btn.dataset.diceBody;
-    h10632RenderDiceLocker();
-  });
-  numberGrid.querySelectorAll("[data-dice-numbers]").forEach(btn=>btn.onclick=()=>{
-    h10632DiceDraft.numbers=btn.dataset.diceNumbers;
-    h10632RenderDiceLocker();
-  });
-
-  const equipped=locker.equipped||{};
-  const dirty=h10632DiceDraft.body!==equipped.body || h10632DiceDraft.numbers!==equipped.numbers;
-  equipBtn.disabled=!dirty;
-  equipBtn.textContent=dirty?"🎲 Equip Dice Colors":"✓ Dice Colors Equipped";
-  if(status) status.textContent=dirty?"Previewing new colors — save to use them on your next roll.":"These colors are equipped for every physical D100 roll.";
-
-  equipBtn.onclick=async()=>{
-    if(!dirty) return;
-    equipBtn.disabled=true; equipBtn.textContent="Saving…";
-    try{
-      const response=await activityFetch("/api/activity/dice-cosmetic",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(h10632DiceDraft)
-      });
-      const payload=await response.json();
-      if(!response.ok||!payload.ok) throw new Error(payload.error||"Could not equip dice colors.");
-      gameData.diceLocker=payload.diceLocker;
-      if(hunter) hunter.diceCosmetic=payload.diceLocker?.equipped||hunter.diceCosmetic;
-      h10632DiceDraft={body:payload.diceLocker.equipped.body,numbers:payload.diceLocker.equipped.numbers};
-      h10632RenderDiceLocker();
-      showActivityResult("🎲","Dice Locker Updated",payload.message||"Your D100 colors are equipped.");
-    }catch(error){
-      if(status) status.textContent=`❌ ${error.message}`;
-      equipBtn.disabled=false; equipBtn.textContent="🎲 Equip Dice Colors";
-    }
-  };
+  const equipped=locker.equipped||{},dirty=h10632DiceDraft.body!==equipped.body||h10632DiceDraft.numbers!==equipped.numbers||h10632DiceDraft.theme!==(equipped.themeKey||equipped.theme?.key||"classic");
+  equipBtn.disabled=!dirty; equipBtn.textContent=dirty?"🎲 Equip Dice Look":"✓ Dice Look Equipped";
+  if(status) status.textContent=dirty?"Previewing a new cosmetic — equip it to use on capture rolls.":"This cosmetic is equipped for every physical D100 roll.";
+  if(testBtn){ testBtn.disabled=false; testBtn.onclick=async()=>{ if(testBtn.dataset.busy==='1') return; testBtn.dataset.busy='1'; testBtn.disabled=true; testBtn.textContent='🎲 Opening Test Table…'; try{ if(!window.MonsterHuntMixerD100?.rollD100) await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('D100 renderer not ready')),8000);window.addEventListener('monster-hunt-d100-ready',()=>{clearTimeout(timer);resolve();},{once:true});}); await window.MonsterHuntMixerD100.rollD100({chance:null,reason:'Dice Locker Test Roll',cosmetic:h10633DicePreviewCosmetic()}); }catch(error){ if(status) status.textContent=`❌ Test roll failed: ${error.message}`; }finally{ testBtn.dataset.busy='0';testBtn.disabled=false;testBtn.textContent='🎲 Test Roll'; } }; }
+  equipBtn.onclick=async()=>{ if(!dirty) return; equipBtn.disabled=true;equipBtn.textContent="Saving…";try{const response=await activityFetch("/api/activity/dice-cosmetic",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(h10632DiceDraft)}),payload=await response.json();if(!response.ok||!payload.ok)throw new Error(payload.error||"Could not equip dice cosmetic.");gameData.diceLocker=payload.diceLocker;if(hunter)hunter.diceCosmetic=payload.diceLocker?.equipped||hunter.diceCosmetic;h10632DiceDraft={body:payload.diceLocker.equipped.body,numbers:payload.diceLocker.equipped.numbers,theme:payload.diceLocker.equipped.themeKey||payload.diceLocker.equipped.theme?.key||"classic"};h10632RenderDiceLocker();showActivityResult("🎲","Dice Locker Updated",payload.message||"Your D100 cosmetic is equipped.");}catch(error){if(status)status.textContent=`❌ ${error.message}`;equipBtn.disabled=false;equipBtn.textContent="🎲 Equip Dice Look";}};
 }
 function h10632CurrentDiceCosmetic(){
-  const equipped=gameData?.diceLocker?.equipped || hunter?.diceCosmetic || null;
-  if(!equipped) return {bodyColor:"#17467f",numberColor:"#f3f7ff"};
-  return {
-    bodyColor:equipped.bodyColor||"#17467f",
-    numberColor:equipped.numberColor||"#f3f7ff"
-  };
+  const equipped=gameData?.diceLocker?.equipped||hunter?.diceCosmetic||null;
+  if(!equipped)return {bodyColor:"#17467f",numberColor:"#f3f7ff",theme:{key:"classic"}};
+  return {bodyColor:equipped.bodyColor||"#17467f",numberColor:equipped.numberColor||"#f3f7ff",theme:equipped.theme||{key:equipped.themeKey||"classic"}};
 }
 
 function h10622RenderEncounterCompanion(companion){
@@ -3661,7 +3623,14 @@ async function h81UseHunter(){
 function h81ApplyGeneratedHunterToHost(host,imageUrl){
   if(!host) return;
   let img=host.querySelector(".h81-live-hunter-image");
+  const legacyAvatar=host.querySelector(":scope > .avatar");
+  const legacyShadow=host.querySelector(":scope > .avatar-shadow");
   if(imageUrl){
+    // H10.6.34: generated art is the ONLY hunter visual. Do this inline as well
+    // as in CSS so an older cached stylesheet can never leave the blocky legacy
+    // figure visible behind the generated PNG.
+    if(legacyAvatar) legacyAvatar.style.setProperty("display","none","important");
+    if(legacyShadow) legacyShadow.style.setProperty("display","none","important");
     if(!img){
       img=document.createElement("img");
       img.className="h81-live-hunter-image";
@@ -3669,10 +3638,13 @@ function h81ApplyGeneratedHunterToHost(host,imageUrl){
       host.appendChild(img);
     }
     img.src=activityProxyUrl(imageUrl);
+    img.style.cssText="position:absolute;left:50%;bottom:0;transform:translateX(-50%);display:block;width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;object-position:center bottom;z-index:7;filter:drop-shadow(0 12px 12px rgba(0,0,0,.42));pointer-events:none;";
     host.classList.add("h81-generated-active");
   }else{
     img?.remove();
     host.classList.remove("h81-generated-active");
+    if(legacyAvatar) legacyAvatar.style.removeProperty("display");
+    if(legacyShadow) legacyShadow.style.removeProperty("display");
   }
 }
 
