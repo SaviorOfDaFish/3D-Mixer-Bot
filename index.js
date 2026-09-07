@@ -13956,18 +13956,21 @@ setInterval(()=>bountyMonitor().catch(console.error),60*1000);
 // The community-riddle answer is a one-time GLOBAL solve.
 
 const H107_BACKGROUND_DEFS=Object.freeze({
-  camp:{name:"Hunter Camp",icon:"🏕️",requirement:"Starter background",starter:true},
-  moonfen:{name:"Moonfen",icon:"🌙",habitat:"Moonfen",requirement:"Capture a Moonfen monster"},
-  glasswaste:{name:"Glasswaste",icon:"💎",habitat:"Glasswaste",requirement:"Capture a Glasswaste monster"},
-  gloamwood:{name:"Gloamwood",icon:"🌲",habitat:"Gloamwood",requirement:"Capture a Gloamwood monster"},
-  stormreach:{name:"Stormreach",icon:"⛈️",habitat:"Stormreach",requirement:"Capture a Stormreach monster"},
-  emberdeep:{name:"Emberdeep",icon:"🔥",habitat:"Emberdeep",requirement:"Capture an Emberdeep monster"},
-  frostgrave:{name:"Frostgrave",icon:"❄️",habitat:"Frostgrave",requirement:"Capture a Frostgrave monster"},
-  sporewilds:{name:"Sporewilds",icon:"🍄",habitat:"Sporewilds",requirement:"Capture a Sporewilds monster"},
-  starfall:{name:"Starfall Basin",icon:"🌠",habitat:"Starfall Basin",requirement:"Capture a Starfall Basin monster"},
-  mirror:{name:"Mirror Scar",icon:"🪞",habitat:"Mirror Scar",requirement:"Capture a Mirror Scar monster"},
-  blackbloom:{name:"Black Bloom",icon:"🌑",habitat:"Black Bloom",requirement:"Capture a Black Bloom monster"},
-  galaxy:{name:"Mixer Galaxy",icon:"🌌",codeUnlock:"MIXER190",requirement:"Find the MIXER190 secret code"}
+  camp:{name:"Hunter Camp",icon:"🏕️",requirement:"Starter background",starter:true,image:"/assets/backgrounds/hunt_home.png"},
+  moonfen:{name:"Moonfen",icon:"🌙",habitat:"Moonfen",requirement:"Capture a Moonfen monster",image:"/assets/backgrounds/hunt_battle.png"},
+  glasswaste:{name:"Glasswaste",icon:"💎",habitat:"Glasswaste",requirement:"Capture a Glasswaste monster",image:"/assets/backgrounds/hunt_battle.png"},
+  gloamwood:{name:"Gloamwood",icon:"🌲",habitat:"Gloamwood",requirement:"Capture a Gloamwood monster",image:"/assets/backgrounds/hunt_home.png"},
+  stormreach:{name:"Stormreach",icon:"⛈️",habitat:"Stormreach",requirement:"Capture a Stormreach monster",image:"/assets/backgrounds/hunt_battle.png"},
+  emberdeep:{name:"Emberdeep",icon:"🔥",habitat:"Emberdeep",requirement:"Capture an Emberdeep monster",image:"/assets/backgrounds/hunt_battle.png"},
+  frostgrave:{name:"Frostgrave",icon:"❄️",habitat:"Frostgrave",requirement:"Capture a Frostgrave monster",image:"/assets/backgrounds/hunt_battle.png"},
+  sporewilds:{name:"Sporewilds",icon:"🍄",habitat:"Sporewilds",requirement:"Capture a Sporewilds monster",image:"/assets/backgrounds/hunt_home.png"},
+  starfall:{name:"Starfall Basin",icon:"🌠",habitat:"Starfall Basin",requirement:"Capture a Starfall Basin monster",image:"/assets/backgrounds/hunt_battle.png"},
+  mirror:{name:"Mirror Scar",icon:"🪞",habitat:"Mirror Scar",requirement:"Capture a Mirror Scar monster",image:"/assets/distortions/mirror_scar_background.png"},
+  blackbloom:{name:"Black Bloom",icon:"🌑",habitat:"Black Bloom",requirement:"Capture a Black Bloom monster",image:"/assets/distortions/black_bloom_background.png"},
+  galaxy:{
+    name:"Mixer Galaxy",icon:"🌌",codeUnlock:"MIXER190",requirement:"Find the MIXER190 secret code",image:null,
+    cssBackground:"radial-gradient(circle at 20% 15%,rgba(56,189,248,.58),transparent 30%),radial-gradient(circle at 78% 30%,rgba(168,85,247,.58),transparent 34%),radial-gradient(circle at 45% 85%,rgba(236,72,153,.36),transparent 32%),linear-gradient(145deg,#020617,#111827 38%,#312e81 72%,#020617)"
+  }
 });
 
 // Starter built-in codes. Admin-created codes are stored in save data and do
@@ -14024,7 +14027,14 @@ function h107BackgroundPayload(player){
   const equipped=h107BackgroundUnlocked(player,player.h107Background)?player.h107Background:"camp";
   player.h107Background=equipped;
   return {equipped,backgrounds:Object.entries(H107_BACKGROUND_DEFS).map(([key,d])=>({
-    key,name:d.name,icon:d.icon,requirement:d.requirement,unlocked:h107BackgroundUnlocked(player,key),equipped:key===equipped
+    key,
+    name:d.name,
+    icon:d.icon,
+    requirement:d.requirement,
+    unlocked:h107BackgroundUnlocked(player,key),
+    equipped:key===equipped,
+    image:d.image||null,
+    cssBackground:d.cssBackground||null
   }))};
 }
 function h107RiddleState(data){
