@@ -14078,7 +14078,42 @@ async function h107RedeemCode(user,raw){
   const def=h107GetCode(data,code);
   if(!def)return{ok:false,code:"invalid",error:"That code is not recognized."};
   if(!h107CodeEnabled(def))return{ok:false,code:"disabled",error:"That code is currently disabled."};
-  if((player.h107UsedCodes||[]).includes(code))return{ok:false,code:"used",error:"You have already used that code."};
+  if((player.h107UsedCodes||[]).includes(code)){
+    // H10.7.3: If this one-time encounter code was already consumed but its
+    // encounter is still waiting in the player's save, let the Activity resume
+    // that SAME encounter. This does not grant a second encounter or reuse the code.
+    if(def.type==="encounter" && player.currentMonster?.codeEncounter && h107NormalizeCode(player.currentMonster.secretCode)===code){
+      const monster=player.currentMonster;
+      const chanceInfo=calculateCaptureChance(player,monster,null,data,user.id);
+      const choices=buildCaptureChoices(player,monster,data,user.id).map(c=>({
+        number:c.number,itemKey:c.itemKey,label:c.label,chance:c.chance
+      }));
+      return{
+        ok:true,
+        type:"encounter",
+        resumed:true,
+        encounterReady:true,
+        message:"Your secret encounter is still waiting — returning to the hunt now.",
+        monster:{...monster,imageUrl:activityMonsterImageUrl(monster)},
+        chance:Number(chanceInfo.total||monster.chance||0),
+        baseChance:Number(monster.chance||0),
+        chanceBreakdown:{
+          base:Number(chanceInfo.base||monster.chance||0),
+          knowledge:Number(chanceInfo.knowledgeBonus||0),
+          event:Number(chanceInfo.eventBonus||0),
+          pet:Number(chanceInfo.petBonus||0),
+          comeback:Number(chanceInfo.comebackBonus||0),
+          item:Number(chanceInfo.itemBonus||0),
+          total:Number(chanceInfo.total||0),
+          guaranteed:Boolean(chanceInfo.guaranteed)
+        },
+        companion:h10630ActivityCompanionSnapshot(player),
+        choices,
+        player:activityPlayerPayload(data,user).hunter
+      };
+    }
+    return{ok:false,code:"used",error:"You have already used that code."};
+  }
 
   if(def.type==="encounter"){
     const encounter=h107BuildImmediateEncounter(data,user,def.monsterName,code);
