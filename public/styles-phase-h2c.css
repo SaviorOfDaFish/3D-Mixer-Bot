@@ -3648,3 +3648,32 @@ img { max-width:100%; }
 .dice-theme-card[data-dice-theme="prismatic"],
 .dice-theme-card[data-dice-theme="legendary"] { min-height:104px; }
 .dice-theme-card[data-dice-theme="legendary"] { border-color:rgba(255,224,138,.55); }
+
+/* ===== H10.7 SECRETS & DISCOVERY ===== */
+body{--h107-player-bg:linear-gradient(rgba(2,6,23,.18),rgba(2,6,23,.44)),url("/assets/backgrounds/hunt_home.png") center/cover no-repeat fixed;position:relative;isolation:isolate;}
+body::before{content:"";position:fixed;inset:0;z-index:-2;background:var(--h107-player-bg);pointer-events:none;}
+body::after{content:"";position:fixed;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(2,6,23,.15),rgba(2,6,23,.45));pointer-events:none;}
+body.h10-distortion-active::before{background:linear-gradient(rgba(2,6,23,.10),rgba(2,6,23,.28)),var(--h10-distortion-bg) center/cover no-repeat fixed!important;}
+.app-shell{background:rgba(2,6,23,.46)!important;backdrop-filter:blur(1.5px);}
+body[data-h107-background="camp"]{--h107-player-bg:linear-gradient(rgba(2,6,23,.18),rgba(2,6,23,.44)),url("/assets/backgrounds/hunt_home.png") center/cover no-repeat fixed;}
+body[data-h107-background="moonfen"]{--h107-player-bg:linear-gradient(rgba(8,47,73,.24),rgba(2,6,23,.55)),url("/assets/backgrounds/hunt_battle.png") center/cover no-repeat fixed;}
+body[data-h107-background="glasswaste"]{--h107-player-bg:linear-gradient(rgba(91,33,182,.24),rgba(15,23,42,.56)),url("/assets/backgrounds/hunt_battle.png") center/cover no-repeat fixed;}
+body[data-h107-background="gloamwood"]{--h107-player-bg:linear-gradient(rgba(6,78,59,.28),rgba(2,6,23,.58)),url("/assets/backgrounds/hunt_home.png") center/cover no-repeat fixed;}
+body[data-h107-background="stormreach"]{--h107-player-bg:linear-gradient(rgba(30,64,175,.26),rgba(15,23,42,.58)),url("/assets/backgrounds/hunt_battle.png") center/cover no-repeat fixed;}
+body[data-h107-background="emberdeep"]{--h107-player-bg:linear-gradient(rgba(153,27,27,.30),rgba(17,24,39,.58)),url("/assets/backgrounds/hunt_battle.png") center/cover no-repeat fixed;}
+body[data-h107-background="frostgrave"]{--h107-player-bg:linear-gradient(rgba(14,116,144,.25),rgba(15,23,42,.56)),url("/assets/backgrounds/hunt_battle.png") center/cover no-repeat fixed;}
+body[data-h107-background="sporewilds"]{--h107-player-bg:linear-gradient(rgba(88,28,135,.25),rgba(20,83,45,.34),rgba(2,6,23,.58)),url("/assets/backgrounds/hunt_home.png") center/cover no-repeat fixed;}
+body[data-h107-background="starfall"]{--h107-player-bg:radial-gradient(circle at 70% 15%,rgba(99,102,241,.50),transparent 28rem),linear-gradient(rgba(17,24,39,.18),rgba(2,6,23,.62)),url("/assets/backgrounds/hunt_battle.png") center/cover no-repeat fixed;}
+body[data-h107-background="mirror"]{--h107-player-bg:linear-gradient(rgba(49,46,129,.18),rgba(2,6,23,.46)),url("/assets/distortions/mirror_scar_background.png") center/cover no-repeat fixed;}
+body[data-h107-background="blackbloom"]{--h107-player-bg:linear-gradient(rgba(76,5,25,.18),rgba(2,6,23,.48)),url("/assets/distortions/black_bloom_background.png") center/cover no-repeat fixed;}
+body[data-h107-background="galaxy"]{--h107-player-bg:radial-gradient(circle at 20% 15%,rgba(56,189,248,.34),transparent 22rem),radial-gradient(circle at 78% 30%,rgba(168,85,247,.38),transparent 26rem),radial-gradient(circle at 45% 85%,rgba(236,72,153,.24),transparent 24rem),linear-gradient(145deg,#020617,#111827 38%,#312e81 72%,#020617);}
+.h107-hunt-header-actions{display:flex;align-items:center;gap:10px}.h107-code-button{min-height:38px!important;padding:7px 12px!important}
+.h107-code-sheet{width:min(460px,calc(100vw - 28px));border-radius:20px;border:1px solid rgba(129,140,248,.38);background:rgba(15,23,42,.98);box-shadow:0 28px 90px rgba(0,0,0,.58);padding:18px;display:grid;gap:14px}
+.h107-code-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.h107-code-head h2{margin:0}
+.h107-code-field{display:grid;gap:7px;font-size:.78rem;font-weight:800;color:#cbd5e1}.h107-code-field input{width:100%;min-height:48px;border-radius:13px;border:1px solid rgba(148,163,184,.28);background:#020617;color:#fff;padding:10px 12px;font:900 1rem/1 Inter,ui-sans-serif,system-ui;text-transform:uppercase;letter-spacing:.08em}
+.h107-code-status{min-height:22px;color:#c7d2fe;line-height:1.4;font-size:.82rem}
+.h107-record-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.h107-record-card{min-width:0;border:1px solid rgba(248,250,252,.52);border-radius:17px;background:rgba(15,23,42,.78);padding:14px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px}.h107-record-icon{font-size:2rem}.h107-record-copy h3{margin:0 0 5px}.h107-record-holder{font-weight:900;margin:0 0 4px}.h107-record-value{color:#a5b4fc;font-size:.8rem}
+.h107-background-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}.h107-background-card{min-width:0;border:1px solid rgba(248,250,252,.32);border-radius:16px;background:rgba(15,23,42,.80);padding:13px;color:inherit;text-align:left;display:grid;gap:7px;cursor:pointer}.h107-background-card.unlocked{border-color:rgba(129,140,248,.60)}.h107-background-card.equipped{border-color:rgba(248,250,252,.90);box-shadow:inset 0 0 0 1px rgba(129,140,248,.48)}.h107-background-card.locked{opacity:.62;cursor:not-allowed}.h107-bg-icon{font-size:1.7rem}.h107-bg-state{font-size:.67rem;font-weight:900;text-transform:uppercase;color:#c7d2fe}.h107-background-card small{color:#94a3b8}
+.h107-background-status{min-height:24px;margin-top:10px;color:#c7d2fe}.h107-riddle-panel{display:grid;gap:13px}.h107-riddle-panel h2{margin:0}.h107-riddle-clue{padding:16px;border-radius:15px;border:1px solid rgba(248,250,252,.46);background:rgba(2,6,23,.42);font-size:1rem;font-weight:800;line-height:1.55}.h107-riddle-result{color:#a5b4fc;line-height:1.45}
+@media(max-width:700px){.h107-background-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.h107-record-grid,.h107-background-grid{grid-template-columns:1fr}}
+

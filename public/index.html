@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b1220" />
   <title>Monster Hunt Activity — Phase D</title>
-  <link rel="stylesheet" href="/styles-phase-h2c.css?v=10640" />
+  <link rel="stylesheet" href="/styles-phase-h2c.css?v=10700" />
 </head>
 <body>
   <button id="backgroundViewToggle" class="background-view-toggle" type="button" aria-pressed="false" title="Hide menus and view the Distortion background">👁️ Hide Menus</button>
@@ -137,6 +137,8 @@
           <button class="tile" data-nav="players"><span>👥</span><b>Players</b><small>Meet the hunters</small></button>
           <button class="tile h1066-daily-tile" data-nav="daily"><span>🎯</span><b>Daily</b><small id="dailyHomeStatus">Loading daily…</small></button>
           <button class="tile" data-nav="collection"><span>🏆</span><b>Collection</b><small id="trophyCount">— trophies</small></button>
+          <button class="tile" data-nav="records"><span>📜</span><b>Records</b><small>Server champions</small></button>
+          <button class="tile" data-nav="backgrounds"><span>🖼️</span><b>Backgrounds</b><small>Customize every page</small></button>
         </section>
 
         <section class="panel">
@@ -372,7 +374,10 @@
                 <p class="eyebrow">THE HUNT</p>
                 <h2>Choose Your Hunting Ground</h2>
               </div>
-              <span class="screen-count">🏹</span>
+              <div class="h107-hunt-header-actions">
+                <button class="secondary h107-code-button" id="h107OpenCode" type="button">🔐 Code</button>
+                <span class="screen-count">🏹</span>
+              </div>
             </div>
 
             <div class="hunt-overview-layout">
@@ -590,6 +595,19 @@
         </div>
       </section>
 
+      <section class="screen" data-screen="records">
+        <div class="screen-header"><div><p class="eyebrow">SERVER HISTORY</p><h2>🏆 Server Records</h2></div><span class="screen-count">📜</span></div>
+        <p class="muted intro-copy">All-time Monster Hunt records. Specimen size and streak tracking begin with H10.7.</p>
+        <div class="h107-record-grid" id="h107RecordGrid"><div class="empty-state">Loading server records…</div></div>
+      </section>
+
+      <section class="screen" data-screen="backgrounds">
+        <div class="screen-header"><div><p class="eyebrow">ACTIVITY COSMETICS</p><h2>🖼️ Backgrounds</h2></div><span class="screen-count">✨</span></div>
+        <p class="muted intro-copy">Unlock backgrounds through exploration and secret codes. Your equipped background appears behind every page. Live Distortions temporarily override it.</p>
+        <div class="h107-background-grid" id="h107BackgroundGrid"><div class="empty-state">Loading backgrounds…</div></div>
+        <div class="h107-background-status" id="h107BackgroundStatus"></div>
+      </section>
+
       <section class="screen" data-screen="events">
         <div class="screen-header">
           <div>
@@ -604,6 +622,7 @@
           <button class="event-tab" data-event-view="biggame">Big Game</button>
           <button class="event-tab" data-event-view="bounty">Bounty</button>
           <button class="event-tab" data-event-view="distortion">Distortion</button>
+          <button class="event-tab" data-event-view="riddle">Riddle</button>
         </div>
 
         <div class="event-view active" data-event-view-panel="overview">
@@ -779,6 +798,16 @@
           <button class="primary full event-action" id="devDistortionHunt">🌀 DEV Enter Distortion</button>
           <p class="sandbox-warning">🧪 Visual simulation only; no live encounters are generated.</p>
         </div>
+        <div class="event-view" data-event-view-panel="riddle">
+          <section class="panel h107-riddle-panel">
+            <p class="eyebrow">COMMUNITY MYSTERY</p>
+            <h2 id="h107RiddleTitle">Loading riddle…</h2>
+            <div class="h107-riddle-clue" id="h107RiddleClue">Checking the current community mystery…</div>
+            <div class="h107-riddle-result" id="h107RiddleResult"></div>
+            <button class="primary" id="h107RiddleCodeButton" type="button">🔐 Enter Answer as Code</button>
+          </section>
+        </div>
+
       </section>
 
     </main>
@@ -806,11 +835,23 @@
       <button data-nav="events"><span>🌀</span><small>Events</small></button>
       <button data-nav="notifications"><span>🔔</span><small>Alerts</small></button>
       <button data-nav="tutorial"><span>🎓</span><small>Tutorial</small></button>
+      <button data-nav="records"><span>📜</span><small>Records</small></button>
+      <button data-nav="backgrounds"><span>🖼️</span><small>Backgrounds</small></button>
     </nav>
   </div>
 
   <div class="h9-tutorial-layer hidden" id="h9TutorialLayer"><div class="h9-tutorial-backdrop"></div><div class="h9-tutorial-card"><div class="h9-tutorial-top"><span id="h9TutorialCounter">1 / 16</span><button id="h9TutorialClose">×</button></div><div class="h9-tutorial-icon" id="h9TutorialIcon">🏹</div><p class="eyebrow">HUNTER TRAINING</p><h2 id="h9TutorialTitle"></h2><div class="h9-tutorial-copy" id="h9TutorialCopy"></div><div class="h9-tutorial-nav"><button class="secondary" id="h9TutorialBack">← Back</button><button class="secondary" id="h9TutorialSkip">Skip Tutorial</button><button class="primary" id="h9TutorialNext">Next →</button></div></div></div>
 <div class="h9-tip-toast hidden" id="h9TipToast"><button id="h9TipClose">×</button><div id="h9TipBody"></div></div>
+<div class="modal-backdrop hidden" id="h107CodeModal" role="dialog" aria-modal="true">
+  <section class="h107-code-sheet">
+    <header class="h107-code-head"><div><p class="eyebrow">SECRETS & DISCOVERY</p><h2>🔐 Enter Secret Code</h2></div><button class="icon-button" id="h107CloseCode" type="button">✕</button></header>
+    <p class="muted">Codes never expire. Each normal code can only be used once by each hunter. Community-riddle answers can only be solved once for the server.</p>
+    <label class="h107-code-field"><span>Code or riddle answer</span><input id="h107CodeInput" autocomplete="off" maxlength="40" placeholder="ENTER CODE"></label>
+    <button class="primary full" id="h107RedeemCode" type="button">✨ Redeem Code</button>
+    <div class="h107-code-status" id="h107CodeStatus"></div>
+  </section>
+</div>
+
 <div class="modal-backdrop hidden" id="customizerModal" role="dialog" aria-modal="true">
     <section class="customizer-sheet h8-creator-sheet">
       <header class="customizer-header">
@@ -1046,6 +1087,6 @@
 
   <script src="/activity-auth.js?v=1220"></script>
   <script type="module" src="/monster-hunt-d100-real.js?v=10633"></script>
-  <script src="/app-phase-h2d7.js?v=10638"></script>
+  <script src="/app-phase-h2d7.js?v=10700"></script>
 </body>
 </html>
