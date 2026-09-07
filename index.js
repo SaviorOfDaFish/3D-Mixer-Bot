@@ -8874,6 +8874,160 @@ function isSeasonLocked(data) {
   return false;
 }
 
+
+// ==================== H10.7.2 ADMIN SECRET CODE MANAGER ====================
+// Discord admin commands:
+//   !code create <CODE> <type> <value...> [| message]
+//   !code list
+//   !code disable <CODE>
+//   !code delete <CODE>
+//
+// Supported types:
+//   encounter <monster name>
+//   background <background key>
+//   points <amount>
+//   tokens <amount>
+//   merchant <merchant type>
+//
+// Examples:
+//   !code create GNOMEPOWER encounter The Buried Emperor | Something huge stirs below...
+//   !code create MOONLIGHT background moonfen | Moonfen background unlocked!
+//   !code create THANKYOU tokens 10 | Thanks for being part of Monster Hunt!
+//   !code create SECRETSELLER merchant nameless | A secret merchant has appeared.
+
+function h107AdminCodeHelp(){
+  return [
+    "🔐 **SECRET CODE ADMIN**",
+    "",
+    "`!code create <CODE> <type> <value...> [| message]`",
+    "`!code list`",
+    "`!code disable <CODE>`",
+    "`!code delete <CODE>`",
+    "",
+    "**Types:** `encounter`, `background`, `points`, `tokens`, `merchant`",
+    "",
+    "**Examples:**",
+    "`!code create GNOMEPOWER encounter The Buried Emperor | Something huge stirs below...`",
+    "`!code create MOONLIGHT background moonfen | Moonfen background unlocked!`",
+    "`!code create THANKYOU tokens 10 | Thanks for playing!`",
+    "`!code create SECRETSELLER merchant nameless | A secret merchant has appeared.`"
+  ].join("\n");
+}
+
+function h107ValidateAdminCodeDefinition(data,type,value,message){
+  const t=String(type||"").toLowerCase();
+  const v=String(value||"").trim();
+  const base={type:t,message:String(message||"").trim()||undefined,enabled:true,createdAt:Date.now()};
+  if(t==="encounter"){
+    const found=[...monsters,...SPECIAL_MONSTERS].find(m=>String(m.name).toLowerCase()===v.toLowerCase());
+    if(!found)return{ok:false,error:`Monster not found: **${v}**.`};
+    return{ok:true,def:{...base,monsterName:found.name},summary:`Immediate encounter: ${found.name}`};
+  }
+  if(t==="background"){
+    if(!H107_BACKGROUND_DEFS[v])return{ok:false,error:`Unknown background key: **${v}**.`};
+    return{ok:true,def:{...base,background:v},summary:`Background: ${H107_BACKGROUND_DEFS[v].name}`};
+  }
+  if(t==="points"){
+    const n=Math.floor(Number(v));
+    if(!Number.isFinite(n)||n<=0)return{ok:false,error:"Points must be a positive whole number."};
+    return{ok:true,def:{...base,amount:n},summary:`+${n} Hunter Points`};
+  }
+  if(t==="tokens"){
+    const n=Math.floor(Number(v));
+    if(!Number.isFinite(n)||n<=0)return{ok:false,error:"Tokens must be a positive whole number."};
+    return{ok:true,def:{...base,amount:n},summary:`+${n} Hunt Tokens`};
+  }
+  if(t==="merchant"){
+    if(!MERCHANT_TYPE_DEFINITIONS[v])return{ok:false,error:`Unknown merchant type: **${v}**.`};
+    return{ok:true,def:{...base,merchantType:v},summary:`Merchant: ${MERCHANT_TYPE_DEFINITIONS[v].name||v}`};
+  }
+  return{ok:false,error:"Unknown code type. Use `encounter`, `background`, `points`, `tokens`, or `merchant`."};
+}
+
+async function h107HandleAdminCodeCommand(message,content){
+  if(!message.member?.permissions.has(PermissionsBitField.Flags.Administrator)){
+    return message.reply("Only admins can manage Secret Codes.");
+  }
+
+  const raw=content.slice("!code".length).trim();
+  if(!raw)return message.reply(h107AdminCodeHelp());
+
+  const [subRaw,...restParts]=raw.split(/\s+/);
+  const sub=String(subRaw||"").toLowerCase();
+  const data=loadData();
+  const store=h107EnsureCodeStore(data);
+
+  if(sub==="list"){
+    const all=h107AllCodes(data);
+    const keys=Object.keys(all).sort();
+    if(!keys.length)return message.reply("🔐 No secret codes are configured.");
+    const lines=keys.map(code=>{
+      const def=all[code];
+      const builtin=Object.prototype.hasOwnProperty.call(H107_SECRET_CODES,code) && !Object.prototype.hasOwnProperty.call(store,code);
+      const status=h107CodeEnabled(def)?"✅ Enabled":"⛔ Disabled";
+      let reward=def.type||"unknown";
+      if(def.type==="encounter")reward=`Encounter: ${def.monsterName}`;
+      else if(def.type==="background")reward=`Background: ${def.background}`;
+      else if(def.type==="points")reward=`+${def.amount} points`;
+      else if(def.type==="tokens")reward=`+${def.amount} tokens`;
+      else if(def.type==="merchant")reward=`Merchant: ${def.merchantType}`;
+      return `**${code}** — ${status} • ${reward} • ${h107CodeRedemptionCount(data,code)} redeemed${builtin?" • built-in":""}`;
+    });
+    return message.reply(`🔐 **SECRET CODES**\n\n${lines.join("\n")}`);
+  }
+
+  if(sub==="create"){
+    // Preserve spaces in the value and allow an optional custom message after "|".
+    const afterCreate=raw.slice(subRaw.length).trim();
+    const pipeIndex=afterCreate.indexOf("|");
+    const left=(pipeIndex>=0?afterCreate.slice(0,pipeIndex):afterCreate).trim();
+    const messageText=(pipeIndex>=0?afterCreate.slice(pipeIndex+1):"").trim();
+    const m=left.match(/^(\S+)\s+(\S+)\s+(.+)$/);
+    if(!m)return message.reply(h107AdminCodeHelp());
+    const code=h107NormalizeCode(m[1]),type=m[2],value=m[3].trim();
+    if(!code)return message.reply("Code name cannot be empty.");
+    if(code===h107NormalizeCode(H107_COMMUNITY_RIDDLE.answer))return message.reply("That code is reserved for the active Community Riddle.");
+    const valid=h107ValidateAdminCodeDefinition(data,type,value,messageText);
+    if(!valid.ok)return message.reply(`❌ ${valid.error}`);
+    store[code]={...valid.def,createdBy:message.author.id};
+    saveData(data);
+    return message.reply(
+      `✅ **SECRET CODE CREATED**\n\n`+
+      `🔐 Code: **${code}**\n`+
+      `🎁 Reward: **${valid.summary}**\n`+
+      `♻️ Usage: **One time per player**\n`+
+      `⏳ Expiration: **Never**\n`+
+      `${messageText?`💬 Message: ${messageText}`:""}`
+    );
+  }
+
+  if(sub==="disable"){
+    const code=h107NormalizeCode(restParts[0]);
+    if(!code)return message.reply("Use `!code disable <CODE>`.");
+    // Built-ins can be overridden with a disabled data-backed definition.
+    const existing=h107GetCode(data,code);
+    if(!existing)return message.reply(`❌ Code **${code}** does not exist.`);
+    store[code]={...existing,enabled:false,disabledAt:Date.now(),disabledBy:message.author.id};
+    saveData(data);
+    return message.reply(`⛔ Secret code **${code}** is now disabled. Players can no longer redeem it.`);
+  }
+
+  if(sub==="delete"){
+    const code=h107NormalizeCode(restParts[0]);
+    if(!code)return message.reply("Use `!code delete <CODE>`.");
+    if(Object.prototype.hasOwnProperty.call(H107_SECRET_CODES,code)){
+      return message.reply(`❌ **${code}** is a built-in code and cannot be deleted with this command. You can disable it with \`!code disable ${code}\`.`);
+    }
+    if(!Object.prototype.hasOwnProperty.call(store,code))return message.reply(`❌ Admin-created code **${code}** does not exist.`);
+    delete store[code];
+    saveData(data);
+    return message.reply(`🗑️ Secret code **${code}** was deleted. Previous player redemption history is preserved.`);
+  }
+
+  return message.reply(h107AdminCodeHelp());
+}
+
+
 // ==================== H10.6.12 DISCORD TEXT-GAME MASTER SWITCH ====================
 // Admin semantics requested for Season 3:
 //   !disableoff  -> turn Discord text gameplay OFF
@@ -10662,6 +10816,7 @@ ${captureChoicesText(choices)}
     return message.reply("Unknown sandbox option. Use `!testhunt help`.");
   }
 
+  if(command==="!code"||command.startsWith("!code ")) return h107HandleAdminCodeCommand(message,content);
   if(command==="!bounty"||command==="!bountystatus"){const b=ensureBountyData(data);if(!b.active)return message.reply(b.status==="cooldown"&&b.nextAt>Date.now()?`📜 No bounty is active. The next bounty is expected <t:${Math.floor(b.nextAt/1000)}:R>.`:"📜 No bounty is currently posted.");const ready=bountyReadyAt(data,message.author.id),captured=b.status==="awaiting_turnin";return message.reply(`📜 **ACTIVE BOUNTY**\n\n🧙 Posted by: **${bountyNpc(data)?.name||"Unknown Hunter"}**\n🎯 Target: **${captured?bountyTarget(data)?.name:"UNKNOWN"}**\n🔎 ${bountyClue(data)}\n🎯 Your Target Chance: **${bountyTracker(data,message.author.id).chance}%**\n🧩 Your Clues Found: **${bountyTracker(data,message.author.id).clues}**\n👥 Participants: **${bountyCount(data)}**\n🏹 Attempts: **${b.attempts}**\n\n${captured?(b.trophyHolderId===message.author.id?"🏆 Use `!turninbounty` to return the trophy.":"🏆 Waiting for the catcher to return the trophy."):(Date.now()>=ready?"✅ Use `!bountyhunt` now.":`⏱️ Ready <t:${Math.floor(ready/1000)}:R>.`)}`)}
   if(command==="!bountyhunt"){
     const r=await performBountyHunt(data,message.author.id,message.channel);
@@ -13815,11 +13970,37 @@ const H107_BACKGROUND_DEFS=Object.freeze({
   galaxy:{name:"Mixer Galaxy",icon:"🌌",codeUnlock:"MIXER190",requirement:"Find the MIXER190 secret code"}
 });
 
-// Add future permanent one-time codes here.
+// Starter built-in codes. Admin-created codes are stored in save data and do
+// NOT require a redeploy. Built-ins remain available unless an admin-created
+// code with the same key overrides them.
 const H107_SECRET_CODES=Object.freeze({
   MIXER190:{type:"background",background:"galaxy",message:"The Mixer Galaxy background has been permanently unlocked."},
   RIFTHUNT:{type:"encounter",monsterName:"The Mixer",message:"A cosmic signal tears open an immediate special encounter."}
 });
+
+function h107EnsureCodeStore(data){
+  if(!data.h107SecretCodes || typeof data.h107SecretCodes!=="object") data.h107SecretCodes={};
+  return data.h107SecretCodes;
+}
+function h107AllCodes(data){
+  return {...H107_SECRET_CODES,...h107EnsureCodeStore(data)};
+}
+function h107GetCode(data,code){
+  const key=h107NormalizeCode(code);
+  const all=h107AllCodes(data);
+  return all[key]||null;
+}
+function h107CodeEnabled(def){
+  return def?.enabled!==false;
+}
+function h107CodeRedemptionCount(data,code){
+  const key=h107NormalizeCode(code);
+  let count=0;
+  for(const p of Object.values(data.players||{})){
+    if(Array.isArray(p?.h107UsedCodes) && p.h107UsedCodes.includes(key)) count++;
+  }
+  return count;
+}
 
 const H107_COMMUNITY_RIDDLE=Object.freeze({
   id:"nameless-merchant-1",
@@ -13894,8 +14075,9 @@ async function h107RedeemCode(user,raw){
     return{ok:true,type:"riddle",message:H107_COMMUNITY_RIDDLE.rewardText,riddle:h107RiddleState(data),merchantActive:true};
   }
 
-  const def=H107_SECRET_CODES[code];
+  const def=h107GetCode(data,code);
   if(!def)return{ok:false,code:"invalid",error:"That code is not recognized."};
+  if(!h107CodeEnabled(def))return{ok:false,code:"disabled",error:"That code is currently disabled."};
   if((player.h107UsedCodes||[]).includes(code))return{ok:false,code:"used",error:"You have already used that code."};
 
   if(def.type==="encounter"){

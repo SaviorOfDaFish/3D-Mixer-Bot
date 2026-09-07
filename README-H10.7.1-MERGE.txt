@@ -63,3 +63,37 @@ DEPLOY:
 3. Push origin.
 4. Wait for Railway to redeploy.
 5. Fully close and reopen the Discord Activity.
+
+
+H10.7.2 — ADMIN SECRET CODE MANAGER
+
+ADMIN-ONLY DISCORD COMMANDS:
+- !code create
+- !code list
+- !code disable
+- !code delete
+
+CREATE SYNTAX:
+!code create <CODE> <type> <value...> | optional success message
+
+SUPPORTED TYPES:
+- encounter <monster name>
+- background <background key>
+- points <amount>
+- tokens <amount>
+- merchant <merchant type>
+
+EXAMPLES:
+!code create GNOMEPOWER encounter The Buried Emperor | Something huge stirs below...
+!code create MOONLIGHT background moonfen | Moonfen background unlocked!
+!code create THANKYOU tokens 10 | Thanks for playing!
+!code create SECRETSELLER merchant nameless | A secret merchant has appeared.
+
+RULES:
+- Admin-created codes are stored in the live save data. No redeploy is needed to create them.
+- Codes never expire.
+- Each code can be redeemed only once per player.
+- !code list shows enabled/disabled status, reward type, and redemption count.
+- !code disable stops future redemptions without deleting the code.
+- !code delete permanently removes an admin-created code, but does not erase players' prior redemption history.
+- Built-in codes such as MIXER190 and RIFTHUNT cannot be deleted; they can be disabled.
