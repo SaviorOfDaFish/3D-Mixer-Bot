@@ -3802,3 +3802,88 @@ body.background-view-only::after{
   .h107-background-card{min-height:124px;}
 }
 
+
+/* =====================================================================
+   H10.7.6 — BACKGROUND IMAGE + SERVER RECORDS FIX
+   ===================================================================== */
+
+/* Background preview art is now a literal background-image set by JS. */
+.h107-background-card .h107-bg-art{
+  background-position:center !important;
+  background-size:cover !important;
+  background-repeat:no-repeat !important;
+}
+
+/* Make the global selected background visibly fill the Activity. */
+body::before{
+  background:var(--h107-player-bg) !important;
+  background-position:center !important;
+  background-size:cover !important;
+  background-repeat:no-repeat !important;
+  background-attachment:fixed !important;
+}
+
+/* Server Records now displays the actual server Top 5 in every category. */
+.h107-record-card-list{
+  display:block !important;
+  padding:14px !important;
+}
+.h107-record-title-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding-bottom:10px;
+  margin-bottom:7px;
+  border-bottom:1px solid rgba(148,163,184,.20);
+}
+.h107-record-title-row h3{
+  margin:0;
+  font-size:.96rem;
+}
+.h107-record-leaders{
+  display:grid;
+  gap:6px;
+}
+.h107-record-rank{
+  display:grid;
+  grid-template-columns:34px minmax(100px,.85fr) minmax(120px,1.15fr);
+  gap:8px;
+  align-items:center;
+  padding:7px 8px;
+  border-radius:9px;
+  background:rgba(2,6,23,.24);
+  font-size:.76rem;
+}
+.h107-rank-number{
+  font-weight:1000;
+  color:#a5b4fc;
+}
+.h107-rank-name{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-weight:900;
+  color:#f8fafc;
+}
+.h107-rank-value{
+  min-width:0;
+  color:#c7d2fe;
+  text-align:right;
+  overflow-wrap:anywhere;
+}
+.h107-record-empty{
+  padding:9px;
+  color:#94a3b8;
+  font-size:.78rem;
+}
+@media(max-width:620px){
+  .h107-record-rank{
+    grid-template-columns:30px minmax(0,1fr);
+  }
+  .h107-rank-value{
+    grid-column:2;
+    text-align:left;
+  }
+}
+

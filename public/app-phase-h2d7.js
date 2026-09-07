@@ -4248,27 +4248,42 @@ document.getElementById("h1066RerollQuests")?.addEventListener("click",()=>h1066
 let h107SecretsState=null;
 function h107OpenCodeModal(prefill=""){const m=document.getElementById("h107CodeModal"),i=document.getElementById("h107CodeInput"),s=document.getElementById("h107CodeStatus");if(!m)return;m.classList.remove("hidden");if(i){i.value=prefill;setTimeout(()=>i.focus(),50)}if(s)s.textContent=""}
 function h107CloseCodeModal(){document.getElementById("h107CodeModal")?.classList.add("hidden")}
-function h107ApplyBackground(key){document.body.dataset.h107Background=String(key||"camp")}
+function h107ApplyBackground(key,data=null){
+  document.body.dataset.h107Background=String(key||"camp");
+
+  const source=data?.backgrounds?.find?.(bg=>bg.key===key)
+    || h107SecretsState?.backgrounds?.backgrounds?.find?.(bg=>bg.key===key)
+    || null;
+
+  if(source?.image){
+    const image=`url("${source.image}")`;
+    const extra=source.galaxyOverlay
+      ? 'radial-gradient(circle at 20% 15%,rgba(56,189,248,.34),transparent 22rem),radial-gradient(circle at 78% 30%,rgba(168,85,247,.38),transparent 26rem),'
+      : '';
+    document.body.style.setProperty("--h107-player-bg",`${extra}linear-gradient(rgba(2,6,23,.12),rgba(2,6,23,.42)),${image} center / cover no-repeat fixed`);
+  }
+}
+
 function h107RenderBackgrounds(d){
   if(!d)return;
-  h107ApplyBackground(d.equipped||"camp");
+  h107SecretsState={...(h107SecretsState||{}),backgrounds:d};
+  h107ApplyBackground(d.equipped||"camp",d);
 
   const h=document.getElementById("h107BackgroundGrid");
   if(!h)return;
 
   h.innerHTML=(d.backgrounds||[]).map(bg=>{
-    const styleParts=[];
-    if(bg.image) styleParts.push(`--h107-card-art:url("${escapeHtml(bg.image)}")`);
-    if(bg.cssBackground) styleParts.push(`--h107-card-css:${String(bg.cssBackground).replace(/"/g,"&quot;")}`);
-    const styleAttr=styleParts.length?` style="${styleParts.join(";")}"`:"";
+    const artStyle=bg.image
+      ? `background-image:${bg.galaxyOverlay?'radial-gradient(circle at 20% 15%,rgba(56,189,248,.35),transparent 34%),radial-gradient(circle at 78% 30%,rgba(168,85,247,.38),transparent 36%),':''}url(&quot;${escapeHtml(bg.image)}&quot;);`
+      : "";
 
     return `
       <button
-        class="h107-background-card ${bg.unlocked?"unlocked":"locked"} ${bg.equipped?"equipped":""} ${(bg.image||bg.cssBackground)?"has-art":""}"
+        class="h107-background-card ${bg.unlocked?"unlocked":"locked"} ${bg.equipped?"equipped":""} ${bg.image?"has-art":""}"
         data-h107-bg="${escapeHtml(bg.key)}"
-        ${bg.unlocked?"":"disabled"}${styleAttr}
+        ${bg.unlocked?"":"disabled"}
       >
-        <span class="h107-bg-art" aria-hidden="true"></span>
+        <span class="h107-bg-art" aria-hidden="true" style="${artStyle}"></span>
         <span class="h107-bg-overlay" aria-hidden="true"></span>
         <span class="h107-bg-content">
           <span class="h107-bg-icon">${bg.icon||"🖼️"}</span>
@@ -4284,9 +4299,40 @@ function h107RenderBackgrounds(d){
   });
 }
 
-async function h107LoadSecrets(){try{const r=await activityFetch("/api/activity/secrets"),p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Could not load Secrets & Discovery.");h107SecretsState=p;h107RenderBackgrounds(p.backgrounds);h107RenderRiddle(p.riddle);h107ApplyBackground(p.backgrounds?.equipped||"camp");return p}catch(e){const s=document.getElementById("h107BackgroundStatus");if(s)s.textContent=`❌ ${e.message}`;return null}}
+async function h107LoadSecrets(){try{const r=await activityFetch("/api/activity/secrets"),p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Could not load Secrets & Discovery.");h107SecretsState=p;h107RenderBackgrounds(p.backgrounds);h107RenderRiddle(p.riddle);h107ApplyBackground(p.backgrounds?.equipped||"camp",p.backgrounds);return p}catch(e){const s=document.getElementById("h107BackgroundStatus");if(s)s.textContent=`❌ ${e.message}`;return null}}
 async function h107EquipBackground(key){const s=document.getElementById("h107BackgroundStatus");if(s)s.textContent="Equipping background…";try{const r=await activityFetch("/api/activity/background/equip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key})}),p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Could not equip background.");h107RenderBackgrounds(p.backgrounds);if(s)s.textContent=`✅ ${p.message}`}catch(e){if(s)s.textContent=`❌ ${e.message}`}}
-async function h107LoadRecords(){const h=document.getElementById("h107RecordGrid");if(h)h.innerHTML='<div class="empty-state">Loading server records…</div>';try{const r=await activityFetch("/api/activity/records"),p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Could not load records.");if(h)h.innerHTML=(p.records||[]).map(x=>`<article class="h107-record-card"><span class="h107-record-icon">${x.icon||"🏆"}</span><div class="h107-record-copy"><h3>${escapeHtml(x.title)}</h3><p class="h107-record-holder">${escapeHtml(x.holder)}</p><div class="h107-record-value">${escapeHtml(x.value)}</div></div></article>`).join("")}catch(e){if(h)h.innerHTML=`<div class="empty-state">❌ ${escapeHtml(e.message)}</div>`}}
+async function h107LoadRecords(){
+  const h=document.getElementById("h107RecordGrid");
+  if(h)h.innerHTML='<div class="empty-state">Loading server records…</div>';
+  try{
+    const r=await activityFetch("/api/activity/records"),p=await r.json();
+    if(!r.ok||!p.ok)throw new Error(p.error||"Could not load records.");
+
+    if(h)h.innerHTML=(p.records||[]).map(x=>{
+      const leaders=Array.isArray(x.leaders)?x.leaders:[];
+      const rows=leaders.length
+        ? leaders.map((leader,i)=>`
+            <div class="h107-record-rank">
+              <span class="h107-rank-number">#${i+1}</span>
+              <span class="h107-rank-name">${escapeHtml(leader.name)}</span>
+              <span class="h107-rank-value">${escapeHtml(leader.value)}</span>
+            </div>`).join("")
+        : `<div class="h107-record-empty">${escapeHtml(x.value||"No record yet")}</div>`;
+
+      return `
+        <article class="h107-record-card h107-record-card-list">
+          <div class="h107-record-title-row">
+            <span class="h107-record-icon">${x.icon||"🏆"}</span>
+            <h3>${escapeHtml(x.title)}</h3>
+          </div>
+          <div class="h107-record-leaders">${rows}</div>
+        </article>`;
+    }).join("");
+  }catch(e){
+    if(h)h.innerHTML=`<div class="empty-state">❌ ${escapeHtml(e.message)}</div>`;
+  }
+}
+
 function h107OpenEncounter(p){
   if(!p?.encounterReady||!p.monster)return;
 
