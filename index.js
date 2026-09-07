@@ -2557,13 +2557,34 @@ function getPlayer(data, userId) {
       merchantCollection: {},
       merchantPurchases: [],
       merchantEffects: {},
-      merchantGambles: 0
+      merchantGambles: 0,
+      h107UsedCodes: [],
+      h107Background: "camp",
+      h107Records: {
+        currentCatchStreak: 0,
+        longestCatchStreak: 0,
+        currentPhysicalD100SuccessStreak: 0,
+        longestPhysicalD100SuccessStreak: 0,
+        bestPhysicalRoll: 0
+      }
     };
   }
 
   
 
   const player = data.players[userId];
+
+  // H10.7: Secrets, backgrounds, and record-state migration.
+  if (!Array.isArray(player.h107UsedCodes)) player.h107UsedCodes = [];
+  if (!player.h107Background) player.h107Background = "camp";
+  if (!player.h107Records || typeof player.h107Records !== "object") player.h107Records = {};
+  for (const [key,value] of Object.entries({
+    currentCatchStreak:0,
+    longestCatchStreak:0,
+    currentPhysicalD100SuccessStreak:0,
+    longestPhysicalD100SuccessStreak:0,
+    bestPhysicalRoll:0
+  })) if (!Number.isFinite(Number(player.h107Records[key]))) player.h107Records[key]=value;
 
   // H10.6.20: migrate the old points-based Hunter Level into permanent Hunter XP once.
   // This preserves each hunter's current visible level/progress at deployment, then
@@ -4270,6 +4291,20 @@ async function performCaptureAttempt(message, userId, itemKey = null, options = 
   const event = getActiveEvent();
 
   if (caught) {
+    // H10.7 Server Records.
+    if (!Number.isFinite(Number(monster.specimenScale))) {
+      const raritySizeBonus=({Common:0,Rare:2,Epic:4,Legendary:7,Mythic:10,Secret:12,Mixed:12,"Ultra Rare":15})[monster.rarity]||0;
+      monster.specimenScale=Math.max(72,Math.min(145,82+Math.floor(Math.random()*39)+raritySizeBonus));
+    }
+    player.h107Records ||= {};
+    player.h107Records.currentCatchStreak=Number(player.h107Records.currentCatchStreak||0)+1;
+    player.h107Records.longestCatchStreak=Math.max(Number(player.h107Records.longestCatchStreak||0),player.h107Records.currentCatchStreak);
+    if(hasPhysicalRoll){
+      player.h107Records.currentPhysicalD100SuccessStreak=Number(player.h107Records.currentPhysicalD100SuccessStreak||0)+1;
+      player.h107Records.longestPhysicalD100SuccessStreak=Math.max(Number(player.h107Records.longestPhysicalD100SuccessStreak||0),player.h107Records.currentPhysicalD100SuccessStreak);
+      player.h107Records.bestPhysicalRoll=Math.max(Number(player.h107Records.bestPhysicalRoll||0),roll);
+    }
+
     let pointsEarned = monster.points;
     // Double Points Day was removed for Season 2 balance. Hunter's Fortune is a
     // true flat +2 that is added AFTER multipliers, so high-frequency hunters
@@ -4524,6 +4559,14 @@ async function performCaptureAttempt(message, userId, itemKey = null, options = 
       ).catch(() => null);
     }
     return captureReply;
+  }
+
+  // H10.7: a failed capture ends the applicable streaks.
+  player.h107Records ||= {};
+  player.h107Records.currentCatchStreak=0;
+  if(hasPhysicalRoll){
+    player.h107Records.currentPhysicalD100SuccessStreak=0;
+    player.h107Records.bestPhysicalRoll=Math.max(Number(player.h107Records.bestPhysicalRoll||0),roll);
   }
 
   const failureSig = getSignaturePet(player);
@@ -13752,6 +13795,146 @@ let bountyMonitorBusy=false;
 async function bountyMonitor(){if(bountyMonitorBusy)return;bountyMonitorBusy=true;try{const d=loadData(),b=ensureBountyData(d);if(!b.active&&b.status==="cooldown"&&b.nextAt&&Date.now()>=b.nextAt){startBounty(d);saveData(d);const ch=await getAnnouncementChannel();if(ch?.isTextBased())await announceBountyStart(ch,d)}}catch(e){console.error("Bounty monitor failed:",e)}finally{bountyMonitorBusy=false}}
 setInterval(()=>bountyMonitor().catch(console.error),60*1000);
 
+
+// ==================== H10.7 SECRETS & DISCOVERY ====================
+// Normal codes never expire and are one-time use PER PLAYER.
+// The community-riddle answer is a one-time GLOBAL solve.
+
+const H107_BACKGROUND_DEFS=Object.freeze({
+  camp:{name:"Hunter Camp",icon:"🏕️",requirement:"Starter background",starter:true},
+  moonfen:{name:"Moonfen",icon:"🌙",habitat:"Moonfen",requirement:"Capture a Moonfen monster"},
+  glasswaste:{name:"Glasswaste",icon:"💎",habitat:"Glasswaste",requirement:"Capture a Glasswaste monster"},
+  gloamwood:{name:"Gloamwood",icon:"🌲",habitat:"Gloamwood",requirement:"Capture a Gloamwood monster"},
+  stormreach:{name:"Stormreach",icon:"⛈️",habitat:"Stormreach",requirement:"Capture a Stormreach monster"},
+  emberdeep:{name:"Emberdeep",icon:"🔥",habitat:"Emberdeep",requirement:"Capture an Emberdeep monster"},
+  frostgrave:{name:"Frostgrave",icon:"❄️",habitat:"Frostgrave",requirement:"Capture a Frostgrave monster"},
+  sporewilds:{name:"Sporewilds",icon:"🍄",habitat:"Sporewilds",requirement:"Capture a Sporewilds monster"},
+  starfall:{name:"Starfall Basin",icon:"🌠",habitat:"Starfall Basin",requirement:"Capture a Starfall Basin monster"},
+  mirror:{name:"Mirror Scar",icon:"🪞",habitat:"Mirror Scar",requirement:"Capture a Mirror Scar monster"},
+  blackbloom:{name:"Black Bloom",icon:"🌑",habitat:"Black Bloom",requirement:"Capture a Black Bloom monster"},
+  galaxy:{name:"Mixer Galaxy",icon:"🌌",codeUnlock:"MIXER190",requirement:"Find the MIXER190 secret code"}
+});
+
+// Add future permanent one-time codes here.
+const H107_SECRET_CODES=Object.freeze({
+  MIXER190:{type:"background",background:"galaxy",message:"The Mixer Galaxy background has been permanently unlocked."},
+  RIFTHUNT:{type:"encounter",monsterName:"The Mixer",message:"A cosmic signal tears open an immediate special encounter."}
+});
+
+const H107_COMMUNITY_RIDDLE=Object.freeze({
+  id:"nameless-merchant-1",
+  title:"The Merchant With No Name",
+  clue:"I arrive without footsteps, sell what should not exist, and leave without a name. Who am I?",
+  answer:"NAMELESS",
+  merchantType:"nameless",
+  rewardText:"The Nameless Merchant has appeared for the entire server."
+});
+
+function h107NormalizeCode(v){return String(v||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"");}
+
+function h107BackgroundUnlocked(player,key){
+  const def=H107_BACKGROUND_DEFS[key]; if(!def)return false;
+  if(def.starter)return true;
+  if(def.codeUnlock)return (player.h107UsedCodes||[]).includes(h107NormalizeCode(def.codeUnlock));
+  if(def.habitat)return (player.lifetimeCaught||player.caught||[]).some(m=>String(m.habitat||"").toLowerCase()===String(def.habitat).toLowerCase());
+  return false;
+}
+function h107BackgroundPayload(player){
+  const equipped=h107BackgroundUnlocked(player,player.h107Background)?player.h107Background:"camp";
+  player.h107Background=equipped;
+  return {equipped,backgrounds:Object.entries(H107_BACKGROUND_DEFS).map(([key,d])=>({
+    key,name:d.name,icon:d.icon,requirement:d.requirement,unlocked:h107BackgroundUnlocked(player,key),equipped:key===equipped
+  }))};
+}
+function h107RiddleState(data){
+  data.h107CommunityRiddles ||= {};
+  const s=data.h107CommunityRiddles[H107_COMMUNITY_RIDDLE.id]||{};
+  return {id:H107_COMMUNITY_RIDDLE.id,title:H107_COMMUNITY_RIDDLE.title,clue:H107_COMMUNITY_RIDDLE.clue,
+    solved:Boolean(s.solved),solvedAt:Number(s.solvedAt||0),solverName:s.solverName||null,rewardText:H107_COMMUNITY_RIDDLE.rewardText};
+}
+function h107ActivateMerchant(data,type="nameless"){
+  ensureBigGameMerchantData(data);
+  const actual=MERCHANT_TYPE_DEFINITIONS[type]?type:"nameless",def=MERCHANT_TYPE_DEFINITIONS[actual],now=Date.now();
+  data.merchant={...data.merchant,active:true,type:actual,scheduleId:`secret-${now}`,scheduledWeekKey:getMountainWeekKey(),
+    arrivalAt:now,departureAt:now+Number(def.durationHours||2)*60*60*1000,inventory:generateMerchantInventory(actual,false),
+    reminderSent:true,specialAt:0,specialDone:true,clearance:false,lastVisitAt:now};
+  return data.merchant;
+}
+function h107BuildImmediateEncounter(data,user,monsterName,code){
+  const player=getPlayer(data,user.id);
+  if(player.currentMonster)return{ok:false,code:"active_encounter",error:"Finish or leave your current encounter before using an encounter code."};
+  const src=[...monsters,...SPECIAL_MONSTERS].find(m=>String(m.name).toLowerCase()===String(monsterName).toLowerCase());
+  if(!src)return{ok:false,code:"missing_monster",error:"That secret encounter is not configured correctly."};
+  prepareSignatureForHunt(player);
+  let monster=applyShiny({...src},player);
+  monster={...monster,codeEncounter:true,secretCode:code};
+  const encounters=addEncounterKnowledge(player,monster),chanceInfo=calculateCaptureChance(player,monster,null,data,user.id);
+  player.currentMonster=monster; player.huntCount=Number(player.huntCount||0)+1; updateQuestProgress(player,"hunt");
+  const choices=buildCaptureChoices(player,monster,data,user.id).map(c=>({number:c.number,itemKey:c.itemKey,label:c.label,chance:c.chance}));
+  return {ok:true,encounterReady:true,monster:{...monster,imageUrl:activityMonsterImageUrl(monster)},chance:Number(chanceInfo.total||0),
+    baseChance:Number(monster.chance||0),chanceBreakdown:{base:Number(chanceInfo.base||monster.chance||0),knowledge:Number(chanceInfo.knowledgeBonus||0),
+    event:Number(chanceInfo.eventBonus||0),pet:Number(chanceInfo.petBonus||0),comeback:Number(chanceInfo.comebackBonus||0),item:Number(chanceInfo.itemBonus||0),
+    total:Number(chanceInfo.total||0),guaranteed:Boolean(chanceInfo.guaranteed)},companion:h10630ActivityCompanionSnapshot(player),choices,
+    player:activityPlayerPayload(data,user).hunter,encounters};
+}
+async function h107RedeemCode(user,raw){
+  const code=h107NormalizeCode(raw); if(!code)return{ok:false,code:"empty",error:"Enter a secret code."};
+  const data=loadData(),player=getPlayer(data,user.id); ensureActivityProfile(player,user);
+
+  if(code===h107NormalizeCode(H107_COMMUNITY_RIDDLE.answer)){
+    const state=h107RiddleState(data);
+    if(state.solved)return{ok:false,code:"riddle_solved",error:`This community riddle was already solved${state.solverName?` by ${state.solverName}`:""}.`};
+    const merchant=h107ActivateMerchant(data,H107_COMMUNITY_RIDDLE.merchantType);
+    data.h107CommunityRiddles[H107_COMMUNITY_RIDDLE.id]={solved:true,solvedAt:Date.now(),solverId:user.id,solverName:user.global_name||user.username||"A Hunter"};
+    saveData(data);
+    const ch=await getAnnouncementChannel().catch(()=>null);
+    if(ch?.isTextBased())await sendRoleImageAnnouncement(ch,
+      `🧩 **COMMUNITY RIDDLE SOLVED!**\n\n**${user.global_name||user.username||"A Hunter"}** solved **${H107_COMMUNITY_RIDDLE.title}**.\n\n❓ **The Nameless Merchant has appeared.**\nThe merchant will remain <t:${Math.floor(merchant.departureAt/1000)}:R>.`,
+      MERCHANT_TYPE_DEFINITIONS.nameless.image,H4_MERCHANT_ALERT_ROLE_ID).catch(()=>null);
+    return{ok:true,type:"riddle",message:H107_COMMUNITY_RIDDLE.rewardText,riddle:h107RiddleState(data),merchantActive:true};
+  }
+
+  const def=H107_SECRET_CODES[code];
+  if(!def)return{ok:false,code:"invalid",error:"That code is not recognized."};
+  if((player.h107UsedCodes||[]).includes(code))return{ok:false,code:"used",error:"You have already used that code."};
+
+  if(def.type==="encounter"){
+    const encounter=h107BuildImmediateEncounter(data,user,def.monsterName,code);
+    if(!encounter.ok)return encounter;
+    player.h107UsedCodes.push(code); saveData(data);
+    return{...encounter,type:def.type,message:def.message};
+  }
+  if(def.type==="background"){player.h107UsedCodes.push(code);player.h107Background=def.background;saveData(data);
+    return{ok:true,type:def.type,message:def.message,backgrounds:h107BackgroundPayload(player)};}
+  if(def.type==="points")player.points=Number(player.points||0)+Number(def.amount||0);
+  if(def.type==="tokens"){player.huntTokens=Number(player.huntTokens||0)+Number(def.amount||0);player.lifetimeTokens=Number(player.lifetimeTokens||0)+Number(def.amount||0);}
+  if(def.type==="merchant"){const m=h107ActivateMerchant(data,def.merchantType||"nameless");player.h107UsedCodes.push(code);saveData(data);
+    return{ok:true,type:def.type,message:def.message||"A secret merchant has appeared.",merchantActive:true,merchantEndsAt:m.departureAt};}
+  player.h107UsedCodes.push(code);saveData(data);return{ok:true,type:def.type,message:def.message||"Code redeemed!"};
+}
+function h107RarityRank(r){return({Common:1,Rare:2,Epic:3,Legendary:4,Event:5,Mixed:6,Mythic:7,Secret:8,"Ultra Rare":9})[r]||0;}
+function h107PlayerName(p,id){return p.discordDisplayName||p.discordUsername||`Hunter ${String(id).slice(-4)}`;}
+function h107ServerRecordsPayload(data){
+  const rows=Object.entries(data.players||{}).map(([id])=>({id,p:getPlayer(data,id)})),all=[];
+  for(const x of rows)for(const monster of(x.p.lifetimeCaught||x.p.caught||[]))all.push({...x,monster});
+  const top=fn=>rows.slice().sort((a,b)=>fn(b.p,b.id)-fn(a.p,a.id))[0]||null;
+  const biggest=all.filter(x=>Number.isFinite(Number(x.monster.specimenScale))).sort((a,b)=>Number(b.monster.specimenScale)-Number(a.monster.specimenScale))[0]||null;
+  const rarest=all.slice().sort((a,b)=>h107RarityRank(b.monster.rarity)-h107RarityRank(a.monster.rarity)||Number(b.monster.points||0)-Number(a.monster.points||0))[0]||null;
+  const bc={};for(const e of(data.bounty?.history||[]))if(e?.catcherId)bc[e.catcherId]=Number(bc[e.catcherId]||0)+1;
+  const bt=rows.slice().sort((a,b)=>Number(bc[b.id]||0)-Number(bc[a.id]||0))[0]||null,st=top(p=>Number(p.h107Records?.longestCatchStreak||0)),
+    dt=top(p=>Number(p.h107Records?.longestPhysicalD100SuccessStreak||0)),ct=top(p=>(p.lifetimeCaught||p.caught||[]).length);
+  return{ok:true,records:[
+    {icon:"📏",title:"Biggest Monster",holder:biggest?h107PlayerName(biggest.p,biggest.id):"No record yet",value:biggest?`${biggest.monster.name} • ${Number(biggest.monster.specimenScale)}% specimen`:"New size tracking begins now"},
+    {icon:"📜",title:"Most Bounties",holder:bt?h107PlayerName(bt.p,bt.id):"No record yet",value:bt?`${Number(bc[bt.id]||0)} completed`:"0 completed"},
+    {icon:"💎",title:"Rarest Catch",holder:rarest?h107PlayerName(rarest.p,rarest.id):"No record yet",value:rarest?`${rarest.monster.name} • ${rarest.monster.rarity}`:"No catches yet"},
+    {icon:"🔥",title:"Longest Catch Streak",holder:st?h107PlayerName(st.p,st.id):"No record yet",value:st?`${Number(st.p.h107Records?.longestCatchStreak||0)} catches`:"0 catches"},
+    {icon:"🎲",title:"Longest Physical D100 Success Streak",holder:dt?h107PlayerName(dt.p,dt.id):"No record yet",value:dt?`${Number(dt.p.h107Records?.longestPhysicalD100SuccessStreak||0)} successful rolls`:"0 successful rolls"},
+    {icon:"🏹",title:"Most Lifetime Catches",holder:ct?h107PlayerName(ct.p,ct.id):"No record yet",value:ct?`${(ct.p.lifetimeCaught||ct.p.caught||[]).length} catches`:"0 catches"}
+  ]};
+}
+function h107SecretsPayload(data,userId){const p=getPlayer(data,userId);return{ok:true,usedCodeCount:(p.h107UsedCodes||[]).length,backgrounds:h107BackgroundPayload(p),riddle:h107RiddleState(data)};}
+
+
 function activityLiveEventsPayload(data, userId) {
   const now = Date.now();
   const daily = getActiveEvent();
@@ -15307,6 +15490,16 @@ const activityServer = http.createServer(async (req, res) => {
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/live-events") {
         const data=loadData();
         return activityJson(res,activityLiveEventsPayload(data,user.id));
+      }
+
+      if(req.method==="GET"&&requestUrl.pathname==="/api/activity/secrets"){const d=loadData();return activityJson(res,h107SecretsPayload(d,user.id));}
+      if(req.method==="POST"&&requestUrl.pathname==="/api/activity/code/redeem"){const body=await readRequestJson(req),result=await h107RedeemCode(user,body.code);return activityJson(res,result,result.ok?200:400);}
+      if(req.method==="GET"&&requestUrl.pathname==="/api/activity/records"){const d=loadData();return activityJson(res,h107ServerRecordsPayload(d));}
+      if(req.method==="POST"&&requestUrl.pathname==="/api/activity/background/equip"){
+        const body=await readRequestJson(req),d=loadData(),p=getPlayer(d,user.id),key=String(body.key||"camp");
+        if(!H107_BACKGROUND_DEFS[key])return activityJson(res,{ok:false,error:"Unknown background."},400);
+        if(!h107BackgroundUnlocked(p,key))return activityJson(res,{ok:false,error:"That background is still locked."},400);
+        p.h107Background=key;saveData(d);return activityJson(res,{ok:true,message:`${H107_BACKGROUND_DEFS[key].name} equipped.`,backgrounds:h107BackgroundPayload(p)});
       }
 
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/notifications") {
