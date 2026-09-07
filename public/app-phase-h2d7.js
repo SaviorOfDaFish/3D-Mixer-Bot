@@ -4254,7 +4254,61 @@ function h107RenderRiddle(r){if(!r)return;const t=document.getElementById("h107R
 async function h107LoadSecrets(){try{const r=await activityFetch("/api/activity/secrets"),p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Could not load Secrets & Discovery.");h107SecretsState=p;h107RenderBackgrounds(p.backgrounds);h107RenderRiddle(p.riddle);h107ApplyBackground(p.backgrounds?.equipped||"camp");return p}catch(e){const s=document.getElementById("h107BackgroundStatus");if(s)s.textContent=`❌ ${e.message}`;return null}}
 async function h107EquipBackground(key){const s=document.getElementById("h107BackgroundStatus");if(s)s.textContent="Equipping background…";try{const r=await activityFetch("/api/activity/background/equip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key})}),p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Could not equip background.");h107RenderBackgrounds(p.backgrounds);if(s)s.textContent=`✅ ${p.message}`}catch(e){if(s)s.textContent=`❌ ${e.message}`}}
 async function h107LoadRecords(){const h=document.getElementById("h107RecordGrid");if(h)h.innerHTML='<div class="empty-state">Loading server records…</div>';try{const r=await activityFetch("/api/activity/records"),p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Could not load records.");if(h)h.innerHTML=(p.records||[]).map(x=>`<article class="h107-record-card"><span class="h107-record-icon">${x.icon||"🏆"}</span><div class="h107-record-copy"><h3>${escapeHtml(x.title)}</h3><p class="h107-record-holder">${escapeHtml(x.holder)}</p><div class="h107-record-value">${escapeHtml(x.value)}</div></div></article>`).join("")}catch(e){if(h)h.innerHTML=`<div class="empty-state">❌ ${escapeHtml(e.message)}</div>`}}
-function h107OpenEncounter(p){if(!p?.encounterReady||!p.monster)return;navTo("hunt");activeHuntZone={key:"secret-code",name:p.monster.habitat||"Secret Encounter",subtitle:"Secret Code Encounter"};huntAttemptNumber=1;currentEncounter={...p.monster,baseChance:p.baseChance,chance:Number(p.chance??p.baseChance??p.monster.chance??0),chanceBreakdown:p.chanceBreakdown||null,companion:p.companion||null,image:p.monster.imageUrl||(p.monster.image?`/assets/monsters/${p.monster.image}`:null)};hunter={...hunter,...(p.player||{})};phaseFHunting.captureTools=(p.choices||[]).map(c=>({key:c.itemKey||"none",name:c.itemKey?c.label:"Secret Hunt",icon:c.itemKey==="berry"?"🍓":c.itemKey==="honey"?"🍯":c.itemKey==="net"?"🕸️":c.itemKey==="masterCharm"?"🌟":"🔐",bonus:0,uses:c.itemKey?Number(hunter.captureItems?.[c.itemKey]||0):null,liveChance:c.chance}));populateEncounterPage();const ce=document.getElementById("encounterCatchChance");if(ce)ce.textContent=`${p.chance}%`;if(typeof h10631RenderChanceBreakdown==="function")h10631RenderChanceBreakdown();showHuntStep("encounter")}
+function h107OpenEncounter(p){
+  if(!p?.encounterReady||!p.monster)return;
+
+  // H10.7.3: DO NOT call navTo("hunt") here.
+  // navTo("hunt") asynchronously refreshes Hunt and renderPhaseFHunting()
+  // forces the page back to the Hunt Overview. That race was why RIFTHUNT
+  // redeemed successfully but appeared not to open its encounter.
+  currentScreen="hunt";
+  document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("active",s.dataset.screen==="hunt"));
+  document.querySelectorAll(".bottom-nav [data-nav]").forEach(b=>b.classList.toggle("nav-active",b.dataset.nav==="hunt"));
+  const scroll=document.getElementById("pageScroll");
+  if(scroll)scroll.scrollTop=0;
+
+  activeHuntZone={
+    key:"secret-code",
+    name:p.monster.habitat||"Secret Encounter",
+    subtitle:"Secret Code Encounter"
+  };
+  huntAttemptNumber=1;
+  selectedHuntMethod=null;
+  selectedCaptureTool=null;
+  currentRoll=null;
+  rimebitSecondChanceUsed=false;
+
+  currentEncounter={
+    ...p.monster,
+    baseChance:p.baseChance,
+    chance:Number(p.chance??p.baseChance??p.monster.chance??0),
+    chanceBreakdown:p.chanceBreakdown||null,
+    companion:p.companion||null,
+    image:p.monster.imageUrl||(p.monster.image?`/assets/monsters/${p.monster.image}`:null)
+  };
+
+  hunter={...hunter,...(p.player||{})};
+
+  // Keep the normal live capture tools intact while using the server-provided
+  // chances/options for this secret encounter.
+  if(Array.isArray(p.choices)&&p.choices.length){
+    phaseFHunting.captureTools=p.choices.map(c=>({
+      key:c.itemKey||"none",
+      name:c.itemKey?c.label:"Secret Hunt",
+      icon:c.itemKey==="berry"?"🍓":c.itemKey==="honey"?"🍯":c.itemKey==="net"?"🕸️":c.itemKey==="masterCharm"?"🌟":"🔐",
+      bonus:0,
+      uses:c.itemKey?Number(hunter.captureItems?.[c.itemKey]||0):null,
+      liveChance:c.chance
+    }));
+  }
+
+  populateEncounterPage();
+  const chanceEl=document.getElementById("encounterCatchChance");
+  if(chanceEl)chanceEl.textContent=`${p.chance}%`;
+  if(typeof h10631RenderChanceBreakdown==="function")h10631RenderChanceBreakdown();
+  showHuntStep("encounter");
+}
+
 async function h107RedeemCode(){const i=document.getElementById("h107CodeInput"),s=document.getElementById("h107CodeStatus"),b=document.getElementById("h107RedeemCode"),code=String(i?.value||"").trim();if(!code){if(s)s.textContent="Enter a code first.";return}if(b){b.disabled=true;b.textContent="Checking…"}if(s)s.textContent="Searching the Monster Hunt archives…";try{const r=await activityFetch("/api/activity/code/redeem",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})}),p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"That code could not be redeemed.");if(s)s.textContent=`✅ ${p.message||"Code redeemed!"}`;if(p.backgrounds)h107RenderBackgrounds(p.backgrounds);if(p.riddle)h107RenderRiddle(p.riddle);await h107LoadSecrets();if(p.encounterReady)setTimeout(()=>{h107CloseCodeModal();h107OpenEncounter(p)},450);else if(p.merchantActive)setTimeout(()=>{h107CloseCodeModal();navTo("merchant");if(typeof refreshH2BMerchant==="function")refreshH2BMerchant()},600)}catch(e){if(s)s.textContent=`❌ ${e.message}`}finally{if(b){b.disabled=false;b.textContent="✨ Redeem Code"}}}
 (function(){document.getElementById("h107OpenCode")?.addEventListener("click",()=>h107OpenCodeModal());document.getElementById("h107CloseCode")?.addEventListener("click",h107CloseCodeModal);document.getElementById("h107RedeemCode")?.addEventListener("click",h107RedeemCode);document.getElementById("h107CodeInput")?.addEventListener("keydown",e=>{if(e.key==="Enter")h107RedeemCode()});document.getElementById("h107RiddleCodeButton")?.addEventListener("click",()=>h107OpenCodeModal());document.getElementById("h107CodeModal")?.addEventListener("click",e=>{if(e.target?.id==="h107CodeModal")h107CloseCodeModal()});const old=navTo;navTo=function(screen){old(screen);if(screen==="records")h107LoadRecords();if(screen==="backgrounds"||screen==="events")h107LoadSecrets()};setTimeout(h107LoadSecrets,1800)})();
 
