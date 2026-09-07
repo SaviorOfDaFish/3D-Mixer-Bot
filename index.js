@@ -596,7 +596,7 @@ const pets = [
   { key: "pyremane", name: "Pyremane", icon: "🔥", habitat: "Emberdeep", rarity: "Legendary", ability: "shiny", baseBonus: 3, description: "A new-season Monster Hunt companion.", image: "pyremane.png" },
   { key: "snowpod", name: "Snowpod", icon: "❄️", habitat: "Frostgrave", rarity: "Common", ability: "cooldown", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "snowpod.png" },
   { key: "shiverquill", name: "Shiverquill", icon: "🧊", habitat: "Frostgrave", rarity: "Rare", ability: "capture", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "shiverquill.png" },
-  { key: "coffinrawl", name: "Coffinrawl", icon: "⚰️", habitat: "Frostgrave", rarity: "Epic", ability: "points", baseBonus: 5, description: "A new-season Monster Hunt companion.", image: "coffinrawl.png" },
+  { key: "coffinrawl", name: "Coffincrawl", icon: "⚰️", habitat: "Frostgrave", rarity: "Epic", ability: "points", baseBonus: 5, description: "A new-season Monster Hunt companion.", image: "coffincrawl.png" },
   { key: "auroralynx", name: "Auroralynx", icon: "🌌", habitat: "Frostgrave", rarity: "Legendary", ability: "capture", baseBonus: 4, description: "A new-season Monster Hunt companion.", image: "auroralynx.png" },
   { key: "buttoncap", name: "Buttoncap", icon: "🍄", habitat: "Sporewilds", rarity: "Common", ability: "eggFinder", baseBonus: 1, description: "A new-season Monster Hunt companion.", image: "buttoncap.png" },
   { key: "lumenslug", name: "Lumenslug", icon: "✨", habitat: "Sporewilds", rarity: "Rare", ability: "cooldown", baseBonus: 2, description: "A new-season Monster Hunt companion.", image: "lumenslug.png" },
@@ -1493,7 +1493,7 @@ function h7SeasonBountyTrophies(data, userId) {
       key:def.key,
       name:def.trophy,
       icon:"🏆",
-      image:def.trophyImage || null,
+      image:bountyRewardImage(def),
       earned:true,
       source:"Bounty Hunt",
       description:`Claimed after completing the ${def.name} bounty this season.`
@@ -13596,6 +13596,12 @@ function ensureBountyData(data){
  return b;
 }
 function bountyTarget(data){const b=ensureBountyData(data);return BOUNTY_TARGETS.find(x=>x.key===b.targetKey)||null}
+function bountyRewardImage(def){
+ if(!def)return null;
+ // Prefer the dedicated trophy artwork, but never allow a missing trophy file
+ // to produce a broken image. Fall back to the bounty monster artwork.
+ return (def.trophyImage&&findImageFile(def.trophyImage))?def.trophyImage:(def.image||null);
+}
 function bountyNpc(data){return MERCHANT_TYPE_DEFINITIONS[ensureBountyData(data).npcKey]||null}
 function bountyClue(data){const b=ensureBountyData(data),t=bountyTarget(data);return t?t.clues[Math.min(t.clues.length-1,Math.max(0,b.clueLevel||0))]:"No active trail."}
 function bountyReadyAt(data,id){return Number(ensureBountyData(data).lastAttempts[id]||0)+BOUNTY_HUNT_COOLDOWN}
@@ -13739,7 +13745,7 @@ async function turnInBounty(data,id,ch=null){
  c.huntTokens=Number(c.huntTokens||0)+20;
  c.lifetimeTokens=Number(c.lifetimeTokens||0)+20;
  const done=Date.now();b.history.push({targetKey:t.key,npcKey:b.npcKey,catcherId:id,participants:ids.length,attempts:b.attempts,startedAt:b.startedAt,completedAt:done});b.lastTargetKey=t.key;b.active=false;b.status="cooldown";b.nextAt=done+BOUNTY_NEXT_DELAY;b.trophyHolderId=null;saveData(data);
- if(ch?.isTextBased())await sendRoleImageAnnouncement(ch,`📜 **BOUNTY COMPLETE — ${t.name.toUpperCase()}**\n\n<@${id}> returned the **${t.trophy}** to **${n?.name||"the bounty giver"}**.\n\n👥 Participants: **+5 Hunter Points +5 Hunt Tokens**\n🏆 Catcher total: **+15 Hunter Points +25 Hunt Tokens**\n\nAnother bounty will be posted in **24 hours**.`,t.trophyImage||t.image,true);
+ if(ch?.isTextBased())await sendRoleImageAnnouncement(ch,`📜 **BOUNTY COMPLETE — ${t.name.toUpperCase()}**\n\n<@${id}> returned the **${t.trophy}** to **${n?.name||"the bounty giver"}**.\n\n👥 Participants: **+5 Hunter Points +5 Hunt Tokens**\n🏆 Catcher total: **+15 Hunter Points +25 Hunt Tokens**\n\nAnother bounty will be posted in **24 hours**.`,bountyRewardImage(t),true);
  return{ok:true,targetName:t.name,nextAt:b.nextAt,participantCount:ids.length};
 }
 let bountyMonitorBusy=false;
