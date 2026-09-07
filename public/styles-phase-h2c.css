@@ -3293,11 +3293,26 @@ img { max-width:100%; }
   background:rgba(15,23,42,.78);
 }
 .h106-player-card.is-you{border-color:rgba(129,140,248,.5);}
+/* H10.6.43 — Player Gallery full-character framing fix.
+   Generated hunter PNGs are usually square/portrait assets. The old 16:10 + cover
+   combination enlarged them until the card was filled, which cropped the top of
+   the artwork and cut off heads. Give the art a taller stage and contain the
+   entire image instead. */
 .h106-player-art{
-  aspect-ratio:16/10;overflow:hidden;
+  aspect-ratio:4/3;
+  overflow:hidden;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
   background:linear-gradient(180deg,#172554,#0f172a);
 }
-.h106-player-art img{display:block;width:100%;height:100%;object-fit:cover;object-position:center;}
+.h106-player-art img{
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  object-position:center top;
+}
 .h106-player-copy{padding:12px;min-width:0;}
 .h106-player-copy h3{margin:2px 0 6px;}
 .h106-player-copy p{margin:4px 0;overflow-wrap:anywhere;}
