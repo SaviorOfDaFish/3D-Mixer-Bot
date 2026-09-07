@@ -49,3 +49,14 @@ DICE LOCKER RESTORE — H10.6.41 (2026-09-07):
 - Added progression locks for extra colors and Galaxy / Distortion prestige themes.
 - Existing saved dice cosmetic choices are preserved when still unlocked/valid.
 - No dice physics, D100 result logic, character renderer, bounty balance, or image-hotfix behavior was changed.
+
+
+H10.6.42 — EXPANDED DICE COSMETICS
+- Expanded Dice Body Colors from 6 to 14.
+- Expanded Number Colors from 6 to 12.
+- Expanded Prestige Themes from 3 to 10.
+- Added Moonfen Mist, Emberdeep Forge, Frostgrave Aurora, Mirror Scar, Black Bloom, Prismatic Glass, and Legendary Hunter.
+- Added unique locker-preview treatments for special finishes.
+- Existing Galaxy and Distortion themes remain intact.
+- Unlocks use Hunter Level, PetDex discoveries, and current-season Bounty Trophies.
+- Dice cosmetics remain visual only and do not change D100 physics or results.

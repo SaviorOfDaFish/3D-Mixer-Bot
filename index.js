@@ -14583,24 +14583,45 @@ function activityMonsterDexPayload(player) {
 // three option grids returned early and appeared blank.
 const H10641_DICE_BODY_COLORS = [
   {key:"sapphire", name:"Hunter's Sapphire", hex:"#17467f", unlock:null},
+  {key:"moonstone", name:"Moonstone Blue", hex:"#4b6f9e", unlock:{type:"level",amount:2}},
   {key:"emerald", name:"Gloam Emerald", hex:"#18794e", unlock:{type:"level",amount:3}},
+  {key:"sunset", name:"Wildlands Sunset", hex:"#c86b32", unlock:{type:"level",amount:4}},
   {key:"ruby", name:"Ember Ruby", hex:"#9f2d35", unlock:{type:"level",amount:5}},
+  {key:"stormsteel", name:"Stormsteel", hex:"#50677a", unlock:{type:"level",amount:6}},
+  {key:"rose", name:"Rose Quartz", hex:"#b85d83", unlock:{type:"level",amount:7}},
   {key:"amethyst", name:"Rift Amethyst", hex:"#6d3fb5", unlock:{type:"petdex",amount:8}},
+  {key:"tealglass", name:"Tealglass", hex:"#167b7a", unlock:{type:"petdex",amount:10}},
   {key:"obsidian", name:"Obsidian", hex:"#151923", unlock:{type:"trophies",amount:1}},
-  {key:"ivory", name:"Moonfen Ivory", hex:"#d8cfb8", unlock:{type:"petdex",amount:16}}
+  {key:"frostglass", name:"Frostglass", hex:"#7ea7b8", unlock:{type:"petdex",amount:12}},
+  {key:"ivory", name:"Moonfen Ivory", hex:"#d8cfb8", unlock:{type:"petdex",amount:16}},
+  {key:"voidink", name:"Void Ink", hex:"#25183d", unlock:{type:"trophies",amount:2}},
+  {key:"legendary_gold", name:"Legendary Gold", hex:"#b88726", unlock:{type:"trophies",amount:4}}
 ];
 const H10641_DICE_NUMBER_COLORS = [
   {key:"white", name:"White", hex:"#f3f7ff", unlock:null},
+  {key:"silver", name:"Moon Silver", hex:"#cbd5e1", unlock:{type:"level",amount:2}},
   {key:"gold", name:"Hunter Gold", hex:"#f6c94c", unlock:{type:"level",amount:3}},
+  {key:"lime", name:"Gloam Lime", hex:"#a7f36b", unlock:{type:"level",amount:4}},
   {key:"cyan", name:"Storm Cyan", hex:"#67e8f9", unlock:{type:"level",amount:5}},
+  {key:"orange", name:"Forge Orange", hex:"#ffb15f", unlock:{type:"level",amount:6}},
+  {key:"pink", name:"Bloom Pink", hex:"#ff8bd7", unlock:{type:"level",amount:7}},
   {key:"violet", name:"Rift Violet", hex:"#c4a7ff", unlock:{type:"petdex",amount:8}},
+  {key:"ice", name:"Frost White", hex:"#dff8ff", unlock:{type:"petdex",amount:12}},
   {key:"red", name:"Ember Red", hex:"#ff8b8b", unlock:{type:"trophies",amount:1}},
-  {key:"black", name:"Void Black", hex:"#090b10", unlock:{type:"petdex",amount:16}}
+  {key:"black", name:"Void Black", hex:"#090b10", unlock:{type:"petdex",amount:16}},
+  {key:"prism", name:"Prism Shine", hex:"#fff2b6", unlock:{type:"trophies",amount:3}}
 ];
 const H10641_DICE_THEMES = [
   {key:"classic",name:"Classic",icon:"🎲",description:"Your selected body and number colors.",primary:null,secondary:null,accent:null,unlock:null},
+  {key:"moonfen",name:"Moonfen Mist",icon:"🌙",description:"Moonlit blue-green stone with pale marsh-light accents.",primary:"#16394b",secondary:"#326b62",accent:"#c7fff1",unlock:{type:"petdex",amount:6}},
+  {key:"emberdeep",name:"Emberdeep Forge",icon:"🔥",description:"Blackened metal fading into molten ember-red.",primary:"#241316",secondary:"#a33a22",accent:"#ffcc70",unlock:{type:"level",amount:6}},
   {key:"galaxy",name:"Starfall Galaxy",icon:"🌌",description:"A cosmic blue-violet finish with starlight accents.",primary:"#14285f",secondary:"#6d28d9",accent:"#9fe8ff",unlock:{type:"level",amount:8}},
-  {key:"distortion",name:"Distortion Rift",icon:"🌀",description:"A warped void-and-violet finish earned through bounty progress.",primary:"#12091e",secondary:"#7c3aed",accent:"#f0abfc",unlock:{type:"trophies",amount:3}}
+  {key:"frostgrave",name:"Frostgrave Aurora",icon:"❄️",description:"Frozen midnight crystal lit by aurora-green highlights.",primary:"#17324e",secondary:"#4b8c88",accent:"#d8ffff",unlock:{type:"petdex",amount:12}},
+  {key:"mirror_scar",name:"Mirror Scar",icon:"🪞",description:"Silver-violet reflective fracture energy from the Mirror Scar.",primary:"#42465d",secondary:"#8d72c7",accent:"#f3f0ff",unlock:{type:"trophies",amount:2}},
+  {key:"distortion",name:"Distortion Rift",icon:"🌀",description:"A warped void-and-violet finish earned through bounty progress.",primary:"#12091e",secondary:"#7c3aed",accent:"#f0abfc",unlock:{type:"trophies",amount:3}},
+  {key:"black_bloom",name:"Black Bloom",icon:"🥀",description:"Pitch-black petals bleeding into poisonous magenta light.",primary:"#130d16",secondary:"#6f174c",accent:"#ff8bd7",unlock:{type:"petdex",amount:16}},
+  {key:"prismatic",name:"Prismatic Glass",icon:"💎",description:"A prestigious Glasswaste crystal finish with bright prism highlights.",primary:"#24576b",secondary:"#8b5cf6",accent:"#fff2b6",unlock:{type:"petdex",amount:20}},
+  {key:"legendary",name:"Legendary Hunter",icon:"👑",description:"Royal black-and-gold dice reserved for decorated bounty hunters.",primary:"#151515",secondary:"#7a5317",accent:"#ffe08a",unlock:{type:"trophies",amount:5}}
 ];
 function h10641DiceUnlockState(player,data,userId,unlock){
   if(!unlock) return true;
