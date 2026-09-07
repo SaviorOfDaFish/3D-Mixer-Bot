@@ -4249,8 +4249,41 @@ let h107SecretsState=null;
 function h107OpenCodeModal(prefill=""){const m=document.getElementById("h107CodeModal"),i=document.getElementById("h107CodeInput"),s=document.getElementById("h107CodeStatus");if(!m)return;m.classList.remove("hidden");if(i){i.value=prefill;setTimeout(()=>i.focus(),50)}if(s)s.textContent=""}
 function h107CloseCodeModal(){document.getElementById("h107CodeModal")?.classList.add("hidden")}
 function h107ApplyBackground(key){document.body.dataset.h107Background=String(key||"camp")}
-function h107RenderBackgrounds(d){if(!d)return;h107ApplyBackground(d.equipped||"camp");const h=document.getElementById("h107BackgroundGrid");if(!h)return;h.innerHTML=(d.backgrounds||[]).map(bg=>`<button class="h107-background-card ${bg.unlocked?"unlocked":"locked"} ${bg.equipped?"equipped":""}" data-h107-bg="${escapeHtml(bg.key)}" ${bg.unlocked?"":"disabled"}><span class="h107-bg-icon">${bg.icon||"🖼️"}</span><b>${escapeHtml(bg.name)}</b><span class="h107-bg-state">${bg.equipped?"✓ Equipped":bg.unlocked?"Unlocked":"🔒 Locked"}</span><small>${escapeHtml(bg.requirement||"")}</small></button>`).join("");h.querySelectorAll("[data-h107-bg]:not([disabled])").forEach(b=>b.onclick=()=>h107EquipBackground(b.dataset.h107Bg))}
-function h107RenderRiddle(r){if(!r)return;const t=document.getElementById("h107RiddleTitle"),c=document.getElementById("h107RiddleClue"),x=document.getElementById("h107RiddleResult"),b=document.getElementById("h107RiddleCodeButton");if(t)t.textContent=r.title;if(c)c.textContent=r.clue;if(x)x.textContent=r.solved?`✅ Solved${r.solverName?` by ${r.solverName}`:""}! ${r.rewardText||""}`:"Work together in Discord. Enter the answer through the Code system.";if(b){b.disabled=!!r.solved;b.textContent=r.solved?"✅ Riddle Solved":"🔐 Enter Answer as Code"}}
+function h107RenderBackgrounds(d){
+  if(!d)return;
+  h107ApplyBackground(d.equipped||"camp");
+
+  const h=document.getElementById("h107BackgroundGrid");
+  if(!h)return;
+
+  h.innerHTML=(d.backgrounds||[]).map(bg=>{
+    const styleParts=[];
+    if(bg.image) styleParts.push(`--h107-card-art:url("${escapeHtml(bg.image)}")`);
+    if(bg.cssBackground) styleParts.push(`--h107-card-css:${String(bg.cssBackground).replace(/"/g,"&quot;")}`);
+    const styleAttr=styleParts.length?` style="${styleParts.join(";")}"`:"";
+
+    return `
+      <button
+        class="h107-background-card ${bg.unlocked?"unlocked":"locked"} ${bg.equipped?"equipped":""} ${(bg.image||bg.cssBackground)?"has-art":""}"
+        data-h107-bg="${escapeHtml(bg.key)}"
+        ${bg.unlocked?"":"disabled"}${styleAttr}
+      >
+        <span class="h107-bg-art" aria-hidden="true"></span>
+        <span class="h107-bg-overlay" aria-hidden="true"></span>
+        <span class="h107-bg-content">
+          <span class="h107-bg-icon">${bg.icon||"🖼️"}</span>
+          <b>${escapeHtml(bg.name)}</b>
+          <span class="h107-bg-state">${bg.equipped?"✓ Equipped":bg.unlocked?"Unlocked":"🔒 Locked"}</span>
+          <small>${escapeHtml(bg.requirement||"")}</small>
+        </span>
+      </button>`;
+  }).join("");
+
+  h.querySelectorAll("[data-h107-bg]:not([disabled])").forEach(b=>{
+    b.onclick=()=>h107EquipBackground(b.dataset.h107Bg);
+  });
+}
+
 async function h107LoadSecrets(){try{const r=await activityFetch("/api/activity/secrets"),p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Could not load Secrets & Discovery.");h107SecretsState=p;h107RenderBackgrounds(p.backgrounds);h107RenderRiddle(p.riddle);h107ApplyBackground(p.backgrounds?.equipped||"camp");return p}catch(e){const s=document.getElementById("h107BackgroundStatus");if(s)s.textContent=`❌ ${e.message}`;return null}}
 async function h107EquipBackground(key){const s=document.getElementById("h107BackgroundStatus");if(s)s.textContent="Equipping background…";try{const r=await activityFetch("/api/activity/background/equip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key})}),p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Could not equip background.");h107RenderBackgrounds(p.backgrounds);if(s)s.textContent=`✅ ${p.message}`}catch(e){if(s)s.textContent=`❌ ${e.message}`}}
 async function h107LoadRecords(){const h=document.getElementById("h107RecordGrid");if(h)h.innerHTML='<div class="empty-state">Loading server records…</div>';try{const r=await activityFetch("/api/activity/records"),p=await r.json();if(!r.ok||!p.ok)throw new Error(p.error||"Could not load records.");if(h)h.innerHTML=(p.records||[]).map(x=>`<article class="h107-record-card"><span class="h107-record-icon">${x.icon||"🏆"}</span><div class="h107-record-copy"><h3>${escapeHtml(x.title)}</h3><p class="h107-record-holder">${escapeHtml(x.holder)}</p><div class="h107-record-value">${escapeHtml(x.value)}</div></div></article>`).join("")}catch(e){if(h)h.innerHTML=`<div class="empty-state">❌ ${escapeHtml(e.message)}</div>`}}

@@ -3727,3 +3727,78 @@ body.background-view-only::after{
   }
 }
 
+
+/* =====================================================================
+   H10.7.5 — BACKGROUND ART PREVIEW CARDS
+   Uses only background assets already present in Monster Hunt.
+   ===================================================================== */
+.h107-background-card{
+  position:relative;
+  min-height:138px;
+  overflow:hidden;
+  isolation:isolate;
+  padding:0 !important;
+  background:rgba(15,23,42,.86);
+}
+.h107-background-card .h107-bg-art,
+.h107-background-card .h107-bg-overlay,
+.h107-background-card .h107-bg-content{
+  position:absolute;
+  inset:0;
+}
+.h107-background-card .h107-bg-art{
+  z-index:0;
+  background:
+    var(--h107-card-css, none),
+    var(--h107-card-art, none) center / cover no-repeat;
+  transform:scale(1.02);
+  transition:transform .18s ease, filter .18s ease, opacity .18s ease;
+}
+.h107-background-card .h107-bg-overlay{
+  z-index:1;
+  background:linear-gradient(180deg,rgba(2,6,23,.10) 0%,rgba(2,6,23,.30) 42%,rgba(2,6,23,.90) 100%);
+}
+.h107-background-card .h107-bg-content{
+  z-index:2;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:flex-end;
+  gap:5px;
+  padding:12px 13px;
+  text-align:left;
+}
+.h107-background-card .h107-bg-icon{
+  font-size:1.65rem;
+  line-height:1;
+  filter:drop-shadow(0 2px 4px rgba(0,0,0,.55));
+}
+.h107-background-card b{
+  font-size:.95rem;
+  color:#fff;
+  text-shadow:0 2px 8px rgba(0,0,0,.85);
+}
+.h107-background-card .h107-bg-state{
+  color:#e0e7ff;
+  text-shadow:0 1px 5px rgba(0,0,0,.75);
+}
+.h107-background-card small{
+  color:#dbeafe;
+  text-shadow:0 1px 5px rgba(0,0,0,.78);
+}
+.h107-background-card.unlocked:hover .h107-bg-art{transform:scale(1.06);}
+.h107-background-card.equipped{
+  border-color:rgba(255,255,255,.96) !important;
+  box-shadow:0 0 0 2px rgba(129,140,248,.65),0 12px 32px rgba(0,0,0,.28);
+}
+.h107-background-card.locked .h107-bg-art{
+  filter:grayscale(.70) brightness(.48);
+  opacity:.72;
+}
+.h107-background-card.locked .h107-bg-overlay{
+  background:linear-gradient(180deg,rgba(2,6,23,.40),rgba(2,6,23,.86));
+}
+@media(max-width:620px){
+  .h107-background-card{min-height:124px;}
+}
+
