@@ -2784,8 +2784,8 @@ body { background:#050a14; }
 /* H.2E.2 hatch reveal */
 .hatch-reveal-sheet{position:relative;width:min(94vw,620px);max-height:92dvh;overflow:auto;background:linear-gradient(180deg,#121a31,#09111f);border:1px solid rgba(129,140,248,.38);border-radius:26px 26px 0 0;padding:24px;text-align:center;box-shadow:0 -24px 80px rgba(0,0,0,.58)}
 .hatch-reveal-close{position:absolute;right:14px;top:14px;z-index:2}
-.hatch-reveal-art{height:min(42vh,330px);display:grid;place-items:center;margin:2px 0 12px;background:radial-gradient(circle,rgba(124,58,237,.22),rgba(14,165,233,.08) 42%,transparent 70%);border-radius:22px}
-.hatch-reveal-art img{width:min(82%,330px);height:min(82%,330px);object-fit:contain;filter:drop-shadow(0 18px 28px rgba(0,0,0,.4))}
+.hatch-reveal-art{height:min(34vh,250px);display:grid;place-items:center;margin:2px 0 12px;background:radial-gradient(circle,rgba(124,58,237,.22),rgba(14,165,233,.08) 42%,transparent 70%);border-radius:22px;overflow:hidden}
+.hatch-reveal-art img{display:block;width:auto;height:auto;max-width:min(72vw,220px);max-height:220px;object-fit:contain;filter:drop-shadow(0 18px 28px rgba(0,0,0,.4))}
 .hatch-reveal-art .fallback-icon{font-size:7rem}
 .hatch-reveal-sheet h2{font-size:2rem;margin:4px 0 6px}
 .hatch-reveal-meta{color:#a5b4fc;font-weight:800;margin-bottom:14px}
@@ -2794,7 +2794,7 @@ body { background:#050a14; }
 .hatch-ability-card span{display:block;color:#a5b4fc;font-size:.75rem;font-weight:900;letter-spacing:.08em;margin-bottom:5px}.hatch-ability-card strong{font-size:1.08rem}.hatch-ability-card p{color:#cbd5e1;margin:5px 0 0}
 .hatch-reveal-rewards{font-weight:800;color:#fde68a;margin:10px 0 18px}
 .hatch-reveal-actions{display:flex;gap:10px}.hatch-reveal-actions button{flex:1;min-height:48px}
-@media(max-width:520px){.hatch-reveal-actions{flex-direction:column-reverse}.hatch-reveal-art{height:250px}}
+@media(max-width:520px){.hatch-reveal-actions{flex-direction:column-reverse}.hatch-reveal-art{height:210px}.hatch-reveal-art img{max-width:190px;max-height:190px}}
 
 
 /* H.2E.3 hatch/pet ability clarity */
