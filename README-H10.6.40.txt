@@ -40,3 +40,12 @@ TARGETED IMAGE HOTFIX (2026-09-07):
 - Bounty trophy/reward art now falls back to the bounty monster art when the dedicated trophy image file is missing.
 - Hatch reveal companion art is hard-capped and clipped inside its art area so oversized source PNGs cannot cover the name, rarity, or ability text.
 - No global character/monster renderer paths were changed.
+
+DICE LOCKER RESTORE — H10.6.41 (2026-09-07):
+- Restored the server-side Dice Locker payload that the existing frontend expects at phaseD.diceLocker.
+- Restored POST /api/activity/dice-cosmetic so Equip Dice Look saves correctly.
+- Dice Color, Number Color, and Prestige Theme grids no longer render blank.
+- Starter defaults remain Hunter's Sapphire + White Numbers + Classic.
+- Added progression locks for extra colors and Galaxy / Distortion prestige themes.
+- Existing saved dice cosmetic choices are preserved when still unlocked/valid.
+- No dice physics, D100 result logic, character renderer, bounty balance, or image-hotfix behavior was changed.

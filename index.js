@@ -14576,6 +14576,67 @@ function activityMonsterDexPayload(player) {
   });
 }
 
+
+// ===== H10.6.41 — DICE LOCKER BACKEND RESTORE =====
+// H10.6.40 accidentally shipped without the server-side dice locker payload/API.
+// The frontend renderer still existed, but gameData.diceLocker was null, so all
+// three option grids returned early and appeared blank.
+const H10641_DICE_BODY_COLORS = [
+  {key:"sapphire", name:"Hunter's Sapphire", hex:"#17467f", unlock:null},
+  {key:"emerald", name:"Gloam Emerald", hex:"#18794e", unlock:{type:"level",amount:3}},
+  {key:"ruby", name:"Ember Ruby", hex:"#9f2d35", unlock:{type:"level",amount:5}},
+  {key:"amethyst", name:"Rift Amethyst", hex:"#6d3fb5", unlock:{type:"petdex",amount:8}},
+  {key:"obsidian", name:"Obsidian", hex:"#151923", unlock:{type:"trophies",amount:1}},
+  {key:"ivory", name:"Moonfen Ivory", hex:"#d8cfb8", unlock:{type:"petdex",amount:16}}
+];
+const H10641_DICE_NUMBER_COLORS = [
+  {key:"white", name:"White", hex:"#f3f7ff", unlock:null},
+  {key:"gold", name:"Hunter Gold", hex:"#f6c94c", unlock:{type:"level",amount:3}},
+  {key:"cyan", name:"Storm Cyan", hex:"#67e8f9", unlock:{type:"level",amount:5}},
+  {key:"violet", name:"Rift Violet", hex:"#c4a7ff", unlock:{type:"petdex",amount:8}},
+  {key:"red", name:"Ember Red", hex:"#ff8b8b", unlock:{type:"trophies",amount:1}},
+  {key:"black", name:"Void Black", hex:"#090b10", unlock:{type:"petdex",amount:16}}
+];
+const H10641_DICE_THEMES = [
+  {key:"classic",name:"Classic",icon:"🎲",description:"Your selected body and number colors.",primary:null,secondary:null,accent:null,unlock:null},
+  {key:"galaxy",name:"Starfall Galaxy",icon:"🌌",description:"A cosmic blue-violet finish with starlight accents.",primary:"#14285f",secondary:"#6d28d9",accent:"#9fe8ff",unlock:{type:"level",amount:8}},
+  {key:"distortion",name:"Distortion Rift",icon:"🌀",description:"A warped void-and-violet finish earned through bounty progress.",primary:"#12091e",secondary:"#7c3aed",accent:"#f0abfc",unlock:{type:"trophies",amount:3}}
+];
+function h10641DiceUnlockState(player,data,userId,unlock){
+  if(!unlock) return true;
+  if(unlock.type==="level") return h3HunterLevel(player)>=Number(unlock.amount||0);
+  if(unlock.type==="petdex") return (player.discoveredPetKeys||[]).filter(k=>H3_STANDARD_NATURAL_ABILITIES[k]&&k!=="mixlet").length>=Number(unlock.amount||0);
+  if(unlock.type==="trophies") return h7CurrentSeasonTrophyCount(data,userId)>=Number(unlock.amount||0);
+  return false;
+}
+function h10641DiceUnlockText(unlock){
+  if(!unlock) return "Unlocked";
+  if(unlock.type==="level") return `Reach Hunter Level ${unlock.amount}`;
+  if(unlock.type==="petdex") return `Discover ${unlock.amount} PetDex companions`;
+  if(unlock.type==="trophies") return `Earn ${unlock.amount} current-season bounty ${Number(unlock.amount)===1?"trophy":"trophies"}`;
+  return "Achievement required";
+}
+function h10641DiceLockerPayload(player,data,userId){
+  const bodyColors=H10641_DICE_BODY_COLORS.map(x=>({...x,unlocked:h10641DiceUnlockState(player,data,userId,x.unlock),unlock:h10641DiceUnlockText(x.unlock)}));
+  const numberColors=H10641_DICE_NUMBER_COLORS.map(x=>({...x,unlocked:h10641DiceUnlockState(player,data,userId,x.unlock),unlock:h10641DiceUnlockText(x.unlock)}));
+  const themes=H10641_DICE_THEMES.map(x=>({...x,unlocked:h10641DiceUnlockState(player,data,userId,x.unlock),unlock:h10641DiceUnlockText(x.unlock)}));
+  const saved=(player.diceCosmetic&&typeof player.diceCosmetic==="object")?player.diceCosmetic:{};
+  let body=bodyColors.find(x=>x.key===saved.body&&x.unlocked)?.key||"sapphire";
+  let numbers=numberColors.find(x=>x.key===saved.numbers&&x.unlocked)?.key||"white";
+  let themeKey=themes.find(x=>x.key===(saved.themeKey||saved.theme?.key)&&x.unlocked)?.key||"classic";
+  const bodyDef=bodyColors.find(x=>x.key===body)||bodyColors[0];
+  const numberDef=numberColors.find(x=>x.key===numbers)||numberColors[0];
+  const themeDef=themes.find(x=>x.key===themeKey)||themes[0];
+  const equipped={
+    body,numbers,themeKey,
+    bodyColor:themeKey==="classic"?bodyDef.hex:(themeDef.primary||bodyDef.hex),
+    numberColor:numberDef.hex,
+    theme:{key:themeDef.key,name:themeDef.name,primary:themeDef.primary||bodyDef.hex,secondary:themeDef.secondary||bodyDef.hex,accent:themeDef.accent||numberDef.hex}
+  };
+  player.diceCosmetic=equipped;
+  return {bodyColors,numberColors,themes,equipped};
+}
+
 function activityPlayerPayload(data, user) {
   const player = getPlayer(data, user.id);
   const profile = ensureActivityProfile(player, user);
@@ -14612,7 +14673,8 @@ function activityPlayerPayload(data, user) {
       fetch: activityFetchPayload(player),
       generatedHunterImage: player.generatedHunter?.imageUrl || null,
       generatedHunter: h81PublicHunterRecord(player.generatedHunter),
-      tutorial:h9TutorialPayload(player)
+      tutorial:h9TutorialPayload(player),
+      diceCosmetic: h10641DiceLockerPayload(player,data,user.id).equipped
     },
     phaseD: {
       ownedPets,
@@ -14623,6 +14685,7 @@ function activityPlayerPayload(data, user) {
       trophies: h7SeasonBountyTrophies(data,user.id),
       titles: h7SeasonTitlesPayload(player),
       cosmetics: h7CosmeticsPayload(player,data,user.id),
+      diceLocker: h10641DiceLockerPayload(player,data,user.id),
       petProgression:{hunterLevel:h3HunterLevel(player),inheritedSlots:h3InheritedSlotLimit(player),incubators:getIncubatorSlots(player),maxInherited:H3_MAX_INHERITED_ABILITIES}
     },
     eggs: activityEggInventoryPayload(player),
@@ -15021,6 +15084,24 @@ const activityServer = http.createServer(async (req, res) => {
         const unlocks = h10620CollectTitleUnlocks(player);
         saveData(data);
         return activityJson(res, {ok:true,unlocks,build:"H10.6.20"});
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/api/activity/dice-cosmetic") {
+        const body = await readRequestJson(req);
+        const data = loadData();
+        const player = getPlayer(data, user.id);
+        ensureActivityProfile(player, user);
+        const locker = h10641DiceLockerPayload(player,data,user.id);
+        const bodyChoice = locker.bodyColors.find(x=>x.key===String(body.body||"")&&x.unlocked);
+        const numberChoice = locker.numberColors.find(x=>x.key===String(body.numbers||"")&&x.unlocked);
+        const themeChoice = locker.themes.find(x=>x.key===String(body.theme||"classic")&&x.unlocked);
+        if(!bodyChoice) return activityJson(res,{ok:false,error:"That dice body color is locked or unavailable."},400);
+        if(!numberChoice) return activityJson(res,{ok:false,error:"That number color is locked or unavailable."},400);
+        if(!themeChoice) return activityJson(res,{ok:false,error:"That prestige theme is locked or unavailable."},400);
+        player.diceCosmetic={body:bodyChoice.key,numbers:numberChoice.key,themeKey:themeChoice.key};
+        const updated=h10641DiceLockerPayload(player,data,user.id);
+        saveData(data);
+        return activityJson(res,{ok:true,diceLocker:updated,message:`${themeChoice.key==="classic"?bodyChoice.name:themeChoice.name} • ${numberChoice.name} Numbers equipped.`});
       }
 
       if (req.method === "GET" && requestUrl.pathname === "/api/activity/me") {
