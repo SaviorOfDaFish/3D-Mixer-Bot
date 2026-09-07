@@ -13956,20 +13956,54 @@ setInterval(()=>bountyMonitor().catch(console.error),60*1000);
 // The community-riddle answer is a one-time GLOBAL solve.
 
 const H107_BACKGROUND_DEFS=Object.freeze({
-  camp:{name:"Hunter Camp",icon:"🏕️",requirement:"Starter background",starter:true,image:"/assets/backgrounds/hunt_home.png"},
-  moonfen:{name:"Moonfen",icon:"🌙",habitat:"Moonfen",requirement:"Capture a Moonfen monster",image:"/assets/backgrounds/hunt_battle.png"},
-  glasswaste:{name:"Glasswaste",icon:"💎",habitat:"Glasswaste",requirement:"Capture a Glasswaste monster",image:"/assets/backgrounds/hunt_battle.png"},
-  gloamwood:{name:"Gloamwood",icon:"🌲",habitat:"Gloamwood",requirement:"Capture a Gloamwood monster",image:"/assets/backgrounds/hunt_home.png"},
-  stormreach:{name:"Stormreach",icon:"⛈️",habitat:"Stormreach",requirement:"Capture a Stormreach monster",image:"/assets/backgrounds/hunt_battle.png"},
-  emberdeep:{name:"Emberdeep",icon:"🔥",habitat:"Emberdeep",requirement:"Capture an Emberdeep monster",image:"/assets/backgrounds/hunt_battle.png"},
-  frostgrave:{name:"Frostgrave",icon:"❄️",habitat:"Frostgrave",requirement:"Capture a Frostgrave monster",image:"/assets/backgrounds/hunt_battle.png"},
-  sporewilds:{name:"Sporewilds",icon:"🍄",habitat:"Sporewilds",requirement:"Capture a Sporewilds monster",image:"/assets/backgrounds/hunt_home.png"},
-  starfall:{name:"Starfall Basin",icon:"🌠",habitat:"Starfall Basin",requirement:"Capture a Starfall Basin monster",image:"/assets/backgrounds/hunt_battle.png"},
-  mirror:{name:"Mirror Scar",icon:"🪞",habitat:"Mirror Scar",requirement:"Capture a Mirror Scar monster",image:"/assets/distortions/mirror_scar_background.png"},
-  blackbloom:{name:"Black Bloom",icon:"🌑",habitat:"Black Bloom",requirement:"Capture a Black Bloom monster",image:"/assets/distortions/black_bloom_background.png"},
+  camp:{
+    name:"Hunter Camp",icon:"🏕️",requirement:"Starter background",starter:true,
+    image:"/assets/distortions/dreaming_gate_background.png"
+  },
+  moonfen:{
+    name:"Moonfen",icon:"🌙",habitat:"Moonfen",requirement:"Capture a Moonfen monster",
+    image:"/assets/distortions/upside_down_sea_background.png"
+  },
+  glasswaste:{
+    name:"Glasswaste",icon:"💎",habitat:"Glasswaste",requirement:"Capture a Glasswaste monster",
+    image:"/assets/distortions/mirror_scar_background.png"
+  },
+  gloamwood:{
+    name:"Gloamwood",icon:"🌲",habitat:"Gloamwood",requirement:"Capture a Gloamwood monster",
+    image:"/assets/distortions/black_bloom_background.png"
+  },
+  stormreach:{
+    name:"Stormreach",icon:"⛈️",habitat:"Stormreach",requirement:"Capture a Stormreach monster",
+    image:"/assets/distortions/chrono_tear_background.png"
+  },
+  emberdeep:{
+    name:"Emberdeep",icon:"🔥",habitat:"Emberdeep",requirement:"Capture an Emberdeep monster",
+    image:"/assets/distortions/black_bloom_background.png"
+  },
+  frostgrave:{
+    name:"Frostgrave",icon:"❄️",habitat:"Frostgrave",requirement:"Capture a Frostgrave monster",
+    image:"/assets/distortions/chrono_tear_background.png"
+  },
+  sporewilds:{
+    name:"Sporewilds",icon:"🍄",habitat:"Sporewilds",requirement:"Capture a Sporewilds monster",
+    image:"/assets/distortions/black_bloom_background.png"
+  },
+  starfall:{
+    name:"Starfall Basin",icon:"🌠",habitat:"Starfall Basin",requirement:"Capture a Starfall Basin monster",
+    image:"/assets/distortions/dreaming_gate_background.png"
+  },
+  mirror:{
+    name:"Mirror Scar",icon:"🪞",habitat:"Mirror Scar",requirement:"Capture a Mirror Scar monster",
+    image:"/assets/distortions/mirror_scar_background.png"
+  },
+  blackbloom:{
+    name:"Black Bloom",icon:"🌑",habitat:"Black Bloom",requirement:"Capture a Black Bloom monster",
+    image:"/assets/distortions/black_bloom_background.png"
+  },
   galaxy:{
-    name:"Mixer Galaxy",icon:"🌌",codeUnlock:"MIXER190",requirement:"Find the MIXER190 secret code",image:null,
-    cssBackground:"radial-gradient(circle at 20% 15%,rgba(56,189,248,.58),transparent 30%),radial-gradient(circle at 78% 30%,rgba(168,85,247,.58),transparent 34%),radial-gradient(circle at 45% 85%,rgba(236,72,153,.36),transparent 32%),linear-gradient(145deg,#020617,#111827 38%,#312e81 72%,#020617)"
+    name:"Mixer Galaxy",icon:"🌌",codeUnlock:"MIXER190",requirement:"Find the MIXER190 secret code",
+    image:"/assets/distortions/dreaming_gate_background.png",
+    galaxyOverlay:true
   }
 });
 
@@ -14034,7 +14068,8 @@ function h107BackgroundPayload(player){
     unlocked:h107BackgroundUnlocked(player,key),
     equipped:key===equipped,
     image:d.image||null,
-    cssBackground:d.cssBackground||null
+    cssBackground:d.cssBackground||null,
+    galaxyOverlay:Boolean(d.galaxyOverlay)
   }))};
 }
 function h107RiddleState(data){
@@ -14142,22 +14177,91 @@ async function h107RedeemCode(user,raw){
 function h107RarityRank(r){return({Common:1,Rare:2,Epic:3,Legendary:4,Event:5,Mixed:6,Mythic:7,Secret:8,"Ultra Rare":9})[r]||0;}
 function h107PlayerName(p,id){return p.discordDisplayName||p.discordUsername||`Hunter ${String(id).slice(-4)}`;}
 function h107ServerRecordsPayload(data){
-  const rows=Object.entries(data.players||{}).map(([id])=>({id,p:getPlayer(data,id)})),all=[];
-  for(const x of rows)for(const monster of(x.p.lifetimeCaught||x.p.caught||[]))all.push({...x,monster});
-  const top=fn=>rows.slice().sort((a,b)=>fn(b.p,b.id)-fn(a.p,a.id))[0]||null;
-  const biggest=all.filter(x=>Number.isFinite(Number(x.monster.specimenScale))).sort((a,b)=>Number(b.monster.specimenScale)-Number(a.monster.specimenScale))[0]||null;
-  const rarest=all.slice().sort((a,b)=>h107RarityRank(b.monster.rarity)-h107RarityRank(a.monster.rarity)||Number(b.monster.points||0)-Number(a.monster.points||0))[0]||null;
-  const bc={};for(const e of(data.bounty?.history||[]))if(e?.catcherId)bc[e.catcherId]=Number(bc[e.catcherId]||0)+1;
-  const bt=rows.slice().sort((a,b)=>Number(bc[b.id]||0)-Number(bc[a.id]||0))[0]||null,st=top(p=>Number(p.h107Records?.longestCatchStreak||0)),
-    dt=top(p=>Number(p.h107Records?.longestPhysicalD100SuccessStreak||0)),ct=top(p=>(p.lifetimeCaught||p.caught||[]).length);
-  return{ok:true,records:[
-    {icon:"📏",title:"Biggest Monster",holder:biggest?h107PlayerName(biggest.p,biggest.id):"No record yet",value:biggest?`${biggest.monster.name} • ${Number(biggest.monster.specimenScale)}% specimen`:"New size tracking begins now"},
-    {icon:"📜",title:"Most Bounties",holder:bt?h107PlayerName(bt.p,bt.id):"No record yet",value:bt?`${Number(bc[bt.id]||0)} completed`:"0 completed"},
-    {icon:"💎",title:"Rarest Catch",holder:rarest?h107PlayerName(rarest.p,rarest.id):"No record yet",value:rarest?`${rarest.monster.name} • ${rarest.monster.rarity}`:"No catches yet"},
-    {icon:"🔥",title:"Longest Catch Streak",holder:st?h107PlayerName(st.p,st.id):"No record yet",value:st?`${Number(st.p.h107Records?.longestCatchStreak||0)} catches`:"0 catches"},
-    {icon:"🎲",title:"Longest Physical D100 Success Streak",holder:dt?h107PlayerName(dt.p,dt.id):"No record yet",value:dt?`${Number(dt.p.h107Records?.longestPhysicalD100SuccessStreak||0)} successful rolls`:"0 successful rolls"},
-    {icon:"🏹",title:"Most Lifetime Catches",holder:ct?h107PlayerName(ct.p,ct.id):"No record yet",value:ct?`${(ct.p.lifetimeCaught||ct.p.caught||[]).length} catches`:"0 catches"}
-  ]};
+  const rows=Object.entries(data.players||{}).map(([id])=>({id,p:getPlayer(data,id)}));
+  const allCatches=[];
+  for(const row of rows){
+    for(const monster of(row.p.lifetimeCaught||row.p.caught||[])){
+      allCatches.push({...row,monster});
+    }
+  }
+
+  const playerName=(p,id)=>h107PlayerName(p,id);
+  const topFive=(items,scoreFn)=>items
+    .slice()
+    .sort((a,b)=>scoreFn(b)-scoreFn(a))
+    .slice(0,5);
+
+  // Biggest specimen: one best specimen per player, then server Top 5.
+  const bestSpecimenByPlayer=new Map();
+  for(const c of allCatches){
+    const size=Number(c.monster.specimenScale);
+    if(!Number.isFinite(size))continue;
+    const prev=bestSpecimenByPlayer.get(c.id);
+    if(!prev || size>Number(prev.monster.specimenScale))bestSpecimenByPlayer.set(c.id,c);
+  }
+  const biggest=topFive([...bestSpecimenByPlayer.values()],x=>Number(x.monster.specimenScale||0))
+    .map(x=>({name:playerName(x.p,x.id),value:`${x.monster.name} • ${Number(x.monster.specimenScale)}% specimen`}));
+
+  // Bounties: count catcher wins from shared server history.
+  const bountyCounts={};
+  for(const e of(data.bounty?.history||[])){
+    if(e?.catcherId)bountyCounts[e.catcherId]=Number(bountyCounts[e.catcherId]||0)+1;
+  }
+  const bounties=rows
+    .map(x=>({...x,count:Number(bountyCounts[x.id]||0)}))
+    .filter(x=>x.count>0)
+    .sort((a,b)=>b.count-a.count)
+    .slice(0,5)
+    .map(x=>({name:playerName(x.p,x.id),value:`${x.count} completed`}));
+
+  // Rarest catch: choose each player's rarest/highest-point catch first.
+  const rarestPerPlayer=[];
+  for(const row of rows){
+    const catches=(row.p.lifetimeCaught||row.p.caught||[]);
+    const best=catches.slice().sort((a,b)=>
+      h107RarityRank(b.rarity)-h107RarityRank(a.rarity) ||
+      Number(b.points||0)-Number(a.points||0)
+    )[0];
+    if(best)rarestPerPlayer.push({...row,monster:best});
+  }
+  const rarest=rarestPerPlayer
+    .sort((a,b)=>h107RarityRank(b.monster.rarity)-h107RarityRank(a.monster.rarity)||Number(b.monster.points||0)-Number(a.monster.points||0))
+    .slice(0,5)
+    .map(x=>({name:playerName(x.p,x.id),value:`${x.monster.name} • ${x.monster.rarity}`}));
+
+  const streaks=rows
+    .map(x=>({...x,value:Number(x.p.h107Records?.longestCatchStreak||0)}))
+    .filter(x=>x.value>0).sort((a,b)=>b.value-a.value).slice(0,5)
+    .map(x=>({name:playerName(x.p,x.id),value:`${x.value} catches`}));
+
+  const d100=rows
+    .map(x=>({...x,value:Number(x.p.h107Records?.longestPhysicalD100SuccessStreak||0)}))
+    .filter(x=>x.value>0).sort((a,b)=>b.value-a.value).slice(0,5)
+    .map(x=>({name:playerName(x.p,x.id),value:`${x.value} successful rolls`}));
+
+  const catches=rows
+    .map(x=>({...x,value:(x.p.lifetimeCaught||x.p.caught||[]).length}))
+    .filter(x=>x.value>0).sort((a,b)=>b.value-a.value).slice(0,5)
+    .map(x=>({name:playerName(x.p,x.id),value:`${x.value} catches`}));
+
+  const record=(key,icon,title,leaders,empty)=>({
+    key,icon,title,leaders,
+    holder:leaders[0]?.name||"No record yet",
+    value:leaders[0]?.value||empty
+  });
+
+  return{
+    ok:true,
+    playerCount:rows.length,
+    records:[
+      record("biggest","📏","Biggest Monster",biggest,"New size tracking begins with H10.7"),
+      record("bounties","📜","Most Bounties",bounties,"No completed Bounties yet"),
+      record("rarest","💎","Rarest Catch",rarest,"No catches yet"),
+      record("streak","🔥","Longest Catch Streak",streaks,"No streak records yet"),
+      record("d100","🎲","Longest Physical D100 Success Streak",d100,"No D100 streak records yet"),
+      record("catches","🏹","Most Lifetime Catches",catches,"No catches yet")
+    ]
+  };
 }
 function h107SecretsPayload(data,userId){const p=getPlayer(data,userId);return{ok:true,usedCodeCount:(p.h107UsedCodes||[]).length,backgrounds:h107BackgroundPayload(p),riddle:h107RiddleState(data)};}
 
