@@ -3617,3 +3617,19 @@ img { max-width:100%; }
   }
 }
 
+
+
+/* ===== H10.6.42 — EXPANDED DICE COSMETICS ===== */
+/* Give prestige finishes distinct locker-preview treatments while keeping the physical D100 unchanged. */
+.dice-locker-preview[data-theme="moonfen"] span { background:linear-gradient(145deg,#102b3c,#326b62 62%,#8ac7b8); box-shadow:inset 0 0 18px #c7fff1,0 8px 12px rgba(0,0,0,.35); }
+.dice-locker-preview[data-theme="emberdeep"] span { background:linear-gradient(145deg,#151012,#4b1b18 48%,#a33a22); box-shadow:inset 0 0 18px #ff9d4d,0 8px 12px rgba(0,0,0,.35); }
+.dice-locker-preview[data-theme="frostgrave"] span { background:linear-gradient(145deg,#13263d,#2f5d6c 55%,#4b8c88); box-shadow:inset 0 0 20px #d8ffff,0 8px 12px rgba(0,0,0,.35); }
+.dice-locker-preview[data-theme="mirror_scar"] span { background:linear-gradient(120deg,#292d3a 0 30%,#b7abd7 31% 34%,#5d4f79 35% 63%,#f3f0ff 64% 67%,#42465d 68%); box-shadow:inset 0 0 16px #f3f0ff,0 8px 12px rgba(0,0,0,.35); }
+.dice-locker-preview[data-theme="black_bloom"] span { background:radial-gradient(circle at 35% 30%,#8a275d 0 8%,transparent 9%),linear-gradient(145deg,#0b080d,#381025 62%,#6f174c); box-shadow:inset 0 0 18px #ff8bd7,0 8px 12px rgba(0,0,0,.35); }
+.dice-locker-preview[data-theme="prismatic"] span { background:linear-gradient(135deg,#24576b,#536cc7 28%,#8b5cf6 52%,#b65bb0 74%,#b88726); box-shadow:inset 0 0 20px #fff2b6,0 8px 12px rgba(0,0,0,.35); }
+.dice-locker-preview[data-theme="legendary"] span { background:linear-gradient(145deg,#0e0e0e,#2a2112 54%,#7a5317); box-shadow:inset 0 0 18px #ffe08a,0 0 14px rgba(246,201,76,.35),0 8px 12px rgba(0,0,0,.35); }
+
+/* Theme cards get a little more prestige without changing interaction behavior. */
+.dice-theme-card[data-dice-theme="prismatic"],
+.dice-theme-card[data-dice-theme="legendary"] { min-height:104px; }
+.dice-theme-card[data-dice-theme="legendary"] { border-color:rgba(255,224,138,.55); }
