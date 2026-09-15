@@ -3514,6 +3514,8 @@ function h81SetCreatorImage(record){
     img.classList.remove("hidden");
     placeholder?.classList.add("hidden");
     actions?.classList.remove("hidden");
+    // H10.7.7: ensure the approval controls are visible after generation.
+    window.setTimeout(()=>actions?.scrollIntoView?.({block:"nearest",behavior:"smooth"}),80);
   }else{
     img.removeAttribute("src");
     img.classList.add("hidden");
