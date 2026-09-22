@@ -202,20 +202,24 @@ const DISTORTION_FINAL_RESET_MINUTES = 10;
 const UNMADE_REPLACEMENT_CHANCE = 3;
 
 // ==================== LEGACY WORLD STORY / WORLD SHATTER (ARCHIVED / DISABLED) ====================
-const WORLD_SHATTER_ENABLED = false;
+// Master kill switch. This prevents Relic progress, announcements, scheduling,
+// restart recovery, warning beats, and World Shatter gameplay from running.
+// Ultra Relics remain usable as ordinary collectible/summoning items.
+const WORLD_EVENTS_ENABLED = true;
+const WORLD_SHATTER_ENABLED = true;
 // H.4 routes WORLD_EVENT_FEED_CHANNEL_ID dynamically; see notification routing block below.
 const WORLD_SHATTER_HUNT_COOLDOWN = 10 * 60 * 1000;
 const WORLD_SHATTER_COLLISION_DURATION = 20 * 60 * 1000;
-const WORLD_SHATTER_STABILIZE_MAX_DURATION = 2 * 60 * 60 * 1000;
+const WORLD_SHATTER_STABILIZE_MAX_DURATION = 60 * 60 * 1000;
 const WORLD_SHATTER_UNMADE_DURATION = 30 * 60 * 1000;
 const WORLD_SHATTER_BOSS_DURATION = 45 * 60 * 1000;
 const WORLD_SHATTER_BOSS_COOLDOWN = 2 * 60 * 1000;
 const ARCHITECT_IMAGE = "architect_of_nothing.png";
 const WORLD_SHATTER_VICTORY_UNMADE_CHANCE = 3;
 const WORLD_SHATTER_FAILURE_UNMADE_CHANCE = 10;
-const WORLD_SHATTER_PARTICIPATION_POINTS = 100;
+const WORLD_SHATTER_PARTICIPATION_POINTS = 20;
 const WORLD_SHATTER_REMATCH_MIN_DELAY = 48 * 60 * 60 * 1000;
-const WORLD_SHATTER_STABILITY_GOAL = 10;
+const WORLD_SHATTER_STABILITY_GOAL = 25;
 const WORLD_SHATTER_IMPOSSIBLE_EGG_CHANCE = 12;
 const WORLD_SHATTER_MIN_NOTICE = 24 * 60 * 60 * 1000;
 const WORLD_SHATTER_START_GRACE_MS = 10 * 60 * 1000;
@@ -419,6 +423,21 @@ const DISTORTION_PROCESS_BOOT_AT = Date.now();
 const DISTORTION_START_GRACE_MS = 2 * 60 * 1000;
 
 const DISTORTION_EGGS = {
+  tempered_rift: {
+    name:"Tempered Rift Egg", icon:"🔥❄️🥚", plane:"world_event", incubationMs:2*60*60*1000,
+    image:"tempered_rift_egg.png", hatchingImage:null,
+    pets:[{key:"riftmaw_wyrmling",weight:100}]
+  },
+  veiled_rune: {
+    name:"Veiled Rune Egg", icon:"🌊👻🥚", plane:"world_event", incubationMs:2*60*60*1000,
+    image:"veiled_rune_egg.png", hatchingImage:null,
+    pets:[{key:"glyphgeist",weight:100}]
+  },
+  relicbound_core: {
+    name:"Relicbound Core Egg", icon:"💎🥚", plane:"world_event", incubationMs:3*60*60*1000,
+    image:"relicbound_core_egg.png", hatchingImage:null,
+    pets:[{key:"colossus_whelp",weight:100}]
+  },
   reflected: {
     name: "Reflected Egg", icon: "🪞🥚", plane: "mirror_scar", incubationMs: 2 * 60 * 60 * 1000,
     image: "reflected_egg.png", hatchingImage: "reflected_egg_hatching.png",
@@ -509,6 +528,12 @@ const DISTORTIONS = {
   }
 };
 
+const RELICBOUND_COLOSSUS = {
+  key:"relicbound_colossus", name:"Relicbound Colossus", habitat:"Seal the Fracture",
+  rarity:"World Event", points:25, chance:35, image:"relicbound_colossus.png",
+  worldEventExclusive:true
+};
+
 // H10.2 — All Distortion-exclusive artwork lives in /public/assets/distortions/.
 // Normal season monsters, pets, and eggs continue to use their original asset folders.
 const DISTORTION_HABITATS = new Set(Object.values(DISTORTIONS).map(def => def.name));
@@ -519,11 +544,13 @@ function isDistortionHabitatName(habitat) {
 
 function activityMonsterImageUrl(monster) {
   if (!monster?.image) return null;
+  if (monster.worldEventExclusive || monster.habitat === "Seal the Fracture") return `/assets/world-event/${monster.image}`;
   return `${isDistortionHabitatName(monster.habitat) ? "/assets/distortions" : "/assets/monsters"}/${monster.image}`;
 }
 
 function activityPetImageUrl(definition) {
   if (!definition?.image) return null;
+  if (definition.habitat === "World Event") return `/assets/world-event/${definition.image}`;
   const folder = definition.habitat === "Merchant Collection" ? "/assets/pets/merchant" : (isDistortionHabitatName(definition.habitat) ? "/assets/distortions" : "/assets/pets");
   return `${folder}/${definition.image}`;
 }
@@ -540,6 +567,7 @@ function chooseMerchantPet(eggKey){ const egg=merchantEggDefinition(eggKey); if(
 
 function activityEggImageUrl(eggKey, image) {
   if (!image) return null;
+  if (["tempered_rift","veiled_rune","relicbound_core"].includes(eggKey)) return `/assets/world-event/${image}`;
   const folder = eggKey && DISTORTION_EGGS[eggKey] ? "/assets/distortions" : (eggKey && MERCHANT_EGGS[eggKey] ? "/assets/merchant-items" : "/assets/eggs");
   return `${folder}/${image}`;
 }
@@ -655,6 +683,11 @@ const pets = [
   { key:"hollow_crown", name:"Hollow Crown", icon:"👑", habitat:"Merchant Collection", rarity:"Epic", ability:"omen", baseBonus:1, description:"A floating black mask and broken crown that watches the hunt from impossible angles.", image:"hollow_crown.png" },
   { key:"void_antler", name:"Void Antler", icon:"🦌", habitat:"Merchant Collection", rarity:"Legendary", ability:"undertow", baseBonus:1, description:"A majestic star-filled antlered entity whose presence can pull an encounter off its destined course.", image:"void_antler.png" },
   { key:"the_unclaimed", name:"The Unclaimed", icon:"◼️", habitat:"Merchant Collection", rarity:"Legendary", ability:"foresight", baseBonus:1, description:"An unidentified six-legged entity that appears to recognize paths, places and futures it should not know.", image:"the_unclaimed.png" },
+
+  // ===== SEAL THE FRACTURE WORLD-EVENT COMPANIONS =====
+  { key:"riftmaw_wyrmling", name:"Riftmaw Wyrmling", icon:"🔥❄️", habitat:"World Event", rarity:"Epic", ability:"capture", baseBonus:4, signatureAbility:"kindled_hunt", signatureName:"Thermal Shock", description:"After a failed capture, its opposing fire and frost strengthen the next attempt.", image:"riftmaw_wyrmling.png" },
+  { key:"glyphgeist", name:"Glyphgeist", icon:"🌊👻", habitat:"World Event", rarity:"Epic", ability:"eggFinder", baseBonus:4, signatureAbility:"arcane_duplication", signatureName:"Phantom Duplicate", description:"Its spectral runes can duplicate an eligible egg discovery.", image:"glyphgeist.png" },
+  { key:"colossus_whelp", name:"Colossus Whelp", icon:"💎", habitat:"World Event", rarity:"Legendary", ability:"secondChance", baseBonus:1, signatureAbility:"second_chance", signatureName:"Stabilizing Presence", description:"Its relic core can stabilize a failed capture and immediately reroll it.", image:"colossus_whelp.png" },
 
   // Legacy Unmade companions are intentionally not obtainable this season.
 ];
@@ -2243,7 +2276,7 @@ function getTitleDefinition(titleName) {
   const specialRarity = [
     "The Chosen Mixer", "Master Beast Tamer", "You Were Never Here"
   ].includes(titleName) ? "Mythic" :
-  ["Worldbreaker", "The All-Seeing", "Timewalker", "Starforged", "Soulkeeper", "Ultra Hunter", "Relic Keeper", "World Summoner", "Legendary Hunter", "Shatterborn", "World Mender", "Should Not Exist", "Warden of Every Habitat", "The Thirty-Twofold Bond", "Keeper of the Wild Covenant"].includes(titleName)
+  ["Worldbreaker", "The All-Seeing", "Timewalker", "Starforged", "Soulkeeper", "Ultra Hunter", "Relic Keeper", "World Summoner", "Legendary Hunter", "Shatterborn", "World Mender", "Sealbreaker", "Relic Champion", "Should Not Exist", "Warden of Every Habitat", "The Thirty-Twofold Bond", "Keeper of the Wild Covenant"].includes(titleName)
     ? "Legendary"
     : "Epic";
 
@@ -3421,7 +3454,7 @@ function getPlayerHuntCooldown(player, data = null, userId = null) {
   const currentData = data || loadData();
   if (player.adminTest?.cooldownBypass) return 0;
   const distortion = userId ? getDistortionForPlayer(currentData, userId) : null;
-  const shatterActive = Boolean(currentData.worldStory?.event?.active && ["collision","stabilize","unmade"].includes(currentData.worldStory.event.stage));
+  const shatterActive = Boolean(currentData.worldStory?.event?.active && ["seal","collision","stabilize","unmade"].includes(currentData.worldStory.event.stage));
   let baseCooldown = shatterActive ? WORLD_SHATTER_HUNT_COOLDOWN : (distortion ? DISTORTION_HUNT_COOLDOWN : HUNT_COOLDOWN);
   if (isBigGameActive(currentData)) baseCooldown = Math.min(baseCooldown, BIG_GAME_COOLDOWN);
   const sig = getSignaturePet(player);
@@ -3431,7 +3464,7 @@ function getPlayerHuntCooldown(player, data = null, userId = null) {
   const reductionMinutes = getPetBonus(player, "cooldown");
   const blessing = getActiveCommunityBlessing(currentData, "cooldown");
   const blessingReduction = blessing?.definition?.cooldownReductionMs || 0;
-  const minimumCooldown = shatterActive ? 5 * 60 * 1000 : (isBigGameActive(currentData) ? BIG_GAME_COOLDOWN : (distortion ? DISTORTION_HUNT_COOLDOWN : H3_GLOBAL_CAPS.cooldownMinutes * 60 * 1000));
+  const minimumCooldown = shatterActive ? WORLD_SHATTER_HUNT_COOLDOWN : (isBigGameActive(currentData) ? BIG_GAME_COOLDOWN : (distortion ? DISTORTION_HUNT_COOLDOWN : H3_GLOBAL_CAPS.cooldownMinutes * 60 * 1000));
   return Math.max(
     minimumCooldown,
     baseCooldown - reductionMinutes * 60 * 1000 - blessingReduction
@@ -3692,6 +3725,7 @@ function cleanupExpiredCommunityBlessings(data) {
 }
 
 function getActiveCommunityBlessing(data, type) {
+  if (!WORLD_EVENTS_ENABLED) return null;
   cleanupExpiredCommunityBlessings(data);
   return Object.entries(data.communityBlessings || {})
     .map(([relicKey, saved]) => ({
@@ -3718,6 +3752,7 @@ function getUndiscoveredWorldRelics(data) {
 }
 
 function discoverWorldRelic(data, relicMonster, source = "community", player = null) {
+  if (!WORLD_EVENTS_ENABLED) return null;
   if (!relicMonster || data.worldProgress?.[relicMonster.relicKey]) return null;
 
   data.worldProgress[relicMonster.relicKey] = true;
@@ -3762,6 +3797,7 @@ function discoverWorldRelic(data, relicMonster, source = "community", player = n
 }
 
 function maybeDiscoverRelicFromFetch(data, player) {
+  if (!WORLD_EVENTS_ENABLED) return null;
   const undiscovered = getUndiscoveredWorldRelics(data);
   if (undiscovered.length === 0) return null;
   if (Math.random() * 100 >= FETCH_WORLD_RELIC_CHANCE) return null;
@@ -3771,6 +3807,7 @@ function maybeDiscoverRelicFromFetch(data, player) {
 }
 
 async function announceWorldRelicDiscovery(channel, result, userId = null) {
+  if (!WORLD_EVENTS_ENABLED) return;
   if (!result || !channel?.isTextBased()) return;
 
   const monster = result.monster;
@@ -3838,6 +3875,7 @@ async function announceWorldRelicDiscovery(channel, result, userId = null) {
 }
 
 async function processCommunityWorldProgress() {
+  if (!WORLD_EVENTS_ENABLED) return;
   const data = loadData();
   cleanupExpiredCommunityBlessings(data);
 
@@ -4541,7 +4579,8 @@ async function performCaptureAttempt(message, userId, itemKey = null, options = 
     }
     if (worldShatterCatch.reveal) {
       const freshShatterData = loadData();
-      await revealUnmade(freshShatterData, false);
+      if(freshShatterData.worldStory?.event?.stage === "seal") await finishWorldShatter(freshShatterData, true);
+      else await revealUnmade(freshShatterData, false);
     }
     if (bountyCaptureResult?.target) {
       await message.channel.send(
@@ -4671,7 +4710,7 @@ function getMonsterImage(monster) {
   if (!monster) return null;
   const cleanName = cleanMonsterName(monster.name || "");
   const distortionMonsters = Object.values(DISTORTIONS).flatMap(definition => definition.monsters || []);
-  const allMonsters = [...monsters, MIXER_MONSTER, ...eventMonsters, ...ultraRareMonsters, ...distortionMonsters];
+  const allMonsters = [...monsters, MIXER_MONSTER, RELICBOUND_COLOSSUS, ...eventMonsters, ...ultraRareMonsters, ...distortionMonsters];
   const match = allMonsters.find(candidate =>
     candidate.key === monster.key ||
     cleanMonsterName(candidate.name).toLowerCase() === cleanName.toLowerCase()
@@ -4796,6 +4835,22 @@ function weightedDistortionMonster(definition) {
 
 function getRandomMonsterForPlayer(player, data, userId) {
   const ws = data.worldStory?.event;
+  if (ws?.active && ws.stage === "seal") {
+    if (!ws.participants || typeof ws.participants !== "object") ws.participants = {};
+    if (!ws.participants[userId]) ws.participants[userId] = { planes:{}, catches:0, attacks:0 };
+    const stability = Number(ws.stabilityTotal || 0);
+    // Once the community reaches 20 Stability, the new event monster joins
+    // the encounter pool. Everyone still receives it automatically at 25/25.
+    if (stability >= 20 && Math.random() * 100 < 25) {
+      return { ...RELICBOUND_COLOSSUS, worldShatterEncounter:true };
+    }
+    const key = WORLD_KNOWN_DISTORTION_KEYS[Math.floor(Math.random()*WORLD_KNOWN_DISTORTION_KEYS.length)];
+    const monster = weightedDistortionMonster(DISTORTIONS[key]);
+    monster.distortionKey = key;
+    monster.distortionEncounter = true;
+    monster.worldShatterEncounter = true;
+    return monster;
+  }
   if (ws?.active && ["collision","stabilize","unmade"].includes(ws.stage)) {
     if (!ws.participants || typeof ws.participants !== "object") ws.participants = {};
     if (!ws.participants[userId]) ws.participants[userId] = { planes: {}, catches: 0, attacks: 0 };
@@ -4854,6 +4909,20 @@ function chooseDistortionPet(eggKey) {
 }
 
 function maybeFindDistortionEgg(player, monster, data) {
+  const sealEvent = data.worldStory?.event;
+  if (monster?.worldShatterEncounter && sealEvent?.active && sealEvent.stage === "seal") {
+    const stability = Number(sealEvent.stabilityTotal || 0);
+    const unlocked = [];
+    if (stability >= 5) unlocked.push("tempered_rift");
+    if (stability >= 10) unlocked.push("veiled_rune");
+    if (stability >= 15) unlocked.push("relicbound_core");
+    if (!unlocked.length || Math.random() * 100 >= 30) return null;
+    const eggKey = unlocked[Math.floor(Math.random()*unlocked.length)];
+    const id = `world-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    player.eggs.push({id,eggKey,rarity:"World Event",foundAt:Date.now(),source:"Seal the Fracture"});
+    player.titleProgress.eggsFound=(player.titleProgress.eggsFound||0)+1;
+    return DISTORTION_EGGS[eggKey];
+  }
   if (!monster?.distortionEncounter || !monster.distortionKey) return null;
   const inUnmadeShatter = Boolean(monster.worldShatterEncounter && data.worldStory?.event?.active && data.worldStory.event.stage === "unmade" && monster.distortionKey === "unmade");
   const dropChance = inUnmadeShatter ? WORLD_SHATTER_IMPOSSIBLE_EGG_CHANCE : DISTORTION_EGG_DROP_CHANCE;
@@ -6480,6 +6549,13 @@ function maybeAwardUltraRelic(data, player, monster) {
   const roll = Math.floor(Math.random() * 100) + 1;
   if (roll > ULTRA_RELIC_DROP_CHANCE) return null;
 
+  // World Events are archived, but Ultra Rare catches can still drop their
+  // normal summon Relic without advancing hidden global story progress.
+  if (!WORLD_EVENTS_ENABLED) {
+    player.relics[monster.relicKey] = (player.relics[monster.relicKey] || 0) + 1;
+    return { firstDiscovery: false, worldShatterUnlockedNow: false };
+  }
+
   const firstDiscovery = !data.worldProgress?.[monster.relicKey];
 
   // If this Relic was already discovered, the catcher can still receive another physical copy.
@@ -7220,6 +7296,7 @@ function buildFinalWarningBeats(startAt, shatterAt) {
 }
 
 function initializeFinalWarningState(data) {
+  if (!WORLD_EVENTS_ENABLED) return;
   const ws = data.worldStory;
   if (!ws || ws.postShatter || ws.phase === "complete" || ws.event?.active) return;
   if (!ws.finalWarningStartedAt) ws.finalWarningStartedAt = Date.now();
@@ -7237,9 +7314,9 @@ function finalWarningBeatText(beat, ws) {
   if (beat.key === "fluctuation") return `⚠️ **REALITY FLUCTUATION**\n\nA breach appeared for less than a second.\nNo known planar signature was detected.\n\n**WORLD STABILITY: ${worldStabilityForBeat(beat.key)}%**`;
   if (beat.key === "collision") return `🚨 **PLANAR COLLISION DETECTED**\n\nShattered Frost energy has been detected inside an Infernal Rift.\nThis should be impossible.\n\n**WORLD STABILITY: ${worldStabilityForBeat(beat.key)}%**`;
   if (beat.key === "stability") return `🚨 **WORLD STABILITY: ${worldStabilityForBeat(beat.key)}%**\n\nDistortions are no longer closing completely.\nSomething is pushing against reality from the other side.`;
-  if (beat.key === "24h") return `# 🚨 EMERGENCY HUNT NOTICE\n\nWorld stability has reached critical failure.\nAll available Monster Hunters are requested to report <t:${eventTs}:F> (<t:${eventTs}:R>).\n\n**This is not a normal Distortion.**\nCome prepared.`;
-  if (beat.key === "2h") return `# 🚨 WORLD SHATTER — 2 HOURS\n\n**WORLD STABILITY: 4%**\nHunters are advised to prepare bait, capture items, and companions.\n\n**All available hunters will be needed.**`;
-  return `# ⛔ WORLD SHATTER — 15 MINUTES\n\n**WORLD STABILITY: 1%**\n\nWe can't stop it anymore.`;
+  if (beat.key === "24h") return `# 🚨 SEAL THE FRACTURE — 24 HOURS\n\nAll available Monster Hunters are requested to report <t:${eventTs}:F> (<t:${eventTs}:R>).\n\nThe community will have **60 minutes** to reach **25 Stability**.\n\n**This is not a normal Distortion.**`;
+  if (beat.key === "2h") return `# 🚨 SEAL THE FRACTURE — 2 HOURS\n\nPrepare your bait, capture items, and strongest companions.\n\nEvery successful event capture will add **+1 Stability**.`;
+  return `# ⛔ SEAL THE FRACTURE — 15 MINUTES\n\nThe five World Relics are resonating.\n\n**All available hunters will be needed.**`;
 }
 
 const FOUR_OF_FIVE_ANOMALIES = [
@@ -7253,7 +7330,7 @@ function worldShatterStatusText(data) {
   const ws=data.worldStory||{}; const ev=ws.event;
   const schedule=ws.shatterScheduledAt ? `<t:${Math.floor(ws.shatterScheduledAt/1000)}:F> (<t:${Math.floor(ws.shatterScheduledAt/1000)}:R>)` : "Not scheduled";
   let text=`🌎 **WORLD SHATTER STATUS**\nPhase: **${ws.phase||"dormant"}**\nScheduled: ${schedule}\nPost-Shatter: **${ws.postShatter?"Yes":"No"}**\nOutcome: **${ws.outcome||"Pending"}**\nUnmade replacement chance: **${Number(ws.unmadeReplacementChance||0)}%**${ws.architectRematchAt?`\nArchitect rematch: <t:${Math.floor(ws.architectRematchAt/1000)}:F>`:""}`;
-  if(ev?.active){ text += `\n\n💥 Event Stage: **${ev.stage}**\nParticipants: **${Object.keys(ev.participants||{}).length}**`; if(ev.stage==="stabilize") text += `\n${WORLD_KNOWN_DISTORTION_KEYS.map(k=>`${DISTORTIONS[k].icon} ${DISTORTIONS[k].name}: **${ev.stability?.[k]||0}/${WORLD_SHATTER_STABILITY_GOAL}**`).join("\n")}`; if(ev.stage==="boss") text += `\n👁️ Architect HP: **${Math.max(0,ev.bossHp||0)}/${ev.bossMaxHp||0}**`; }
+  if(ev?.active){ text += `\n\n💥 Event Stage: **${ev.stage}**\nParticipants: **${Object.keys(ev.participants||{}).length}**`; if(ev.stage==="seal") text += `\n🌎 Stability: **${Number(ev.stabilityTotal||0)}/${WORLD_SHATTER_STABILITY_GOAL}**\n⏳ Ends: <t:${Math.floor(ev.stageEndsAt/1000)}:R>`; if(ev.stage==="stabilize") text += `\n${WORLD_KNOWN_DISTORTION_KEYS.map(k=>`${DISTORTIONS[k].icon} ${DISTORTIONS[k].name}: **${ev.stability?.[k]||0}/${WORLD_SHATTER_STABILITY_GOAL}**`).join("\n")}`; if(ev.stage==="boss") text += `\n👁️ Architect HP: **${Math.max(0,ev.bossHp||0)}/${ev.bossMaxHp||0}**`; }
   return text;
 }
 
@@ -7261,13 +7338,13 @@ async function startWorldShatter(data, forced=false) {
   if (!WORLD_SHATTER_ENABLED) return false;
   const ws=data.worldStory; if(ws.event?.active) return false;
   const now=Date.now();
-  ws.phase="event"; ws.event={active:true,stage:"collision",startedAt:now,stageEndsAt:now+WORLD_SHATTER_COLLISION_DURATION,participants:{},stability:Object.fromEntries(WORLD_KNOWN_DISTORTION_KEYS.map(k=>[k,0])),bossHp:0,bossMaxHp:0,bossEndsAt:0,stabilizationFailed:false};
+  ws.phase="event"; ws.event={active:true,stage:"seal",startedAt:now,stageEndsAt:now+WORLD_SHATTER_STABILIZE_MAX_DURATION,participants:{},stabilityTotal:0,milestonesAnnounced:[],stability:{},bossHp:0,bossMaxHp:0,bossEndsAt:0};
   data.activeDistortion=null;
   for(const p of Object.values(data.players||{})) p.lastHunt=0;
-  addSeasonMoment(data,{type:"world_shatter",icon:"💥",text:"The five World Relics shattered the seal and the World Shatter began.",uniqueKey:"world:shatter:start"});
+  addSeasonMoment(data,{type:"world_shatter",icon:"🌎",text:"The five World Relics opened the fracture and the community began stabilizing it.",uniqueKey:"world:shatter:start"});
   saveData(data);
   const channel=await getTextChannel(MONSTER_CHANNEL_ID);
-  await sendWorldEvent(channel,`@everyone\n\n# 💥 WORLD SHATTER\n\nThe sky fractures.\nInfernal flame pours through frozen ruins. Arcane oceans hang above spectral kingdoms while stars burn through daylight.\n\n**The five known planes are collapsing into ours.**\n\n⚡ \`!hunt\` cooldown: **10 minutes**\n🔄 Everyone can hunt **RIGHT NOW.**\n\nFor the next phase, creatures from every known Distortion can appear.\n\n**And something else is pushing through.**`,`world_shatter.png`,true);
+  await sendWorldEvent(channel,`@everyone\n\n# 🌎 SEAL THE FRACTURE\n\nThe five World Relics have awakened—and the seal between realities has broken.\n\nFor the next **60 minutes**, every successful event capture adds **+1 Stability**. The Mixers must reach **25/25 Stability** before time expires.\n\n⚡ \`!hunt\` cooldown: **10 minutes**\n🌀 Returning Distortion monsters are loose\n🥚 New event eggs unlock at **5, 10, and 15 Stability**\n💎 The **Relicbound Colossus** appears at **20 Stability**\n🎁 At **25/25**, every participant receives the Colossus and a Relicbound Core Egg.\n\n**Everyone can hunt right now.**`,`relicbound_colossus.png`,true);
   return true;
 }
 
@@ -7385,6 +7462,50 @@ async function startArchitectRematch(data) {
 
 async function finishWorldShatter(data, success=true) {
   const ws=data.worldStory, ev=ws?.event; if(!ev?.active) return;
+  if (ev.stage === "seal") {
+    const participants = Object.entries(ev.participants || {}).filter(([,state])=>Number(state.catches||0)>0);
+    ev.active=false;
+    ev.stage=success?"victory":"failed";
+    ws.phase="complete";
+    ws.postShatter=true;
+    ws.completedAt=Date.now();
+    ws.outcome=success?"victory":"failure";
+    ws.shatterScheduledAt=0;
+    let champion=null;
+    if(participants.length) champion=participants.slice().sort((a,b)=>Number(b[1].catches||0)-Number(a[1].catches||0))[0];
+    if(success && !ev.rewardsGranted){
+      for(const [userId] of participants){
+        const p=getPlayer(data,userId);
+        p.points=Number(p.points||0)+20;
+        p.huntTokens=Number(p.huntTokens||0)+5;
+        p.lifetimeTokens=Number(p.lifetimeTokens||0)+5;
+        p.unlockedTitles ||= [];
+        if(!p.unlockedTitles.includes("Sealbreaker")) p.unlockedTitles.push("Sealbreaker");
+        p.eggs ||= [];
+        p.eggs.push({id:`relicbound-${Date.now()}-${userId}`,eggKey:"relicbound_core",rarity:"World Event",foundAt:Date.now(),source:"Seal the Fracture Victory"});
+        p.titleProgress.eggsFound=Number(p.titleProgress.eggsFound||0)+1;
+        p.caught ||= []; p.lifetimeCaught ||= [];
+        if(!p.caught.some(m=>m.key===RELICBOUND_COLOSSUS.key)) p.caught.push({...RELICBOUND_COLOSSUS,guaranteedEventReward:true});
+        if(!p.lifetimeCaught.some(m=>m.key===RELICBOUND_COLOSSUS.key)) p.lifetimeCaught.push({...RELICBOUND_COLOSSUS,guaranteedEventReward:true});
+      }
+      if(champion){
+        const championPlayer=getPlayer(data,champion[0]);
+        championPlayer.points=Number(championPlayer.points||0)+30;
+        championPlayer.unlockedTitles ||= [];
+        if(!championPlayer.unlockedTitles.includes("Relic Champion")) championPlayer.unlockedTitles.push("Relic Champion");
+      }
+      ev.rewardsGranted=true;
+    }
+    addSeasonMoment(data,{type:"world_shatter_end",icon:success?"🌟":"⚠️",text:success?"The Mixers reached 25 Stability and sealed the fracture.":"The fracture resisted stabilization before time expired.",uniqueKey:"world:seal:end"});
+    saveData(data);
+    const channel=await getTextChannel(MONSTER_CHANNEL_ID);
+    if(success){
+      await sendWorldEvent(channel,`@everyone\n\n# 🌟 THE FRACTURE IS STABLE — 25/25\n\nThe five World Relics fall silent as the breach seals. The **Relicbound Colossus** lowers its head and accepts the hunters who held reality together.\n\n🎁 **EVERY PARTICIPANT RECEIVES**\n• Relicbound Colossus\n• Relicbound Core Egg\n• 20 Hunter Points\n• 5 Hunt Tokens\n• **Sealbreaker** title\n\n${champion?`🏆 **RELIC CHAMPION:** ${formatPlayerMention(data,champion[0])} — **${champion[1].catches} captures**\n+30 bonus Hunter Points and the **Relic Champion** title.`:""}\n\nThe World Event is complete.`,`relicbound_colossus.png`,true);
+    } else {
+      await sendWorldEvent(channel,`# ⚠️ THE FRACTURE REMAINS UNSTABLE\n\nThe one-hour stabilization window has ended at **${Number(ev.stabilityTotal||0)}/25 Stability**. No completion rewards were granted.`,null,false);
+    }
+    return;
+  }
   const rematch=Boolean(ev.rematch);
   const heroSummary=worldShatterHeroSummary(data,ev);
   grantWorldShatterTitlesAndRewards(data,success,{rematch});
@@ -7409,8 +7530,21 @@ async function finishWorldShatter(data, success=true) {
 }
 
 function registerWorldShatterCatch(data,userId,monster) {
+  if (!WORLD_EVENTS_ENABLED) return {text:"",reveal:false};
   const ev=data.worldStory?.event; if(!ev?.active) return {text:"",reveal:false};
   if(!ev.participants[userId]) ev.participants[userId]={planes:{},catches:0,attacks:0}; const ps=ev.participants[userId]; ps.catches=(ps.catches||0)+1;
+  if(ev.stage==="seal"){
+    const before=Number(ev.stabilityTotal||0);
+    ev.stabilityTotal=Math.min(WORLD_SHATTER_STABILITY_GOAL,before+1);
+    if(monster.distortionKey) ps.planes[monster.distortionKey]=Number(ps.planes[monster.distortionKey]||0)+1;
+    const now=ev.stabilityTotal;
+    let unlock="";
+    if(before<5 && now>=5) unlock="\n🔥❄️ **Tempered Rift Eggs can now drop!**";
+    if(before<10 && now>=10) unlock="\n🌊👻 **Veiled Rune Eggs can now drop!**";
+    if(before<15 && now>=15) unlock="\n💎 **Relicbound Core Eggs can now drop!**";
+    if(before<20 && now>=20) unlock="\n⚠️ **The Relicbound Colossus has entered the hunt pool!**";
+    return {text:`🌎 **WORLD STABILITY: ${now}/${WORLD_SHATTER_STABILITY_GOAL}**${unlock}`,reveal:now>=WORLD_SHATTER_STABILITY_GOAL};
+  }
   if(ev.stage!=="stabilize" || !WORLD_KNOWN_DISTORTION_KEYS.includes(monster.distortionKey)) return {text:"",reveal:false};
   const key=monster.distortionKey; const before=ev.stability[key]||0; ev.stability[key]=Math.min(WORLD_SHATTER_STABILITY_GOAL,before+1); ps.planes[key]=(ps.planes[key]||0)+1;
   const allDone=WORLD_KNOWN_DISTORTION_KEYS.every(k=>(ev.stability[k]||0)>=WORLD_SHATTER_STABILITY_GOAL);
@@ -7418,7 +7552,7 @@ function registerWorldShatterCatch(data,userId,monster) {
 }
 
 async function processWorldStorySystem() {
-  if (!WORLD_SHATTER_ENABLED) return;
+  if (!WORLD_EVENTS_ENABLED || !WORLD_SHATTER_ENABLED) return;
   const data=loadData(); const count=discoveredWorldRelicCount(data); const ws=data.worldStory; const now=Date.now(); let dirty=false;
   if(count===4 && !ws.postShatter && ws.phase==="dormant"){initializeFourOfFiveAnomalyState(data);dirty=true;}
   if(count>=5 && !ws.postShatter && !ws.event?.active && !["final_warning","event","complete"].includes(ws.phase)){initializeFinalWarningState(data);dirty=true;}
@@ -7432,6 +7566,7 @@ async function processWorldStorySystem() {
   }
   const ev=ws.event;
   if(ev?.active){
+    if(ev.stage==="seal" && now>=ev.stageEndsAt){await finishWorldShatter(data,Number(ev.stabilityTotal||0)>=WORLD_SHATTER_STABILITY_GOAL);return;}
     if(ev.stage==="collision" && now>=ev.stageEndsAt){await beginStabilization(data);return;}
     if(ev.stage==="stabilize" && now>=ev.stageEndsAt){await revealUnmade(data,true);return;}
     if(ev.stage==="unmade" && now>=ev.stageEndsAt){await beginArchitectBoss(data);return;}
@@ -8529,13 +8664,15 @@ client.once("clientReady", () => {
     try {
       await processFetchReturnsAndReminders();
       await processWeeklyCompetition();
-      await processCommunityWorldProgress();
+      if (WORLD_EVENTS_ENABLED) await processCommunityWorldProgress();
     }
     catch (error) { console.error("Fetch/reminder/weekly/world monitor failed:", error); }
   });
   processFetchReturnsAndReminders().catch(error => console.error("Initial fetch/reminder check failed:", error));
   processWeeklyCompetition().catch(error => console.error("Initial weekly check failed:", error));
-  processCommunityWorldProgress().catch(error => console.error("Initial hidden world progress check failed:", error));
+  if (WORLD_EVENTS_ENABLED) {
+    processCommunityWorldProgress().catch(error => console.error("Initial hidden world progress check failed:", error));
+  }
   cron.schedule("* * * * *", async () => {
     await processBigGameMerchantSystem();
   });
@@ -8545,12 +8682,33 @@ client.once("clientReady", () => {
     try { await processDistortionSystem(); }
     catch (error) { console.error("World Distortion monitor failed:", error); }
   });
-  cron.schedule("* * * * *", async () => {
-    try { await processWorldStorySystem(); }
-    catch (error) { console.error("World Story / World Shatter monitor failed:", error); }
-  });
-  // Initialize story state safely on startup without immediately posting or starting the finale.
-  { const startupWorldData=loadData(); migratePendingWorldShatterToEightPm(startupWorldData); const c=discoveredWorldRelicCount(startupWorldData); if(c===4) initializeFourOfFiveAnomalyState(startupWorldData); if(c>=5 && !startupWorldData.worldStory?.postShatter) initializeFinalWarningState(startupWorldData); saveData(startupWorldData); }
+  if (WORLD_EVENTS_ENABLED) {
+    cron.schedule("* * * * *", async () => {
+      try { await processWorldStorySystem(); }
+      catch (error) { console.error("World Story / World Shatter monitor failed:", error); }
+    });
+  } else {
+    // Cancel any World Event that an older deployment already scheduled.
+    const startupWorldData = loadData();
+    if (startupWorldData.worldStory) {
+      startupWorldData.worldStory.phase = "archived";
+      startupWorldData.worldStory.shatterScheduledAt = 0;
+      startupWorldData.worldStory.shatterScheduleManual = false;
+      startupWorldData.worldStory.finalWarningStartedAt = 0;
+      startupWorldData.worldStory.beats = [];
+      startupWorldData.worldStory.nextAnomalyAt = 0;
+      startupWorldData.worldStory.architectRematchAt = 0;
+      startupWorldData.worldStory.rematch24hSent = false;
+      startupWorldData.worldStory.rematch2hSent = false;
+      if (startupWorldData.worldStory.event) {
+        startupWorldData.worldStory.event.active = false;
+        startupWorldData.worldStory.event.stage = "archived";
+      }
+    }
+    startupWorldData.worldShatterUnlocked = false;
+    startupWorldData.communityBlessings = {};
+    saveData(startupWorldData);
+  }
   // No immediate Distortion processing on startup; the minute cron handles only live future schedule windows.
 
   //
@@ -10478,8 +10636,19 @@ ${captureChoicesText(choices)}
     );
   }
 
+  if (!WORLD_EVENTS_ENABLED && (
+    command === "!world" ||
+    command === "!shatterattack" ||
+    command.startsWith("!worldshatter")
+  )) {
+    return message.reply("🌎 World Events and World Shatter are archived and disabled. Big Game Hunts, Bounties, and Distortions remain active.");
+  }
+
   if (command === "!world") {
     const fresh=loadData(); const count=discoveredWorldRelicCount(fresh); const ws=fresh.worldStory||{};
+    if(ws.event?.active && ws.event.stage==="seal"){
+      return message.reply(`🌎 **SEAL THE FRACTURE**\n\nStability: **${Number(ws.event.stabilityTotal||0)}/${WORLD_SHATTER_STABILITY_GOAL}**\nParticipants: **${Object.values(ws.event.participants||{}).filter(s=>Number(s.catches||0)>0).length}**\nEnds: <t:${Math.floor(ws.event.stageEndsAt/1000)}:R>\n\nEvery successful event capture adds **+1 Stability**.`);
+    }
     const stability = ws.postShatter ? (ws.outcome==="failure" ? "🟠 FRACTURED" : "🟢 STABLE") : count>=5 ? "🔴 FAILURE IMMINENT" : count===4 ? "🔴 CRITICAL" : count===3 ? "🟠 UNSTABLE" : "🟢 STABLE";
     const bar = `${"█".repeat(Math.min(10,count*2))}${"░".repeat(Math.max(0,10-count*2))}`;
     const schedule = ws.shatterScheduledAt && !ws.postShatter ? `\n\n🚨 Emergency gathering: <t:${Math.floor(ws.shatterScheduledAt/1000)}:F> (<t:${Math.floor(ws.shatterScheduledAt/1000)}:R>)` : "";
@@ -10507,7 +10676,7 @@ ${captureChoicesText(choices)}
       const raw=(args[0]||"").toLowerCase(); const m=raw.match(/^(\d+)(h|d)$/); if(!m) return message.reply("Use `!worldshatter delay 6h` or `!worldshatter delay 1d`.");
       const ms=Number(m[1])*(m[2]==="d"?24:1)*60*60*1000; ws.shatterScheduledAt=(ws.shatterScheduledAt||Date.now())+ms; ws.beats=buildFinalWarningBeats(ws.finalWarningStartedAt||Date.now(),ws.shatterScheduledAt); ws.missedStart=false; saveData(fresh); return message.reply(`✅ World Shatter delayed to <t:${Math.floor(ws.shatterScheduledAt/1000)}:F>.`);
     }
-    if(sub==="start") return message.reply("🚫 World Shatter is archived and disabled this season. Distortion Events are the active reality-event system.");
+    if(sub==="start") { const started=await startWorldShatter(fresh,true); return message.reply(started?"✅ Seal the Fracture started.":"The World Event is already active or could not start."); }
     if(sub==="stage") {
       const stage=(args[0]||"").toLowerCase(); if(!ws.event?.active) return message.reply("The World Shatter is not active.");
       if(stage==="stabilize") await beginStabilization(fresh); else if(stage==="unmade") await revealUnmade(fresh,false); else if(stage==="boss") await beginArchitectBoss(fresh); else return message.reply("Stages: `stabilize`, `unmade`, `boss`."); return message.reply(`✅ Forced World Shatter stage: **${stage}**.`);
